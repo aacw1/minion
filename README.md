@@ -1,6 +1,6 @@
-目前问题：技能目录需要放到工作空间内，否则没有权限读取，复制一下就好了。使用先配置模型key
+目前问题：技能目录需要放到工作空间内，否则没有权限读取，复制一下就好了。使用前先配置模型key
 
-使用示例：
+使用示例，文字根据不同情况是有不同颜色的,粘贴进来的只有文本：
 
 PS E:\javame\code\code2\minion\target> java -jar .\minion-0.1.0.jar
 [minion] 配置文件: E:\javame\code\code2\minion\target\config.properties
