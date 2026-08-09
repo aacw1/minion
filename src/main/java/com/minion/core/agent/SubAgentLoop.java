@@ -1,0 +1,158 @@
+package com.minion.core.agent;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.minion.core.llm.LlmClient;
+import com.minion.core.llm.LlmException;
+import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolCall;
+import com.minion.core.llm.Usage;
+import com.minion.core.tools.confirm.ConfirmGate;
+import com.minion.core.tools.Tool;
+import com.minion.core.tools.ToolRegistry;
+import com.minion.core.tools.ToolResult;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** 子 agent：独立消息数组 + 完整工具集（无 task），无轮数上限，返回最终文本 */
+public class SubAgentLoop {
+
+    private static final String SUB_SYSTEM_SUFFIX =
+            "\n\n你是一个子 agent。只负责完成上述任务，完成后用最终文本总结结果（不要客套）。";
+
+    private final LlmClient llm;
+    private final ToolRegistry registry;
+    private final ConfirmGate confirmGate;
+    private final AgentUi ui;
+    private final List<Message> messages = new ArrayList<Message>();
+
+    public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
+                        LlmClient llm, ToolRegistry registry, ConfirmGate confirmGate, AgentUi ui) {
+        this.llm = llm;
+        this.registry = registry;
+        this.confirmGate = confirmGate;
+        this.ui = ui;
+        messages.add(Message.system(systemPrompt + SUB_SYSTEM_SUFFIX));
+        messages.add(Message.user("任务: " + taskDescription));
+    }
+
+    public String run() {
+        ui.onSubAgentStart(messages.get(1).content);
+        int retries = 0;
+        try {
+            while (true) {
+                // 中断路径：主循环 interrupt() 取消 in-flight 工具 future → 本线程中断 → 立即中止
+                if (Thread.currentThread().isInterrupted()) {
+                    ui.onWarning("子 agent 已中断");
+                    return "子 agent 已中断";
+                }
+                final List<ToolCall>[] toolCalls = new List[1];
+                final String[] finish = new String[1];
+                final StringBuilder content = new StringBuilder();
+                final StringBuilder thinking = new StringBuilder();
+                try {
+                    llm.streamChat(messages, subAgentTools(), new com.minion.core.llm.StreamHandler() {
+                        @Override
+                        public void onThinking(String delta) {
+                            thinking.append(delta);
+                            ui.onThinking(delta);
+                        }
+                        @Override
+                        public void onContent(String delta) {
+                            content.append(delta);
+                            ui.onSubAgentDelta(delta);
+                        }
+                        @Override
+                        public void onFinish(String finishReason, Usage usage, List<ToolCall> tcs) {
+                            finish[0] = finishReason;
+                            toolCalls[0] = tcs;
+                        }
+                        @Override
+                        public void onError(LlmException e) { finish[0] = "error"; ui.onError(e.getMessage()); }
+                    });
+                } catch (LlmException e) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        // 已被主循环中断（cancel 引发的 Canceled 错误）：不重试
+                        ui.onWarning("子 agent 已中断");
+                        return "子 agent 已中断";
+                    }
+                    if (e.retryable && retries < 1) {
+                        retries++;
+                        ui.onWarning("子 agent 请求失败（" + e.getMessage() + "），自动重试 1 次");
+                        // 退避与主循环一致：429 限流 2s，其余（网络/超时）0.5s
+                        Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
+                        continue; // 消息未变，直接重发本轮
+                    }
+                    ui.onError("子 agent 请求失败: " + e.getMessage());
+                    return "子 agent 失败: " + e.getMessage();
+                }
+                if (toolCalls[0] == null || toolCalls[0].isEmpty()
+                        || !"tool_calls".equals(finish[0])) {
+                    ui.onSubAgentDone(content.toString());
+                    return content.toString();
+                }
+                // assistant 工具调用消息先入历史——tool 消息必须紧跟含对应 tool_call_id 的
+                // assistant tool_calls 消息（DeepSeek/OpenAI 兼容 API 契约，否则 400）；
+                // reasoningContent 原样回传同样是硬性要求（思考模式 + 工具调用，缺失下轮 400）
+                Message assistantMsg = Message.assistant(
+                        content.length() == 0 ? null : content.toString());
+                assistantMsg.reasoningContent = thinking.length() == 0 ? null : thinking.toString();
+                assistantMsg.toolCalls = toolCalls[0];
+                messages.add(assistantMsg);
+                for (ToolCall call : toolCalls[0]) {
+                    ToolResult result = runOneTool(call);
+                    messages.add(Message.toolResult(call.id, call.name, result.output));
+                    ui.onToolResult(call.name, result);
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
+            ui.onWarning("子 agent 已中断");
+            return "子 agent 已中断";
+        } catch (Exception e) {
+            ui.onError("子 agent 异常: " + e.getMessage());
+            return "子 agent 异常: " + e.getMessage();
+        }
+    }
+
+    /** 子 agent 工具集 = registry 全部工具 schema，剔除 task（防无限递归） */
+    private List<JsonObject> subAgentTools() {
+        List<JsonObject> list = new ArrayList<JsonObject>();
+        for (JsonObject s : registry.schemas()) {
+            if ("task".equals(s.getAsJsonObject("function").get("name").getAsString())) continue;
+            list.add(s);
+        }
+        return list;
+    }
+
+    /** 单工具执行：任何异常均转为错误 ToolResult，单个工具失败不终止整个子 agent */
+    private ToolResult runOneTool(ToolCall call) {
+        try {
+            if ("task".equals(call.name)) {
+                // 防御：即使模型违规调用，也不得再派发子 agent（防无限递归）
+                return ToolResult.error("子 agent 不可再派发子 agent（task 工具已禁用）");
+            }
+            Tool tool = registry.get(call.name);
+            if (tool == null) return ToolResult.error("未知工具: " + call.name);
+            JsonObject args;
+            try {
+                args = JsonParser.parseString(call.arguments == null ? "{}" : call.arguments).getAsJsonObject();
+            } catch (Exception e) {
+                return ToolResult.error("工具参数 JSON 解析失败: " + e.getMessage());
+            }
+            if (!confirmGate.check(tool, args)) {
+                return ToolResult.error("用户拒绝了该操作（" + call.name + "）");
+            }
+            ui.onToolCall(call.name, args);
+            try {
+                return tool.execute(args);
+            } catch (Exception e) {
+                return ToolResult.error("工具执行异常: " + e.getMessage());
+            }
+        } catch (RuntimeException e) {
+            // 防御：参数类型非法等 unchecked 异常不得穿透，转错误结果继续循环
+            return ToolResult.error("工具执行异常: " + e.getMessage());
+        }
+    }
+}

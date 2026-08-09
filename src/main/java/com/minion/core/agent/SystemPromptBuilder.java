@@ -1,0 +1,62 @@
+package com.minion.core.agent;
+
+import com.minion.core.config.Config;
+import com.minion.core.skills.Skill;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+
+/** 系统提示词组装：内置提示 → 项目介绍(project.md) → 可用技能提示 → 已加载技能指令 */
+public class SystemPromptBuilder {
+
+    private static final String BUILTIN =
+            "你是 minion，一个运行在命令行里的代码开发助手。你可以调用工具读写文件、执行命令、搜索代码。\n"
+          + "规则：\n"
+          + "1. 用户指令不明确、信息不足或存在多种可能理解时，先列出需要补充的问题，等待用户回答后再行动；不要猜测用户意图。\n"
+          + "2. 使用工具前先想清楚目标，避免无谓调用；Bash 命令在项目工作目录下执行。\n"
+          + "3. 修改文件前先 Read 确认当前内容；Edit 必须精确匹配原文。\n"
+          + "4. 复杂任务可用 task 工具派发子 agent 并行处理，子 agent 会返回结果摘要。\n"
+          + "5. 回答使用简洁中文，代码块使用 ``` 标记。\n"
+          + "6. 涉及删除/覆盖等破坏性操作时，等待用户确认（系统会拦截）。";
+
+    private final Config config;
+
+    public SystemPromptBuilder(Config config) { this.config = config; }
+
+    public String build(List<Skill> allSkills, List<Skill> loadedSkills) {
+        StringBuilder sb = new StringBuilder(BUILTIN);
+        String projectMd = loadProjectMd(config.projectMdPath());
+        if (!projectMd.isEmpty()) {
+            sb.append("\n\n=== 项目介绍 ===\n").append(projectMd.trim());
+        }
+        if (allSkills != null && !allSkills.isEmpty()) {
+            sb.append("\n\n=== 可用技能 ===\n");
+            sb.append("以下是可用的技能，当任务与之匹配时，建议用户输入 /skill <技能名> 加载：\n");
+            for (Skill s : allSkills) sb.append("- ").append(s.hint()).append('\n');
+        }
+        if (loadedSkills != null && !loadedSkills.isEmpty()) {
+            sb.append("\n\n=== 已加载技能 ===\n");
+            for (Skill s : loadedSkills) {
+                sb.append("\n## 技能 ").append(s.name).append("\n\n").append(s.instructions).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    static String loadProjectMd(String path) {
+        try {
+            Path p = Paths.get(path);
+            if (Files.exists(p) && Files.isRegularFile(p)) {
+                byte[] bytes = Files.readAllBytes(p);
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            System.err.println("[minion] 读取 project.md 失败: " + e.getMessage());
+        }
+        return "";
+    }
+}
