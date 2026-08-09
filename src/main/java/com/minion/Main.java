@@ -37,6 +37,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         ConsoleIo.install(); // 先于任何输出：System.out/err 强制 UTF-8，Windows 控制台切代码页 65001
         Config config = Config.load();
+        System.out.println("[minion] 配置文件: " + config.externalFile());
         if (config.modelKey().isEmpty() || config.modelKey().equals("sk-your-key")) {
             System.err.println("[minion] 请先编辑 jar 同目录的 config.properties，配置 model.key");
             if (args.length == 0) return; // 交互模式必须配置 key
@@ -52,15 +53,18 @@ public class Main {
 
         ToolRegistry registry = new ToolRegistry();
         String workDir = config.workDir();
-        registry.register(new ReadTool(workDir));
-        registry.register(new WriteTool(workDir));
-        registry.register(new EditTool(workDir));
-        registry.register(new GlobTool(workDir));
-        registry.register(new GrepTool(workDir));
+        // 技能目录解析为绝对路径：可能配置在工作路径之外（如 jar 外部的绝对路径），
+        // 工具守卫需按此放行技能文件；SkillManager 用绝对路径扫描与守卫口径一致
+        String skillsDir = Paths.get(config.skillsDir()).toAbsolutePath().normalize().toString();
+        registry.register(new ReadTool(workDir, skillsDir));
+        registry.register(new WriteTool(workDir, skillsDir));
+        registry.register(new EditTool(workDir, skillsDir));
+        registry.register(new GlobTool(workDir, skillsDir));
+        registry.register(new GrepTool(workDir, skillsDir));
         registry.register(new BashTool(workDir));
         registry.register(new WebFetchTool());
 
-        SkillManager skillManager = new SkillManager(config.skillsDir());
+        SkillManager skillManager = new SkillManager(skillsDir);
         List<Skill> skills = skillManager.scan();
 
         SessionStore store = new SessionStore(Paths.get(config.sessionDir()));

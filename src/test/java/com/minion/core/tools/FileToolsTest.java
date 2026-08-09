@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -146,6 +147,74 @@ public class FileToolsTest {
         ToolResult r = glob.execute(args("{\"pattern\":\"[\"}"));
         assertFalse(r.ok);
         assertTrue(r.output.contains("语法错误"));
+    }
+
+    // ---- 技能目录（工作路径外）放行 ----
+
+    @Test
+    public void skillsDir_allowsReadGlobGrep() throws Exception {
+        Path skillsDir = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"),
+                "minion-skills-test-" + System.nanoTime());
+        Path skillFile = skillsDir.resolve("debug").resolve("SKILL.md");
+        Files.createDirectories(skillFile.getParent());
+        Files.write(skillFile, "调试技能正文".getBytes(StandardCharsets.UTF_8));
+        try {
+            ReadTool r = new ReadTool(work, skillsDir.toString());
+            GlobTool g = new GlobTool(work, skillsDir.toString());
+            GrepTool gr = new GrepTool(work, skillsDir.toString());
+            String esc = skillFile.toString().replace("\\", "\\\\");
+
+            ToolResult read = r.execute(args("{\"path\":\"" + esc + "\"}"));
+            assertTrue(read.output, read.ok);
+            assertTrue(read.output.contains("调试技能正文"));
+
+            ToolResult glob = g.execute(args("{\"pattern\":\"**/SKILL.md\"}"));
+            assertTrue(glob.output, glob.ok);
+            assertTrue(glob.output, glob.output.contains("debug/SKILL.md")); // 技能目录内输出绝对路径
+
+            ToolResult grep = gr.execute(args("{\"pattern\":\"技能\",\"path\":\""
+                    + skillsDir.toString().replace("\\", "\\\\") + "\"}"));
+            assertTrue(grep.output, grep.ok);
+            assertTrue(grep.output, grep.output.contains("SKILL.md"));
+        } finally {
+            deleteRecursively(skillsDir);
+        }
+    }
+
+    @Test
+    public void skillsDir_notAllowed_whenNotConfigured() throws Exception {
+        Path skillsDir = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"),
+                "minion-skills-test-" + System.nanoTime());
+        Path skillFile = skillsDir.resolve("SKILL.md");
+        Files.createDirectories(skillsDir);
+        Files.write(skillFile, "secret".getBytes(StandardCharsets.UTF_8));
+        try {
+            // 未配置技能目录（单参构造）时，工作路径外的文件仍被拒绝
+            ToolResult r = read.execute(args("{\"path\":\""
+                    + skillFile.toString().replace("\\", "\\\\") + "\"}"));
+            assertFalse(r.ok);
+            assertTrue(r.output.contains("工作路径之外"));
+        } finally {
+            deleteRecursively(skillsDir);
+        }
+    }
+
+    private static void deleteRecursively(Path dir) throws Exception {
+        if (dir == null || !Files.exists(dir)) return;
+        Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file,
+                    java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+            @Override
+            public java.nio.file.FileVisitResult postVisitDirectory(Path d, IOException exc)
+                    throws IOException {
+                Files.delete(d);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     private Path p(String rel) {

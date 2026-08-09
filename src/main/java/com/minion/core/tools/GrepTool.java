@@ -19,8 +19,14 @@ public class GrepTool implements Tool {
     private static final int MAX_RESULTS = 250;
 
     private final String workDir;
+    private final String skillsDir;
 
-    public GrepTool(String workDir) { this.workDir = workDir; }
+    public GrepTool(String workDir) { this(workDir, null); }
+
+    public GrepTool(String workDir, String skillsDir) {
+        this.workDir = workDir;
+        this.skillsDir = skillsDir;
+    }
 
     @Override
     public String name() { return "Grep"; }
@@ -50,8 +56,11 @@ public class GrepTool implements Tool {
         String start = args.has("path") ? args.get("path").getAsString() : ".";
         final Path root = PathsGuard.resolve(workDir, start);
         if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, root);
+        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, root);
         if (guard != null) return guard;
+        // 结果路径格式：工作路径内输出相对路径（模型可直接 Read）；工作路径外（技能目录）输出绝对路径
+        final Path rootAbs = Paths.get(workDir).toAbsolutePath().normalize();
+        final boolean rootInWork = root.toAbsolutePath().normalize().startsWith(rootAbs);
         final int max;
         try {
             max = args.has("maxResults") ? args.get("maxResults").getAsInt() : MAX_RESULTS;
@@ -65,7 +74,7 @@ public class GrepTool implements Tool {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 if (count[0] >= max) return FileVisitResult.TERMINATE;
-                Path rel = Paths.get(workDir).relativize(file);
+                Path rel = rootInWork ? Paths.get(workDir).relativize(file) : file;
                 try {
                     java.util.List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
                     for (int i = 0; i < lines.size() && count[0] < max; i++) {

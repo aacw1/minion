@@ -5,7 +5,7 @@ public class Skill {
     public final String name;
     public final String description;
     public final String instructions; // SKILL.md 正文
-    public final String file;         // 展示用文件名
+    public final String file;         // 源文件完整路径（供模型用 Read 读取）
 
     public Skill(String name, String description, String instructions, String file) {
         this.name = name;

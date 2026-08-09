@@ -12,8 +12,14 @@ import java.nio.file.Paths;
 public class WriteTool implements Tool {
 
     private final String workDir;
+    private final String skillsDir;
 
-    public WriteTool(String workDir) { this.workDir = workDir; }
+    public WriteTool(String workDir) { this(workDir, null); }
+
+    public WriteTool(String workDir, String skillsDir) {
+        this.workDir = workDir;
+        this.skillsDir = skillsDir;
+    }
 
     @Override
     public String name() { return "Write"; }
@@ -50,28 +56,44 @@ public class WriteTool implements Tool {
 
     /** 越界守卫：已存在路径交给 PathsGuard（toRealPath 防符号链接）；不存在路径向上找最深已存在祖先做真实路径校验 */
     private ToolResult outsideGuard(Path p) {
-        if (Files.exists(p)) return PathsGuard.errorIfOutside(workDir, p);
+        if (Files.exists(p)) return PathsGuard.errorIfOutside(workDir, skillsDir, p);
         Path probe = p;
         while (probe != null && !Files.exists(probe)) {
             probe = probe.getParent();
         }
         if (probe == null) {
             // 整个祖先链都不存在（工作路径本身缺失）：无符号链接可绕过，退回规范化词法包含检查
-            Path root = Paths.get(workDir).toAbsolutePath().normalize();
-            Path target = p.toAbsolutePath().normalize();
-            if (!target.startsWith(root)) {
+            if (!insideLexical(workDir, p) && !insideLexical(skillsDir, p)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
             return null;
         }
         try {
-            Path root = Paths.get(workDir).toRealPath();
-            if (!probe.toRealPath().startsWith(root)) {
+            Path probeReal = probe.toRealPath();
+            if (!probeReal.startsWith(Paths.get(workDir).toRealPath())
+                    && !insideReal(skillsDir, probeReal)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
         } catch (IOException e) {
             return ToolResult.error("无法解析路径: " + p);
         }
         return null;
+    }
+
+    /** 词法包含检查（dir 为 null/空时恒为 false）：不触发磁盘访问，用于祖先链全缺失的场景 */
+    private static boolean insideLexical(String dir, Path p) {
+        if (dir == null || dir.isEmpty()) return false;
+        Path root = Paths.get(dir).toAbsolutePath().normalize();
+        return p.toAbsolutePath().normalize().startsWith(root);
+    }
+
+    /** 真实路径包含检查（dir 为 null/空或不存在时恒为 false） */
+    private static boolean insideReal(String dir, Path p) {
+        if (dir == null || dir.isEmpty()) return false;
+        try {
+            return p.startsWith(Paths.get(dir).toRealPath());
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

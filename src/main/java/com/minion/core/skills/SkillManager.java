@@ -62,16 +62,16 @@ public class SkillManager {
                             if (yaml.get("name") != null) name = String.valueOf(yaml.get("name"));
                             if (yaml.get("description") != null) desc = String.valueOf(yaml.get("description"));
                         }
-                        return new Skill(name, desc, body.trim(), file.getFileName().toString());
+                        return new Skill(name, desc, body.trim(), file.toString());
                     } catch (Exception e) {
                         System.err.println("[minion] 技能 frontmatter 解析失败(" + file + "): " + e.getMessage());
-                        return new Skill(fallbackName, "", text.trim(), file.getFileName().toString());
+                        return new Skill(fallbackName, "", text.trim(), file.toString());
                     }
                 }
             }
-            return new Skill(fallbackName, "", text.trim(), file.getFileName().toString());
+            return new Skill(fallbackName, "", text.trim(), file.toString());
         } catch (IOException e) {
-            return new Skill(fallbackName, "", "(读取失败)", file.getFileName().toString());
+            return new Skill(fallbackName, "", "(读取失败)", file.toString());
         }
     }
 }

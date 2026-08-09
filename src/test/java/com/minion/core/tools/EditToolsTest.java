@@ -6,6 +6,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +32,49 @@ public class EditToolsTest {
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
     private Path p(String rel) { return Paths.get(work, rel); }
+
+    @Test
+    public void skillsDir_allowsWriteEdit() throws Exception {
+        Path skillsDir = Paths.get(System.getProperty("java.io.tmpdir"),
+                "minion-skills-write-" + System.nanoTime());
+        Path skillFile = skillsDir.resolve("t").resolve("SKILL.md");
+        Files.createDirectories(skillFile.getParent());
+        Files.write(skillFile, "旧内容".getBytes(StandardCharsets.UTF_8));
+        try {
+            WriteTool w = new WriteTool(work, skillsDir.toString());
+            EditTool e = new EditTool(work, skillsDir.toString());
+            String esc = skillFile.toString().replace("\\", "\\\\");
+
+            ToolResult wr = w.execute(args("{\"path\":\"" + esc + "\",\"content\":\"新内容\"}"));
+            assertTrue(wr.output, wr.ok);
+
+            ToolResult er = e.execute(args("{\"path\":\"" + esc
+                    + "\",\"oldString\":\"新内容\",\"newString\":\"更新后\"}"));
+            assertTrue(er.output, er.ok);
+            assertEquals("更新后",
+                    new String(Files.readAllBytes(skillFile), StandardCharsets.UTF_8));
+        } finally {
+            deleteRecursively(skillsDir);
+        }
+    }
+
+    private static void deleteRecursively(Path dir) throws Exception {
+        if (dir == null || !Files.exists(dir)) return;
+        Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file,
+                    java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+            @Override
+            public java.nio.file.FileVisitResult postVisitDirectory(Path d, IOException exc)
+                    throws IOException {
+                Files.delete(d);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+    }
 
     @Test
     public void write_newFile_andRiskFalse() throws Exception {

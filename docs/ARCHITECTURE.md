@@ -61,7 +61,7 @@ com.minion
 - `SchemaGenerator`：Java 结构 → JSON Schema
 - `ConfirmGate`：高危确认（Write 覆盖已有文件 / Edit 始终 / Bash 命中危险命令表）
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
-- `PathsGuard`：文件工具工作路径限制
+- `PathsGuard`：文件工具路径限制（工作路径 + 技能目录；技能目录可配置为工作路径外的绝对路径）
 - `example/ExampleTool`：新工具模板示例（未注册）
 
 ### core/skills/

@@ -11,8 +11,14 @@ import java.nio.file.Path;
 public class EditTool implements Tool {
 
     private final String workDir;
+    private final String skillsDir;
 
-    public EditTool(String workDir) { this.workDir = workDir; }
+    public EditTool(String workDir) { this(workDir, null); }
+
+    public EditTool(String workDir, String skillsDir) {
+        this.workDir = workDir;
+        this.skillsDir = skillsDir;
+    }
 
     @Override
     public String name() { return "Edit"; }
@@ -39,7 +45,7 @@ public class EditTool implements Tool {
         // T8 约定：存在性/目录检查在守卫之前；守卫的 toRealPath 对不存在的路径会误报越界
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, p);
         if (guard != null) return guard;
 
         String oldString = args.get("oldString").getAsString();

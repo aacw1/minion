@@ -32,6 +32,9 @@ public class SkillManagerTest {
         assertEquals("调试技能", s.description);
         assertTrue(s.instructions.contains("调试指令正文"));
         assertFalse(s.instructions.contains("---"));
+        // file 为源文件完整路径（供模型用 Read 读取），而非仅文件名
+        assertTrue(s.file.endsWith("SKILL.md"));
+        assertTrue(java.nio.file.Paths.get(s.file).isAbsolute());
     }
 
     @Test

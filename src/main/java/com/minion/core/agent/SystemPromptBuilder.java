@@ -35,8 +35,9 @@ public class SystemPromptBuilder {
         }
         if (allSkills != null && !allSkills.isEmpty()) {
             sb.append("\n\n=== 可用技能 ===\n");
-            sb.append("以下是可用的技能，当任务与之匹配时，建议用户输入 /skill <技能名> 加载：\n");
-            for (Skill s : allSkills) sb.append("- ").append(s.hint()).append('\n');
+            sb.append("以下是可用的技能，当任务与之匹配时，建议用户输入 /skill <技能名> 加载。\n");
+            sb.append("技能目录可能在工作路径之外，如需读取技能源文件，可直接用 Read 工具读取其绝对路径：\n");
+            for (Skill s : allSkills) sb.append("- ").append(s.hint()).append("（").append(s.file).append("）\n");
         }
         if (loadedSkills != null && !loadedSkills.isEmpty()) {
             sb.append("\n\n=== 已加载技能 ===\n");

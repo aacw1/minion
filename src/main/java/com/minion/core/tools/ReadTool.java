@@ -14,8 +14,14 @@ public class ReadTool implements Tool {
     private static final int DEFAULT_LIMIT = 2000;
 
     private final String workDir;
+    private final String skillsDir;
 
-    public ReadTool(String workDir) { this.workDir = workDir; }
+    public ReadTool(String workDir) { this(workDir, null); }
+
+    public ReadTool(String workDir, String skillsDir) {
+        this.workDir = workDir;
+        this.skillsDir = skillsDir;
+    }
 
     @Override
     public String name() { return "Read"; }
@@ -37,7 +43,7 @@ public class ReadTool implements Tool {
         Path p = PathsGuard.resolve(workDir, path);
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, p);
         if (guard != null) return guard;
 
         int offset = 0;

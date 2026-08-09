@@ -21,8 +21,14 @@ public class GlobTool implements Tool {
     private static final int MAX_RESULTS = 200;
 
     private final String workDir;
+    private final String skillsDir;
 
-    public GlobTool(String workDir) { this.workDir = workDir; }
+    public GlobTool(String workDir) { this(workDir, null); }
+
+    public GlobTool(String workDir, String skillsDir) {
+        this.workDir = workDir;
+        this.skillsDir = skillsDir;
+    }
 
     @Override
     public String name() { return "Glob"; }
@@ -46,22 +52,36 @@ public class GlobTool implements Tool {
         } catch (PatternSyntaxException e) {
             return ToolResult.error("glob 模式语法错误: " + e.getMessage());
         }
-        final Path root = Paths.get(workDir);
+        final Path workRoot = Paths.get(workDir);
         final List<String> found = new ArrayList<String>();
-        try {
-            Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    Path rel = root.relativize(file);
-                    if (matcher.matches(rel)) {
-                        found.add(rel.toString().replace('\\', '/'));
+        // 遍历根：工作路径 + 技能目录（若在工作路径之外且存在）。
+        // 工作路径内的结果输出相对路径；技能目录内的结果输出绝对路径（模型可直接 Read）
+        final List<Path> roots = new ArrayList<Path>();
+        roots.add(workRoot);
+        if (skillsDir != null && !skillsDir.isEmpty() && Files.isDirectory(Paths.get(skillsDir))) {
+            Path skillsAbs = Paths.get(skillsDir).toAbsolutePath().normalize();
+            if (!skillsAbs.startsWith(workRoot.toAbsolutePath().normalize())) roots.add(skillsAbs);
+        }
+        for (final Path root : roots) {
+            final boolean inWork = root.toAbsolutePath().normalize()
+                    .startsWith(workRoot.toAbsolutePath().normalize());
+            try {
+                Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        Path rel = root.relativize(file);
+                        if (matcher.matches(rel)) {
+                            found.add(inWork
+                                    ? rel.toString().replace('\\', '/')
+                                    : file.toString().replace('\\', '/'));
+                        }
+                        return found.size() >= MAX_RESULTS ? FileVisitResult.TERMINATE
+                                : FileVisitResult.CONTINUE;
                     }
-                    return found.size() >= MAX_RESULTS ? FileVisitResult.TERMINATE
-                            : FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            return ToolResult.error("无法遍历工作路径: " + e.getMessage());
+                });
+            } catch (IOException e) {
+                return ToolResult.error("无法遍历路径 " + root + ": " + e.getMessage());
+            }
         }
         StringBuilder sb = new StringBuilder();
         for (String f : found) sb.append(f).append('\n');
