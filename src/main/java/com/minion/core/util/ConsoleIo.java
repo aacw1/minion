@@ -30,6 +30,10 @@ import java.util.regex.Pattern;
  *      无条件执行：真实控制台（cmd/PowerShell）生效；mintty、SSH、管道、重定向等
  *      场景下 cmd 失败被忽略，对它们本来就按 UTF-8 读写，无需切换。
  *
+ * Win7 例外（win7-console-encoding 设计文档，2026-08-10）：Win7 控制台在 65001
+ * 代码页下渲染中文损坏（点阵字体无 CJK 字形、UTF-8 跨行丢字节），所以 Win7 真实
+ * 控制台不切 65001，输出跟随现有代码页（中文系统 936→GBK），见 consoleCharsetFor()。
+ *
  * 另外处理 jline 在非真实控制台（VS Code/Windows Terminal 的 ConPTY、SSH、mintty）
  * 下建不出真实终端、退回 dumb 终端的情况：dumb 终端的读写器按 JVM 默认字符集
  * （GBK）编码，❯ 等符号会变成 ?，中文输入也会乱。buildTerminal() 在此时直接构造
@@ -48,11 +52,17 @@ public class ConsoleIo {
         Charset cs = StandardCharsets.UTF_8;
         if (isWindows()) {
             if (System.console() != null) {
-                // 真实控制台（cmd/PowerShell 窗口）：先尝试切 UTF-8，再按实际代码页确定输出编码，
-                // 保证字节编码与控制台代码页一致——即使 chcp 未生效（子进程 chcp 改不到本控制台）也不乱码
-                switchConsoleCodePage();
-                int cp = queryConsoleCodePage();
-                if (cp > 0) cs = charsetForCodePage(cp);
+                // 真实控制台（cmd/PowerShell 窗口）：按系统版本分流，保证字节编码与控制台代码页一致
+                if (isWindows7()) {
+                    // Win7：65001 下控制台渲染中文损坏，不切代码页，输出跟随现有代码页
+                    // （中文系统 936→GBK，点阵字体渲染正常）；查询失败回退 JVM 默认编码
+                    cs = consoleCharsetFor(true, queryConsoleCodePage());
+                } else {
+                    // Win8.1+：先尝试切 UTF-8，再按实际代码页确定输出编码，
+                    // 即使 chcp 未生效（子进程 chcp 改不到本控制台）也不乱码
+                    switchConsoleCodePage();
+                    cs = consoleCharsetFor(false, queryConsoleCodePage());
+                }
             } else {
                 // ConPTY / mintty / 管道：无真实控制台，输出保持 UTF-8；chcp 尽力而为（生效则更好）
                 switchConsoleCodePage();
@@ -149,6 +159,17 @@ public class ConsoleIo {
         }
     }
 
+    /**
+     * 真实控制台输出编码决策（纯函数，可测）：
+     * 查询到代码页 → 按代码页映射（65001=UTF-8、936=GBK…）；
+     * 查询失败（-1）→ Win7 回退 JVM 默认编码（JDK8 中文系统为 GBK，与控制台 936 一致），
+     * Win8.1+ 回退 UTF-8（无控制台、管道、重定向场景保持 UTF-8 字节）。
+     */
+    static Charset consoleCharsetFor(boolean win7, int codePage) {
+        if (codePage > 0) return charsetForCodePage(codePage);
+        return win7 ? Charset.defaultCharset() : StandardCharsets.UTF_8;
+    }
+
     private static void rebindStdStreams(Charset cs) {
         try {
             // JDK8 无 PrintStream(OutputStream, boolean, Charset) 构造，用编码名字符串版
@@ -168,5 +189,14 @@ public class ConsoleIo {
 
     private static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
+    /** Win7 / Server 2008 R2：os.version 以 "6.1" 开头（SP 版本号 6.1.7600/6.1.7601 均含） */
+    private static boolean isWindows7() {
+        return isWindows7(System.getProperty("os.version", ""));
+    }
+
+    static boolean isWindows7(String osVersion) {
+        return osVersion.startsWith("6.1");
     }
 }

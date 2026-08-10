@@ -73,3 +73,14 @@ minion — 代码开发助手  (输入 /help 查看命令)
 
 选一个或直接描述你的想法都可以。
 * 8.6s · in 20.2k · out 835 · thinking 349 · ctx 4.7k/900k (1%)
+
+## Win7 控制台中文乱码说明（2026-08-10 修复）
+
+minion 在 Windows 上的控制台编码策略：Win8.1+ 自动切控制台代码页 65001 并以 UTF-8 输出；
+**Win7 不切代码页，输出跟随控制台现有代码页（中文系统 936→GBK）**——因为 Win7 控制台
+在 65001 下渲染中文损坏（点阵字体无 CJK 字形），而 936 下渲染正常。cmd 直接 `java -jar` 即可。
+
+**git bash 老版本**（如 2.x 早期，mintty 按 GBK 解码 UTF-8 字节）：标题栏右键 →
+Options → Text → Character set → 选 **UTF-8**；或直接升级 Git for Windows（新版默认 UTF-8）。
+
+注意：Windows 上不要加 `-Dfile.encoding=UTF-8` 启动参数，会导致真实控制台编码判断错误、重新乱码。

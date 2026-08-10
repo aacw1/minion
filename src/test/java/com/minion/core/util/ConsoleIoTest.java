@@ -4,8 +4,11 @@ import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.nio.charset.Charset;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ConsoleIoTest {
 
@@ -39,5 +42,36 @@ public class ConsoleIoTest {
         assertEquals("UTF-8", ConsoleIo.charsetForCodePage(-1).name());
         assertEquals("UTF-8", ConsoleIo.charsetForCodePage(0).name());
         assertEquals("UTF-8", ConsoleIo.charsetForCodePage(99999).name());
+    }
+
+    /** Win7 真实控制台：输出跟随现有代码页（936→GBK），查询失败回退 JVM 默认编码 */
+    @Test
+    public void consoleCharsetFor_win7_followsConsoleCodePage() {
+        assertEquals("GBK", ConsoleIo.consoleCharsetFor(true, 936).name());
+        assertEquals("UTF-8", ConsoleIo.consoleCharsetFor(true, 65001).name());
+        // 查询失败：回退 JVM 默认编码（JDK8 中文系统为 GBK，与控制台 936 一致）
+        assertEquals(Charset.defaultCharset(), ConsoleIo.consoleCharsetFor(true, -1));
+        assertEquals(Charset.defaultCharset(), ConsoleIo.consoleCharsetFor(true, 0));
+    }
+
+    /** Win8.1+：按代码页映射，查询失败回退 UTF-8（现状不变） */
+    @Test
+    public void consoleCharsetFor_modern_fallsBackToUtf8() {
+        assertEquals("UTF-8", ConsoleIo.consoleCharsetFor(false, 65001).name());
+        assertEquals("GBK", ConsoleIo.consoleCharsetFor(false, 936).name());
+        assertEquals("UTF-8", ConsoleIo.consoleCharsetFor(false, -1).name());
+        assertEquals("UTF-8", ConsoleIo.consoleCharsetFor(false, 0).name());
+    }
+
+    /** Win7 识别：6.1 = Win7 / Server 2008 R2（含 SP 版本号） */
+    @Test
+    public void isWindows7_detectsSixPointOne() {
+        assertTrue(ConsoleIo.isWindows7("6.1"));
+        assertTrue(ConsoleIo.isWindows7("6.1.7600"));
+        assertTrue(ConsoleIo.isWindows7("6.1.7601"));
+        assertFalse(ConsoleIo.isWindows7("6.2"));
+        assertFalse(ConsoleIo.isWindows7("6.3.9600"));
+        assertFalse(ConsoleIo.isWindows7("10.0"));
+        assertFalse(ConsoleIo.isWindows7(""));
     }
 }
