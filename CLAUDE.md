@@ -1,6 +1,6 @@
 # CLAUDE.md — minion 开发指引
 
-minion：类 Claude Code 的命令行代码开发助手，Java 实现，对接 DeepSeek（thinking max）。
+minion：类 Claude Code 的命令行代码开发助手，Java 实现，对接多供应商 LLM（deepseek/qwen，OpenAI 兼容协议）。
 JDK 8 + Maven 单模块。依赖：gson、okhttp 3.x、jline、snakeyaml（测试：junit4、mockwebserver）。
 
 ## 常用命令

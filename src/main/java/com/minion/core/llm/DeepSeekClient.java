@@ -1,6 +1,7 @@
 package com.minion.core.llm;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import okhttp3.MediaType;
@@ -13,11 +14,12 @@ import okio.BufferedSource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-/** DeepSeek Chat Completions 流式客户端（SSE）。 */
+/** OpenAI 兼容 Chat Completions 流式客户端（SSE），内置 deepseek/qwen 思考参数适配。 */
 public class DeepSeekClient implements LlmClient {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -29,15 +31,17 @@ public class DeepSeekClient implements LlmClient {
     private final String model;
     private final boolean thinking;
     private final String reasoningEffort;
+    private final String provider;
     private final OkHttpClient http;
 
     public DeepSeekClient(String url, String apiKey, String model,
-                          boolean thinking, String reasoningEffort) {
+                          boolean thinking, String reasoningEffort, String provider) {
         this.url = url;
         this.apiKey = apiKey;
         this.model = model;
         this.thinking = thinking;
         this.reasoningEffort = reasoningEffort;
+        this.provider = provider;
         this.http = new OkHttpClient.Builder()
                 .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
                 .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
@@ -48,11 +52,16 @@ public class DeepSeekClient implements LlmClient {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("stream", true);
-        if (thinking) {
-            JsonObject th = new JsonObject();
-            th.addProperty("type", "enabled");
-            body.add("thinking", th);
-            body.addProperty("reasoning_effort", reasoningEffort);
+        // 按供应商生成思考参数（deepseek: thinking/reasoning_effort；qwen: enable_thinking）
+        JsonObject tp = thinkingParams(provider, thinking, reasoningEffort);
+        if (tp != null) {
+            for (Map.Entry<String, JsonElement> e : tp.entrySet()) body.add(e.getKey(), e.getValue());
+        }
+        // qwen 流式默认不返回 usage，需显式 include_usage；deepseek 不发送（零回归）
+        if ("qwen".equalsIgnoreCase(provider)) {
+            JsonObject so = new JsonObject();
+            so.addProperty("include_usage", true);
+            body.add("stream_options", so);
         }
         JsonArray msgs = new JsonArray();
         for (Message m : messages) msgs.add(m.toApiJson());
@@ -67,6 +76,23 @@ public class DeepSeekClient implements LlmClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .post(RequestBody.create(JSON, body.toString()));
         return rb.build();
+    }
+
+    /** 按供应商生成思考参数；deepseek/未知关闭思考时返回 null（不发参数）。
+     *  qwen3 混合模型默认开思考，必须显式传 enable_thinking=false 才关，故关闭时也返回参数。 */
+    static JsonObject thinkingParams(String provider, boolean thinking, String reasoningEffort) {
+        if ("qwen".equalsIgnoreCase(provider)) {
+            JsonObject o = new JsonObject();
+            o.addProperty("enable_thinking", thinking);
+            return o;
+        }
+        if (!thinking) return null;
+        JsonObject o = new JsonObject();
+        JsonObject th = new JsonObject();
+        th.addProperty("type", "enabled");
+        o.add("thinking", th);
+        o.addProperty("reasoning_effort", reasoningEffort);
+        return o;
     }
 
     /** 全部 in-flight 请求（多子 agent 并行时不止一个） */

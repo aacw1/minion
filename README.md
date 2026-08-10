@@ -1,4 +1,4 @@
-个人助手，代码开发工具，使用java8开发，只有基础依赖，打完包2M，对接大模型（目前是deepseek），含有子agent、工具（包含网页抓取）、上下文压缩、风险操作确认、使用技能等功能。个人学习项目。解决公司内网win7不能使用编程助手的问题。结合superpowers使用效率大增。
+个人助手，代码开发工具，使用java8开发，只有基础依赖，打完包2M，对接多供应商大模型（deepseek/qwen，OpenAI 兼容协议），含有子agent、工具（包含网页抓取）、上下文压缩、风险操作确认、使用技能等功能。个人学习项目。解决公司内网win7不能使用编程助手的问题。结合superpowers使用效率大增。
 
 使用示例，文字根据不同情况是有不同颜色的,粘贴进来的只有文本：
 
@@ -73,6 +73,25 @@ minion — 代码开发助手  (输入 /help 查看命令)
 
 选一个或直接描述你的想法都可以。
 * 8.6s · in 20.2k · out 835 · thinking 349 · ctx 4.7k/900k (1%)
+
+## 模型供应商配置（deepseek / qwen）
+
+默认对接 deepseek（thinking max）。切千问（阿里百炼 DashScope OpenAI 兼容模式）改 jar 同目录 config.properties 的 5 项：
+
+    model.provider=qwen
+    model.url=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+    model.key=sk-你的百炼APIKey
+    # 选混合模型（qwen3 系列/qwen-plus）；纯思考模型（qwq/-thinking 变体）思考不可关闭
+    model.name=qwen3-max
+    # 千问窗口通常 128k~256k；默认 900000 会超窗报 400
+    model.maxContextTokens=131072
+
+说明：
+
+- `model.thinking=true` 时按供应商翻译思考参数：deepseek → `thinking`/`reasoning_effort`；qwen → `enable_thinking`（qwen3 混合模型默认开思考，关闭时同样显式传 `enable_thinking:false`）
+- qwen 下请求自动带 `stream_options: {include_usage: true}`（token 统计准确）
+- `model.provider` 为未知值时回退 deepseek 行为
+- 模板参考：源码目录 `src/resource/config_deepseek.properties` / `config_qwen.properties`（仅记录，实际生效仍为 jar 同目录的 `config.properties`）
 
 ## Win7 控制台中文乱码说明（2026-08-10 修复）
 

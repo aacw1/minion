@@ -11,7 +11,7 @@ com.minion
 ├── cli/                    JLine REPL、ANSI 渲染、命令分发、确认提示、启动横幅、统计行
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder
-    ├── llm/                DeepSeekClient（SSE 流式）、Message、ToolCall、Usage、UsageTracker
+    ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ToolCall、Usage、UsageTracker
     ├── tools/              Tool 接口、ToolRegistry、9 个工具、SchemaGenerator、confirm/（ConfirmGate、ConfirmUi）、PathsGuard
     ├── skills/             SkillManager、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、TokenCounter
@@ -50,7 +50,7 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| LlmClient / DeepSeekClient | SSE 流式请求；HTTP 连接 30s / 读取 300s（写死常量） |
+| LlmClient / DeepSeekClient | SSE 流式请求（内置 deepseek/qwen 思考参数适配）；HTTP 连接 30s / 读取 300s（写死常量） |
 | Message | 消息模型（role/content/reasoningContent/toolCalls/toolCallId/name/summary）；assistant 的 reasoningContent 必须原样回传（DeepSeek 硬性要求） |
 | ToolCall / Usage / UsageTracker | 工具调用增量解析；按轮+会话累计 input/output/thinking |
 

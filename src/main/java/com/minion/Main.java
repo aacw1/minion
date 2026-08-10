@@ -44,7 +44,8 @@ public class Main {
         }
 
         LlmClient llm = new DeepSeekClient(config.modelUrl(), config.modelKey(),
-                config.modelName(), config.thinkingEnabled(), config.reasoningEffort());
+                config.modelName(), config.thinkingEnabled(), config.reasoningEffort(),
+                config.provider());
         // 确认交互不在此处建 Terminal/LineReader：REPL 启动时创建全应用唯一 reader 后注入，
         // 否则两个 DumbTerminal 的后台读取线程会竞争抢读 System.in（按键随机错分）
         ConfirmReader confirmReader = new ConfirmReader();

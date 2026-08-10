@@ -28,8 +28,12 @@ public class DeepSeekClientTest {
     public void teardown() throws Exception { server.shutdown(); }
 
     private DeepSeekClient newClient() {
+        return newClient("deepseek", true, "max");
+    }
+
+    private DeepSeekClient newClient(String provider, boolean thinking, String reasoningEffort) {
         return new DeepSeekClient(server.url("/").toString(),
-                "sk-test", "deepseek-v4-flash", true, "max");
+                "sk-test", "deepseek-v4-flash", thinking, reasoningEffort, provider);
     }
 
     @Test
@@ -79,6 +83,7 @@ public class DeepSeekClientTest {
         assertTrue(json.get("stream").getAsBoolean());
         assertEquals("max", json.get("reasoning_effort").getAsString());
         assertEquals("enabled", json.getAsJsonObject("thinking").get("type").getAsString());
+        assertFalse(json.has("stream_options")); // deepseek 零回归：不发送 stream_options
     }
 
     @Test
@@ -262,5 +267,120 @@ public class DeepSeekClientTest {
         assertEquals(100, usage.inputTokens);
         assertEquals(50, usage.outputTokens);
         assertEquals(20, usage.reasoningTokens);
+    }
+
+    // ===== 多供应商：thinkingParams 纯函数 =====
+
+    @Test
+    public void thinkingParams_deepseekEnabled() {
+        JsonObject p = DeepSeekClient.thinkingParams("deepseek", true, "max");
+        assertNotNull(p);
+        assertEquals("enabled", p.getAsJsonObject("thinking").get("type").getAsString());
+        assertEquals("max", p.get("reasoning_effort").getAsString());
+    }
+
+    @Test
+    public void thinkingParams_deepseekDisabled_returnsNull() {
+        assertNull(DeepSeekClient.thinkingParams("deepseek", false, "max"));
+    }
+
+    @Test
+    public void thinkingParams_qwenEnabled() {
+        JsonObject p = DeepSeekClient.thinkingParams("qwen", true, "max");
+        assertNotNull(p);
+        assertTrue(p.get("enable_thinking").getAsBoolean());
+        assertFalse(p.has("thinking"));
+        assertFalse(p.has("reasoning_effort"));
+    }
+
+    @Test
+    public void thinkingParams_qwenDisabled() {
+        JsonObject p = DeepSeekClient.thinkingParams("qwen", false, "max");
+        assertNotNull(p);
+        assertFalse(p.get("enable_thinking").getAsBoolean());
+    }
+
+    @Test
+    public void thinkingParams_unknownProvider_fallsBackToDeepseek() {
+        JsonObject p = DeepSeekClient.thinkingParams("other", true, "max");
+        assertNotNull(p);
+        assertEquals("enabled", p.getAsJsonObject("thinking").get("type").getAsString());
+        assertEquals("max", p.get("reasoning_effort").getAsString());
+    }
+
+    // ===== 多供应商：qwen 请求体 =====
+
+    @Test
+    public void request_qwenEnabled_sendsEnableThinkingAndStreamOptions() throws Exception {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n", 1));
+        newClient("qwen", true, "max").streamChat(
+                Collections.<Message>singletonList(Message.user("hi")), null,
+                new StreamHandler() {
+                    @Override
+                    public void onFinish(String finishReason, Usage usage, List<ToolCall> toolCalls) { }
+                });
+        RecordedRequest req = server.takeRequest();
+        JsonObject json = JsonParser.parseString(req.getBody().readUtf8()).getAsJsonObject();
+        assertTrue(json.get("enable_thinking").getAsBoolean());
+        assertFalse(json.has("thinking"));
+        assertFalse(json.has("reasoning_effort"));
+        assertTrue(json.getAsJsonObject("stream_options").get("include_usage").getAsBoolean());
+    }
+
+    @Test
+    public void request_qwenDisabled_sendsEnableThinkingFalse() throws Exception {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n", 1));
+        newClient("qwen", false, "max").streamChat(
+                Collections.<Message>singletonList(Message.user("hi")), null,
+                new StreamHandler() {
+                    @Override
+                    public void onFinish(String finishReason, Usage usage, List<ToolCall> toolCalls) { }
+                });
+        RecordedRequest req = server.takeRequest();
+        JsonObject json = JsonParser.parseString(req.getBody().readUtf8()).getAsJsonObject();
+        assertFalse(json.get("enable_thinking").getAsBoolean());
+        assertTrue(json.getAsJsonObject("stream_options").get("include_usage").getAsBoolean());
+    }
+
+    @Test
+    public void request_unknownProvider_fallsBackToDeepseekBody() throws Exception {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n", 1));
+        newClient("other", true, "max").streamChat(
+                Collections.<Message>singletonList(Message.user("hi")), null,
+                new StreamHandler() {
+                    @Override
+                    public void onFinish(String finishReason, Usage usage, List<ToolCall> toolCalls) { }
+                });
+        RecordedRequest req = server.takeRequest();
+        JsonObject json = JsonParser.parseString(req.getBody().readUtf8()).getAsJsonObject();
+        assertEquals("enabled", json.getAsJsonObject("thinking").get("type").getAsString());
+        assertEquals("max", json.get("reasoning_effort").getAsString());
+        assertFalse(json.has("enable_thinking"));
+        assertFalse(json.has("stream_options"));
+    }
+
+    @Test
+    public void request_deepseekDisabled_sendsNoThinkingParams() throws Exception {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n", 1));
+        newClient("deepseek", false, "max").streamChat(
+                Collections.<Message>singletonList(Message.user("hi")), null,
+                new StreamHandler() {
+                    @Override
+                    public void onFinish(String finishReason, Usage usage, List<ToolCall> toolCalls) { }
+                });
+        RecordedRequest req = server.takeRequest();
+        JsonObject json = JsonParser.parseString(req.getBody().readUtf8()).getAsJsonObject();
+        assertFalse(json.has("thinking"));
+        assertFalse(json.has("reasoning_effort"));
+        assertFalse(json.has("enable_thinking"));
+        assertFalse(json.has("stream_options"));
     }
 }

@@ -93,6 +93,7 @@ public class Config {
     public String modelUrl()     { return get("model.url", ""); }
     public String modelKey()     { return get("model.key", ""); }
     public String modelName()    { return get("model.name", "deepseek-v4-flash"); }
+    public String provider()     { return get("model.provider", "deepseek"); }
     public boolean thinkingEnabled() { return Boolean.parseBoolean(get("model.thinking", "true")); }
     public String reasoningEffort()  { return get("model.reasoningEffort", "max"); }
     public int maxContextTokens() {
