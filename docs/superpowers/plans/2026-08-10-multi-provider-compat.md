@@ -366,3 +366,103 @@ git commit -m "docs: 更新多供应商模型配置说明
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 4: 新增供应商配置模板文件
+
+**Files:**
+- Create: `src/resource/config_deepseek.properties`
+- Create: `src/resource/config_qwen.properties`
+- Modify: `README.md`（"模型供应商配置"章节追加模板说明一行）
+
+**Interfaces:**
+- Consumes: Task 2 完成的 `model.provider` 配置项
+- Produces: 两个纯记录性模板文件（仅参考，Config 只读 `/config.properties`，不读取这两个文件；不会影响任何逻辑）
+
+**说明：** 两个文件仅用于记录/参考模板，实际生效的始终是 jar 同目录的 `config.properties`。`model.key` 一律留空。
+
+- [ ] **Step 1: 创建 config_deepseek.properties**
+
+`src/resource/config_deepseek.properties`（与 src/resource/config.properties 一致的完整结构，key 留空）：
+
+```properties
+# ===== 模型（deepseek，默认供应商） =====
+# 本文件仅供记录/参考模板，实际生效的是 jar 同目录的 config.properties
+model.provider=deepseek
+model.url=https://api.deepseek.com/v1/chat/completions
+model.key=
+model.name=deepseek-v4-flash
+model.thinking=true
+model.reasoningEffort=max
+model.maxContextTokens=900000
+
+# ===== 上下文压缩 =====
+context.compressThreshold=0.8
+context.keepRecentMessages=10
+
+# ===== 路径 =====
+work.dir=.
+project.md.path=./project.md
+skills.dir=./skills
+session.dir=./.minion/sessions
+
+# ===== 高危操作确认 =====
+confirm.skip=false
+confirm.whitelist.tools=
+confirm.whitelist.commands=
+
+# ===== UI =====
+ui.color=true
+```
+
+- [ ] **Step 2: 创建 config_qwen.properties**
+
+`src/resource/config_qwen.properties`（完整结构，key 留空，maxContextTokens 按千问窗口调小）：
+
+```properties
+# ===== 模型（qwen 示例，阿里百炼 DashScope OpenAI 兼容模式） =====
+# 本文件仅供记录/参考模板，实际生效的是 jar 同目录的 config.properties
+model.provider=qwen
+model.url=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+model.key=
+model.name=qwen3-max        # 选混合模型（qwen3 系列/qwen-plus）；纯思考模型（qwq/-thinking 变体）思考不可关闭
+model.thinking=true
+model.reasoningEffort=max   # 仅 deepseek 使用，qwen 忽略
+model.maxContextTokens=131072   # 千问窗口通常 128k~256k
+
+# ===== 上下文压缩 =====
+context.compressThreshold=0.8
+context.keepRecentMessages=10
+
+# ===== 路径 =====
+work.dir=.
+project.md.path=./project.md
+skills.dir=./skills
+session.dir=./.minion/sessions
+
+# ===== 高危操作确认 =====
+confirm.skip=false
+confirm.whitelist.tools=
+confirm.whitelist.commands=
+
+# ===== UI =====
+ui.color=true
+```
+
+- [ ] **Step 3: README 模板说明追加一行**
+
+`README.md` 的"模型供应商配置"章节（Task 3 Step 2 插入的段落）末尾追加：
+
+```markdown
+- 模板参考：源码目录 `src/resource/config_deepseek.properties` / `config_qwen.properties`（仅记录，实际生效仍为 jar 同目录的 `config.properties`）
+```
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src/resource/config_deepseek.properties src/resource/config_qwen.properties README.md
+git commit -m "docs: 新增供应商配置模板文件（仅记录用）
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
