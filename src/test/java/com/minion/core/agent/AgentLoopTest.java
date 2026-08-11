@@ -468,4 +468,100 @@ public class AgentLoopTest {
             handler.onFinish("stop", u, new ArrayList<ToolCall>());
         }
     }
+
+    private static long stuckHints(List<Message> msgs) {
+        return msgs.stream().filter(m ->
+                m.role == Message.Role.USER && m.content != null && m.content.contains("[系统提醒]")).count();
+    }
+
+    private static ToolCall failingCall(int i) {
+        ToolCall tc = new ToolCall();
+        tc.id = "f" + i;
+        tc.name = "failing";
+        tc.arguments = "{}";
+        return tc;
+    }
+
+    @Test
+    public void defaultRoundLimit_is1000() {
+        assertEquals(1000, AgentLoop.DEFAULT_ROUND_LIMIT);
+    }
+
+    @Test
+    public void stuck_30ConsecutiveFailures_injectsReminder() {
+        registry.register(new FailingTool());
+        for (int i = 0; i < 30; i++) {
+            llm.addTurnWithTools(Collections.singletonList(failingCall(i)), null);
+        }
+        llm.addTurn("好的，我需要用户补充信息");
+        AgentLoop loop = newLoop();
+        loop.roundLimit = 40;
+        loop.runUserTurn("任务");
+        assertEquals(1, stuckHints(loop.messages()));
+        Message hint = loop.messages().stream().filter(m ->
+                m.role == Message.Role.USER && m.content != null && m.content.contains("[系统提醒]"))
+                .findFirst().get();
+        assertTrue(hint.content.contains("30 次"));
+        assertTrue(loop.messages().get(loop.messages().size() - 1).role == Message.Role.ASSISTANT);
+        assertTrue(ui.warnings.stream().anyMatch(w -> w.contains("工具连续失败")));
+    }
+
+    @Test
+    public void stuck_29Failures_noReminder() {
+        registry.register(new FailingTool());
+        for (int i = 0; i < 29; i++) {
+            llm.addTurnWithTools(Collections.singletonList(failingCall(i)), null);
+        }
+        llm.addTurn("结束");
+        AgentLoop loop = newLoop();
+        loop.roundLimit = 40;
+        loop.runUserTurn("任务");
+        assertEquals(0, stuckHints(loop.messages()));
+    }
+
+    @Test
+    public void stuck_successResetsCounter() {
+        registry.register(new FailingTool());
+        for (int i = 0; i < 10; i++) {
+            llm.addTurnWithTools(Collections.singletonList(failingCall(i)), null);
+        }
+        ToolCall ok = new ToolCall();
+        ok.id = "ok";
+        ok.name = "example";
+        ok.arguments = "{\"text\":\"x\"}";
+        llm.addTurnWithTools(Collections.singletonList(ok), null);
+        for (int i = 0; i < 29; i++) {
+            llm.addTurnWithTools(Collections.singletonList(failingCall(100 + i)), null);
+        }
+        llm.addTurn("结束");
+        AgentLoop loop = newLoop();
+        loop.roundLimit = 60;
+        loop.runUserTurn("任务");
+        // 成功清零后仅 29 次连续失败，不注入
+        assertEquals(0, stuckHints(loop.messages()));
+    }
+
+    @Test
+    public void stuck_injectionResetsCounter_second30InjectsAgain() {
+        registry.register(new FailingTool());
+        for (int i = 0; i < 60; i++) {
+            llm.addTurnWithTools(Collections.singletonList(failingCall(i)), null);
+        }
+        llm.addTurn("结束");
+        AgentLoop loop = newLoop();
+        loop.roundLimit = 70;
+        loop.runUserTurn("任务");
+        // 注入后计数重置：60 次失败 → 两次提醒
+        assertEquals(2, stuckHints(loop.messages()));
+    }
+
+    /** 总是失败的测试工具：驱动连续失败计数 */
+    public static class FailingTool implements Tool {
+        @Override public String name() { return "failing"; }
+        @Override public String description() { return "总是失败的测试工具"; }
+        @Override public JsonObject schema() {
+            return com.minion.core.tools.SchemaGenerator.objectSchema("失败", new String[0], new String[0]);
+        }
+        @Override public ToolResult execute(JsonObject args) { return ToolResult.error("模拟失败"); }
+    }
 }

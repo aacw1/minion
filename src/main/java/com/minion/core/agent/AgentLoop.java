@@ -29,7 +29,7 @@ import java.util.concurrent.Future;
 /** 主 agent 循环：请求 → 工具执行 → 回传，直到模型不再调用工具。 */
 public class AgentLoop {
 
-    public static final int DEFAULT_ROUND_LIMIT = 10000;
+    public static final int DEFAULT_ROUND_LIMIT = 1000;
 
     private final Config config;
     private final LlmClient llm;
@@ -50,6 +50,10 @@ public class AgentLoop {
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
+    /** 连续工具失败止损阈值：达到后注入提醒让模型停止尝试并请求用户补充信息 */
+    private static final int STUCK_THRESHOLD = 30;
+    /** 连续失败工具计数（成功即清零；注入提醒后重置） */
+    private int consecutiveToolErrors = 0;
     public int threads = 4;
     private final ExecutorService pool;
     /** 进行中的工具 future（供 interrupt() 取消） */
@@ -333,6 +337,11 @@ public class AgentLoop {
                             break; // 已被 interrupt() 取消，本轮剩余工具结果丢弃
                         }
                         if (result == null) result = ToolResult.error("工具执行失败");
+                        if (result.ok) {
+                            consecutiveToolErrors = 0;
+                        } else {
+                            consecutiveToolErrors++;
+                        }
                         session.messages.add(Message.toolResult(
                                 calls.get(i).id, calls.get(i).name, result.output));
                         ui.onToolResult(calls.get(i).name, result);
@@ -341,6 +350,18 @@ public class AgentLoop {
                     synchronized (inFlight) {
                         inFlight.clear();
                     }
+                }
+                // 卡住止损：连续失败达阈值时注入系统提醒（user 消息而非 system——
+                // OpenAI 兼容 API 只接受首条 system，插在对话中间会 400），
+                // 模型下轮应输出提问文本而非再调工具；注入后计数重置，roundLimit 为最外层兜底
+                if (consecutiveToolErrors >= STUCK_THRESHOLD) {
+                    String hint = "[系统提醒] 你已连续 " + consecutiveToolErrors
+                            + " 次工具调用失败。请停止调用工具，向用户说明已尝试的方案、失败原因，"
+                            + "并列出完成任务还需要用户补充的信息或需要用户选择的方案。";
+                    session.messages.add(Message.user(hint));
+                    ui.onWarning("工具连续失败 " + consecutiveToolErrors
+                            + " 次，已提醒模型停止尝试并请求用户补充信息");
+                    consecutiveToolErrors = 0;
                 }
                 // 工具结果已入历史，每轮落盘一次（含中断取消提前退出的情况）
                 persistSession();
