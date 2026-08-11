@@ -59,6 +59,19 @@ public class SystemPromptBuilderTest {
     }
 
     @Test
+    public void build_includesStuckStopRule() throws Exception {
+        Path work = tmp.getRoot().toPath();
+        File cf = new File(work.toFile(), "config.properties");
+        Files.write(cf.toPath(), "model.name=x\n".getBytes(StandardCharsets.UTF_8));
+        com.minion.core.config.Config config = com.minion.core.config.Config.load(work);
+        String prompt = new SystemPromptBuilder(config).build(
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList());
+        assertTrue(prompt.contains("停止调用工具"));
+        assertTrue(prompt.contains("不要反复重试同一方法"));
+    }
+
+    @Test
     public void build_clarificationRuleIsFirst() throws Exception {
         Path work = tmp.getRoot().toPath();
         File cf = new File(work.toFile(), "config.properties");
