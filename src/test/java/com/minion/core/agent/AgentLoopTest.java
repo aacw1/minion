@@ -9,6 +9,7 @@ import com.minion.core.llm.StreamHandler;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.llm.Usage;
 import com.minion.core.skills.Skill;
+import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
@@ -340,6 +341,27 @@ public class AgentLoopTest {
         assertEquals(0, loop.session().todos.items.size());
         assertEquals(0, loop.usage().sessionTotal());
         assertEquals(tmp.getRoot().toPath(), ws.cwd());
+    }
+
+    /** T4:persistSession 落盘前快照当前 cwd。此前会话文件 cwd 恒为 null(所有保存入口
+     *  只序列化 session 自身),/resume 后 cd 跨会话持久化静默失效 */
+    @Test
+    public void persistSession_serializesCurrentCwd() throws Exception {
+        Path sub = tmp.newFolder("sub").toPath();
+        Path storeDir = tmp.newFolder("sessions").toPath();
+        SessionStore store = new SessionStore(storeDir);
+        Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
+        AgentLoop loop = new AgentLoop(config, llm, registry,
+                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        loop.setSessionStore(store);
+        ws.cd(sub.toString());
+        loop.persistSession();
+        // 断言基于落盘文件内容而非内存对象:cd 后会话文件 cwd 必须是子目录绝对路径
+        String json = new String(Files.readAllBytes(storeDir.resolve(loop.session().id + ".json")),
+                StandardCharsets.UTF_8);
+        JsonObject saved = JsonParser.parseString(json).getAsJsonObject();
+        assertEquals(sub.toAbsolutePath().normalize().toString(),
+                saved.get("cwd").getAsString());
     }
 
     /** Task 6 回归：startNewSession 重新生成 id/createdAt。旧 id 会话已随 /new 落盘，

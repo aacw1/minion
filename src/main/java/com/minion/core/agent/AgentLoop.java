@@ -114,6 +114,16 @@ public class AgentLoop {
         }
     }
 
+    /**
+     * 落盘当前会话:先快照当前工作区 cwd 到会话再保存。
+     * 此前会话文件 cwd 恒为 null,/resume 后 cd 跨会话持久化静默失效;
+     * 所有保存入口(自动落盘/退出保存//new 预保存)统一走本方法。
+     */
+    public void persistSession() {
+        session.cwd = workspace.cwd().toString();
+        saveSession();
+    }
+
     /** 当前系统提示（含已加载技能），子 agent 复用 */
     public String buildSystemPrompt() {
         return promptBuilder.build(allSkills, loadedSkills);
@@ -333,7 +343,7 @@ public class AgentLoop {
                     }
                 }
                 // 工具结果已入历史，每轮落盘一次（含中断取消提前退出的情况）
-                saveSession();
+                persistSession();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -346,7 +356,7 @@ public class AgentLoop {
             scrubHalfTurn(); // 兜底：任何中断退出路径（含工具阶段）的 toolCalls 半轮残留清洗
         }
         // 所有退出路径的兜底落盘：正常结束 / 轮数上限 / 错误 / 中断 / 异常
-        saveSession();
+        persistSession();
     }
 
     /** 中断时把已收到的流式内容补进历史；不含 toolCalls（切断的 tool_calls 流不可信） */

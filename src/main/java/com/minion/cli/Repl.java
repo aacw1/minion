@@ -108,11 +108,7 @@ public class Repl {
                 renderer().printlnStats(stats);
             }
         }
-        try {
-            store.save(loop.session());
-        } catch (Exception e) {
-            System.out.println("退出保存失败: " + e.getMessage());
-        }
+        loop.persistSession(); // 退出前落盘(cwd 一并快照),失败经 ui 告警不阻断退出
         System.out.println("再见");
     }
 
@@ -139,12 +135,10 @@ public class Repl {
                     System.out.println("已清空当前上下文");
                     break;
                 case NEW:
-                    try {
-                        store.save(loop.session());
-                        System.out.println("已保存当前会话");
-                    } catch (Exception e) {
-                        System.out.println("保存当前会话失败: " + e.getMessage());
-                    }
+                    // 先落盘(cwd 一并快照)再开新会话,顺序不可颠倒:/new 会重新生成 id,
+                    // 先保存保证旧 id 会话文件不被新会话的自动落盘覆盖
+                    loop.persistSession();
+                    System.out.println("已保存当前会话");
                     loop.startNewSession();
                     System.out.println("已开始新会话");
                     break;
