@@ -59,6 +59,11 @@ public class Main {
         ConfirmReader confirmReader = new ConfirmReader();
         ConfirmUi confirmUi = confirmReader;
         Renderer renderer = new Renderer(config.uiColor());
+        // 交互模式下确认用 ConfirmReader；-c 模式全部放行（脚本化）。
+        // 读逃逸确认需要注入读工具，ConfirmGate 须在读工具注册前创建
+        ConfirmGate confirm = new ConfirmGate(config,
+                args.length >= 2 && "-c".equals(args[0])
+                        ? ui -> ConfirmUi.Decision.APPROVE : confirmUi);
 
         ToolRegistry registry = new ToolRegistry();
         String workDir = config.workDir();
@@ -67,11 +72,11 @@ public class Main {
         String skillsDir = Paths.get(config.skillsDir()).toAbsolutePath().normalize().toString();
         // 会话级工作区：Bash 与文件工具共用同一实例，cd 后文件相对路径跟随 cwd
         Workspace workspace = new Workspace(workDir);
-        registry.register(new ReadTool(workspace, skillsDir));
+        registry.register(new ReadTool(workspace, skillsDir, confirm));
         registry.register(new WriteTool(workspace, skillsDir));
         registry.register(new EditTool(workspace, skillsDir));
-        registry.register(new GlobTool(workspace, skillsDir));
-        registry.register(new GrepTool(workspace, skillsDir));
+        registry.register(new GlobTool(workspace, skillsDir, confirm));
+        registry.register(new GrepTool(workspace, skillsDir, confirm));
         registry.register(new BashTool(workspace));
         registry.register(new WebFetchTool());
 
@@ -91,11 +96,6 @@ public class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> chrome.stop()));
 
         SessionStore store = new SessionStore(Paths.get(config.sessionDir()));
-
-        // 交互模式下确认用 ConfirmReader；-c 模式全部放行（脚本化）
-        ConfirmGate confirm = new ConfirmGate(config,
-                args.length >= 2 && "-c".equals(args[0])
-                        ? ui -> ConfirmUi.Decision.APPROVE : confirmUi);
 
         // systemTokens：按当前技能+项目提示实际拼出的系统提示长度估算（比 buildSystemPreview 更准）
         ContextManager ctx = new ContextManager(config.maxContextTokens(),
