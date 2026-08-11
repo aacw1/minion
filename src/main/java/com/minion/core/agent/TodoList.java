@@ -20,6 +20,11 @@ public class TodoList {
 
     public final List<TodoItem> items = new ArrayList<TodoItem>();
 
+    /** 清空全部任务（原地清理：/new 复用实例，工具持有的引用保持有效） */
+    public void clear() {
+        items.clear();
+    }
+
     public void replace(List<TodoItem> newItems) {
         items.clear();
         items.addAll(newItems);

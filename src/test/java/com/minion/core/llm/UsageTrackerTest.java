@@ -21,4 +21,18 @@ public class UsageTrackerTest {
         assertEquals(380, t.sessionTotal());
         assertEquals(u2, t.last());
     }
+
+    @Test
+    public void reset_clearsCountersAndLast() {
+        UsageTracker t = new UsageTracker();
+        Usage u = new Usage();
+        u.inputTokens = 100; u.outputTokens = 50; u.reasoningTokens = 20;
+        t.record(u);
+        t.reset();
+        assertEquals(0, t.sessionInput());
+        assertEquals(0, t.sessionOutput());
+        assertEquals(0, t.sessionThinking());
+        assertEquals(0, t.sessionTotal());
+        assertEquals(null, t.last());
+    }
 }

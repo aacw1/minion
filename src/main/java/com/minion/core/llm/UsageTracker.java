@@ -19,4 +19,12 @@ public class UsageTracker {
     public synchronized int sessionThinking() { return sessionThinking; }
     public synchronized int sessionTotal() { return sessionInput + sessionOutput; }
     public synchronized Usage last() { return last; }
+
+    /** 清零本轮统计（/new 复用实例，不清引用） */
+    public synchronized void reset() {
+        sessionInput = 0;
+        sessionOutput = 0;
+        sessionThinking = 0;
+        last = null;
+    }
 }

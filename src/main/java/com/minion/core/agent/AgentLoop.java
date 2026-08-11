@@ -168,11 +168,13 @@ public class AgentLoop {
         workspace.restore(s.cwd);
     }
 
-    /** /new:清空当前会话内容并回到工作区根 */
+    /** /new:清空当前会话内容并回到工作区根。
+     *  todo/usage 必须原地清空而非换新实例：Main 注册 TodoWriteTool 时捕获的是 session.todos
+     *  的实例引用，换新实例会让工具继续写已废弃的空清单（任务状态丢失）。 */
     public void startNewSession() {
         session.messages.clear();
-        session.todos = new TodoList();
-        session.usage = new UsageTracker();
+        session.todos.clear();
+        session.usage.reset();
         workspace.resetCwd();
     }
 

@@ -342,6 +342,31 @@ public class AgentLoopTest {
         assertEquals(tmp.getRoot().toPath(), ws.cwd());
     }
 
+    /** T4 回归：startNewSession 原地清空 todo/usage，Main 注册的 TodoWriteTool
+     *  捕获的实例引用在 /new 后仍指向会话清单（换新实例会导致任务状态丢失） */
+    @Test
+    public void startNewSession_keepsCapturedTodoWriteToolReferenceValid() throws Exception {
+        AgentLoop loop = newLoop();
+        // 模拟 Main.java 的接线：TodoWriteTool 捕获 session.todos 的实例引用
+        com.minion.core.tools.TodoWriteTool tool =
+                new com.minion.core.tools.TodoWriteTool(loop.session().todos);
+        loop.session().todos.replace(Collections.singletonList(
+                new TodoList.TodoItem("写文档", false)));
+        loop.startNewSession();
+        assertEquals(0, loop.session().todos.items.size());
+
+        JsonObject args = new JsonObject();
+        args.addProperty("action", "update");
+        com.google.gson.JsonArray items = new com.google.gson.JsonArray();
+        JsonObject item = new JsonObject();
+        item.addProperty("text", "新任务");
+        items.add(item);
+        args.add("items", items);
+        tool.execute(args);
+        assertEquals(1, loop.session().todos.items.size());
+        assertEquals("新任务", loop.session().todos.items.get(0).text);
+    }
+
     /** 阻塞工具：进入 execute 后吞掉中断持续阻塞，保证工具执行阶段的稳定中断路径（M2） */
     public static class BlockingTool implements Tool {
         public final CountDownLatch entered = new CountDownLatch(1);
