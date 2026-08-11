@@ -1,6 +1,7 @@
 package com.minion.core.tools;
 
 import com.google.gson.JsonObject;
+import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -22,12 +23,16 @@ public class GlobTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final ConfirmGate confirm;
 
-    public GlobTool(Workspace workspace) { this(workspace, null); }
+    public GlobTool(Workspace workspace) { this(workspace, null, null); }
 
-    public GlobTool(Workspace workspace, String skillsDir) {
+    public GlobTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
+
+    public GlobTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.confirm = confirm;
     }
 
     @Override
@@ -39,7 +44,7 @@ public class GlobTool implements Tool {
     @Override
     public JsonObject schema() {
         return SchemaGenerator.objectSchema("按 glob 模式查找文件",
-                new String[]{"pattern"}, new String[]{"pattern"});
+                new String[]{"pattern", "path"}, new String[]{"pattern"});
     }
 
     @Override
@@ -54,13 +59,25 @@ public class GlobTool implements Tool {
         }
         final Path workRoot = workspace.cwd();
         final List<String> found = new ArrayList<String>();
-        // 遍历根：cwd + 技能目录（若在 cwd 之外且存在）。
-        // cwd 内的结果输出相对路径；技能目录内的结果输出绝对路径（模型可直接 Read）
+        // 遍历根：无 path 时 = cwd + 技能目录（若在 cwd 之外且存在）；
+        // 指定 path 时 = 该路径（工作区内直搜；工作区外经确认放行后直搜）。
+        // 结果路径格式：工作区内输出相对路径；工作区外输出绝对路径（模型可直接 Read）
         final List<Path> roots = new ArrayList<Path>();
-        roots.add(workRoot);
-        if (skillsDir != null && !skillsDir.isEmpty() && Files.isDirectory(Paths.get(skillsDir))) {
-            Path skillsAbs = Paths.get(skillsDir).toAbsolutePath().normalize();
-            if (!skillsAbs.startsWith(workRoot.toAbsolutePath().normalize())) roots.add(skillsAbs);
+        String start = args.has("path") ? args.get("path").getAsString() : null;
+        if (start != null && !start.isEmpty()) {
+            final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
+            if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
+            ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, root);
+            if (guard != null) {
+                if (confirm == null || !confirm.checkReadOutside(this, args, root.toString())) return guard;
+            }
+            roots.add(root);
+        } else {
+            roots.add(workRoot);
+            if (skillsDir != null && !skillsDir.isEmpty() && Files.isDirectory(Paths.get(skillsDir))) {
+                Path skillsAbs = Paths.get(skillsDir).toAbsolutePath().normalize();
+                if (!skillsAbs.startsWith(workRoot.toAbsolutePath().normalize())) roots.add(skillsAbs);
+            }
         }
         for (final Path root : roots) {
             final boolean inWork = root.toAbsolutePath().normalize()

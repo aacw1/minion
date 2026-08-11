@@ -267,6 +267,58 @@ public class FileToolsTest {
         assertTrue(res.output.contains("secret count value"));
     }
 
+    // ---- Glob path 参数：指定搜索根（工作区内直搜，工作区外走确认） ----
+
+    @Test
+    public void glob_pathParam_insideWork_finds() throws Exception {
+        Files.createDirectories(p("src"));
+        Files.write(p("src/A.java"), "x".getBytes(StandardCharsets.UTF_8));
+        ToolResult r = glob.execute(args("{\"pattern\":\"*.java\",\"path\":\"src\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue(r.output.contains("A.java"));
+    }
+
+    @Test
+    public void glob_pathParam_outside_confirmApprove_allows() throws Exception {
+        Path outside = java.nio.file.Files.createTempDirectory("minion-glob-outside");
+        try {
+            Files.write(outside.resolve("Z.java"), "x".getBytes(StandardCharsets.UTF_8));
+            GlobTool g = new GlobTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                    readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                            com.minion.core.tools.confirm.ConfirmUi.Decision.APPROVE)));
+            ToolResult res = g.execute(args("{\"pattern\":\"*.java\",\"path\":\""
+                    + outside.toString().replace("\\", "\\\\") + "\"}"));
+            assertTrue(res.output, res.ok);
+            assertTrue(res.output.contains("Z.java"));
+        } finally {
+            deleteRecursively(outside);
+        }
+    }
+
+    @Test
+    public void glob_pathParam_outside_confirmReject_rejects() throws Exception {
+        Path outside = java.nio.file.Files.createTempDirectory("minion-glob-outside2");
+        try {
+            Files.write(outside.resolve("Z.java"), "x".getBytes(StandardCharsets.UTF_8));
+            GlobTool g = new GlobTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                    readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                            com.minion.core.tools.confirm.ConfirmUi.Decision.REJECT)));
+            ToolResult res = g.execute(args("{\"pattern\":\"*.java\",\"path\":\""
+                    + outside.toString().replace("\\", "\\\\") + "\"}"));
+            assertFalse(res.ok);
+            assertTrue(res.output.contains("工作路径之外"));
+        } finally {
+            deleteRecursively(outside);
+        }
+    }
+
+    @Test
+    public void glob_pathParam_missingPath_error() throws Exception {
+        ToolResult r = glob.execute(args("{\"pattern\":\"*.java\",\"path\":\"./nope-dir\"}"));
+        assertFalse(r.ok);
+        assertTrue(r.output.contains("路径不存在"));
+    }
+
     private static void deleteRecursively(Path dir) throws Exception {
         if (dir == null || !Files.exists(dir)) return;
         Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<Path>() {
