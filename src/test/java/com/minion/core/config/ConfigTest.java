@@ -77,4 +77,18 @@ public class ConfigTest {
         assertFalse(c.browserHeadless());
         assertEquals(30000, c.browserTimeoutMs());
     }
+
+    /** T:paths.read.allowOutside 默认 false，外部文件可覆盖为 true */
+    @Test
+    public void readAllowOutside_defaultsFalseAndOverridable() throws IOException {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertFalse(c.readAllowOutside());
+
+        Path root = tmp.getRoot().toPath();
+        Config c1 = Config.load(root, TEST_DEFAULTS);
+        Files.write(c1.externalFile(), "\npaths.read.allowOutside=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        Config c2 = Config.load(root, TEST_DEFAULTS);
+        assertTrue(c2.readAllowOutside());
+    }
 }

@@ -105,6 +105,9 @@ public class Config {
     public String projectMdPath(){ return get("project.md.path", "./project.md"); }
     public String skillsDir()    { return get("skills.dir", "./skills"); }
     public String sessionDir()   { return get("session.dir", "./.minion/sessions"); }
+
+    /** 读逃逸：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
+    public boolean readAllowOutside() { return Boolean.parseBoolean(get("paths.read.allowOutside", "false")); }
     public boolean confirmSkip() { return Boolean.parseBoolean(get("confirm.skip", "false")); }
     public Set<String> whitelistTools()    { return csv(get("confirm.whitelist.tools", "")); }
     public Set<String> whitelistCommands() { return csv(get("confirm.whitelist.commands", "")); }
