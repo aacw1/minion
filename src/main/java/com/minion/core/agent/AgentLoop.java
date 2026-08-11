@@ -155,7 +155,9 @@ public class AgentLoop {
     /** REPL 渲染用 */
     public AgentUi ui() { return ui; }
 
-    /** 恢复历史会话（Task 21 /resume、-r）：整体替换会话状态字段，消息引用直接复用 */
+    /** 恢复历史会话（Task 21 /resume、-r）：消息引用直接复用；
+     *  todo/usage 必须原地装载而非换新实例：Main 注册 TodoWriteTool 时捕获的是
+     *  session.todos 实例引用，换实例会让工具继续写已废弃清单（任务状态丢失，同 /new 修复）。 */
     public void restoreSession(Session s) {
         session.messages = s.messages;
         session.id = s.id;
@@ -163,8 +165,8 @@ public class AgentLoop {
         session.workDir = s.workDir;
         session.modelName = s.modelName;
         scrubHalfTurn(); // 恢复历史同样清洗半轮残留（外部/旧格式文件可能含残缺 toolCalls）
-        if (s.todos != null) session.todos = s.todos;
-        if (s.usage != null) session.usage = s.usage;
+        if (s.todos != null) session.todos.replace(s.todos.items); // 原地装载（replace 内部 clear+addAll）
+        if (s.usage != null) session.usage.restore(s.usage);
         workspace.restore(s.cwd);
     }
 

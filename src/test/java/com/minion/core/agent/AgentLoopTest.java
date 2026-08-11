@@ -367,6 +367,41 @@ public class AgentLoopTest {
         assertEquals("新任务", loop.session().todos.items.get(0).text);
     }
 
+    /** T4 回归：restoreSession 原地恢复 todo/usage，Main 注册的 TodoWriteTool
+     *  捕获的实例引用在 /resume 后仍指向会话清单（换新实例会导致任务状态丢失） */
+    @Test
+    public void restoreSession_keepsCapturedTodoWriteToolReferenceValid() {
+        AgentLoop loop = newLoop();
+        // 模拟 Main.java 的接线：TodoWriteTool 捕获 session.todos 的实例引用
+        com.minion.core.tools.TodoWriteTool tool =
+                new com.minion.core.tools.TodoWriteTool(loop.session().todos);
+        com.minion.core.llm.UsageTracker captured = loop.usage();
+        // 保存的会话带任务与统计
+        Session saved = Session.create(config);
+        saved.todos.replace(Collections.singletonList(
+                new TodoList.TodoItem("写文档", false)));
+        Usage u = new Usage();
+        u.inputTokens = 30;
+        u.outputTokens = 20;
+        u.reasoningTokens = 5;
+        saved.usage.record(u);
+        loop.restoreSession(saved);
+        // 恢复后通过恢复前捕获的引用写入必须落到会话清单（换实例会写入已废弃清单）
+        JsonObject args = new JsonObject();
+        args.addProperty("action", "update");
+        com.google.gson.JsonArray items = new com.google.gson.JsonArray();
+        JsonObject item = new JsonObject();
+        item.addProperty("text", "恢复后的新任务");
+        items.add(item);
+        args.add("items", items);
+        tool.execute(args);
+        assertEquals(1, loop.session().todos.items.size());
+        assertEquals("恢复后的新任务", loop.session().todos.items.get(0).text);
+        // usage 统计同样原地复制：恢复前捕获的引用能看到恢复后的统计（换实例则为 0）
+        assertEquals(50, captured.sessionTotal());
+        assertEquals(5, captured.sessionThinking());
+    }
+
     /** 阻塞工具：进入 execute 后吞掉中断持续阻塞，保证工具执行阶段的稳定中断路径（M2） */
     public static class BlockingTool implements Tool {
         public final CountDownLatch entered = new CountDownLatch(1);
