@@ -12,12 +12,12 @@ JDK 8 + Maven 单模块。依赖：gson、okhttp 3.x、jline、snakeyaml（测�
 ## 包结构（详见 docs/ARCHITECTURE.md）
 
     com.minion
-    ├── Main         入口：参数解析、工具注册（8 个，Main.java:55-82）
+    ├── Main         入口：参数解析、工具注册（12 个，Main.java:63-109）
     ├── cli/         REPL、Renderer、CommandDispatcher（/命令）、确认提示
     └── core/
         ├── agent/   AgentLoop（主循环）、SubAgentLoop、Session、TodoList
         ├── llm/     DeepSeekClient（SSE 流式）、Message（reasoningContent 原样回传）
-        ├── tools/   Tool 接口 + 9 个工具 + ToolRegistry、SchemaGenerator、ConfirmGate、PathsGuard
+        ├── tools/   Tool 接口 + 13 个工具 + ToolRegistry + browser/（CDP 浏览器）、SchemaGenerator、ConfirmGate、PathsGuard
         ├── skills/  SkillManager（skills/<名>/SKILL.md 自动发现）
         ├── context/ 上下文压缩、token 统计
         ├── storage/ 会话落盘

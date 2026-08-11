@@ -74,6 +74,26 @@ minion — 代码开发助手  (输入 /help 查看命令)
 选一个或直接描述你的想法都可以。
 * 8.6s · in 20.2k · out 835 · thinking 349 · ctx 4.7k/900k (1%)
 
+## 浏览器工具(登录、点击、查询、调试网页)
+
+对接本机 Chrome(CDP 协议,零额外依赖)。首次使用自动启动 Chrome(默认有头窗口,便于观察调试;
+自动化场景可配置 `browser.headless=true`)。配置项:
+
+    browser.path=          # Chrome 可执行文件路径,留空自动探测常见安装位置
+    browser.port=9222      # 调试端口(Chrome 默认只绑定本机,不暴露局域网)
+    browser.userDataDir=./.minion/browser-profile   # 登录状态持久化目录(清空即重置)
+    browser.headless=false
+    browser.timeoutMs=30000
+
+用法(模型自动调用,也可在对话里描述操作):
+
+- `Browser`  open/back/refresh/status —— 打开页面与导航
+- `BrowserEval`  执行 JS:输入、点击、提取表格数据(SPA 受控组件用 __minion_set_value 辅助)
+- `BrowserScreenshot`  截图存工作区
+- `BrowserDebug`  network/console/page —— 网络请求、控制台日志、页面状态
+
+登录示例:对话里告知账号密码 → 模型用 BrowserEval 填表提交 → 登录态保存在 userDataDir,下次会话保留。
+
 ## 模型供应商配置（deepseek / qwen）
 
 默认对接 deepseek（thinking max）。切千问（阿里百炼 DashScope OpenAI 兼容模式）改 jar 同目录 config.properties 的 5 项：

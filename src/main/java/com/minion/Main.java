@@ -26,6 +26,13 @@ import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.WebFetchTool;
 import com.minion.core.tools.Workspace;
 import com.minion.core.tools.WriteTool;
+import com.minion.core.tools.browser.BrowserDebugTool;
+import com.minion.core.tools.browser.BrowserEvalTool;
+import com.minion.core.tools.browser.BrowserScreenshotTool;
+import com.minion.core.tools.browser.BrowserSession;
+import com.minion.core.tools.browser.BrowserTool;
+import com.minion.core.tools.browser.CdpClient;
+import com.minion.core.tools.browser.ChromeLauncher;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
 
@@ -70,6 +77,18 @@ public class Main {
 
         SkillManager skillManager = new SkillManager(skillsDir);
         List<Skill> skills = skillManager.scan();
+
+        // 浏览器工具（懒启动 Chrome，首次工具调用才拉起进程；退出钩子关停自启进程）
+        ChromeLauncher chrome = new ChromeLauncher(config.browserPath(), config.browserPort(),
+                Paths.get(config.browserUserDataDir()), config.browserHeadless(),
+                config.browserTimeoutMs());
+        BrowserSession browserSession = new BrowserSession(chrome, new CdpClient(10000,
+                config.browserTimeoutMs()));
+        registry.register(new BrowserTool(browserSession));
+        registry.register(new BrowserEvalTool(browserSession));
+        registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir));
+        registry.register(new BrowserDebugTool(browserSession));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> chrome.stop()));
 
         SessionStore store = new SessionStore(Paths.get(config.sessionDir()));
 

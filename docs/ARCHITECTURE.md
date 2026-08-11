@@ -12,7 +12,7 @@ com.minion
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ToolCall、Usage、UsageTracker
-    ├── tools/              Tool 接口、ToolRegistry、9 个工具、SchemaGenerator、confirm/（ConfirmGate、ConfirmUi）、PathsGuard
+    ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、PathsGuard
     ├── skills/             SkillManager、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、TokenCounter
     ├── storage/            SessionStore
@@ -24,7 +24,7 @@ com.minion
 
 ### com.minion（根）
 
-- `Main`：程序入口。参数解析（`-c` 单次执行 / `-r` 恢复会话 / 默认交互 REPL）；装配 Config、ToolRegistry、AgentLoop；注册除 Task 外的 8 个工具（Main.java:55-82，Task 由 AgentLoop 注册）。
+- `Main`：程序入口。参数解析（`-c` 单次执行 / `-r` 恢复会话 / 默认交互 REPL）；装配 Config、ToolRegistry、AgentLoop；注册除 Task 外的 12 个工具（Main.java:63-109，Task 由 AgentLoop 注册）。
 
 ### cli/
 
@@ -56,12 +56,13 @@ com.minion
 
 ### core/tools/
 
-- `Tool` 接口（name/description/schema/execute/isHighRisk）→ 9 个实现：ReadTool、WriteTool、EditTool、GlobTool、GrepTool、BashTool、WebFetchTool、TaskTool、TodoWriteTool
+- `Tool` 接口（name/description/schema/execute/isHighRisk）→ 13 个实现：ReadTool、WriteTool、EditTool、GlobTool、GrepTool、BashTool、WebFetchTool、TaskTool、TodoWriteTool、BrowserTool、BrowserEvalTool、BrowserScreenshotTool、BrowserDebugTool
 - `ToolRegistry`：注册表（name 小写索引）；`schemas()` 生成 OpenAI function calling 格式
 - `SchemaGenerator`：Java 结构 → JSON Schema
 - `ConfirmGate`：高危确认（Write 覆盖已有文件 / Edit 始终 / Bash 命中危险命令表）
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
 - `PathsGuard`：文件工具路径限制（工作路径 + 技能目录；技能目录可配置为工作路径外的绝对路径）
+- `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `example/ExampleTool`：新工具模板示例（未注册）
 
 ### core/skills/
