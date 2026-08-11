@@ -20,13 +20,13 @@ public class GlobTool implements Tool {
 
     private static final int MAX_RESULTS = 200;
 
-    private final String workDir;
+    private final Workspace workspace;
     private final String skillsDir;
 
-    public GlobTool(String workDir) { this(workDir, null); }
+    public GlobTool(Workspace workspace) { this(workspace, null); }
 
-    public GlobTool(String workDir, String skillsDir) {
-        this.workDir = workDir;
+    public GlobTool(Workspace workspace, String skillsDir) {
+        this.workspace = workspace;
         this.skillsDir = skillsDir;
     }
 
@@ -52,10 +52,10 @@ public class GlobTool implements Tool {
         } catch (PatternSyntaxException e) {
             return ToolResult.error("glob 模式语法错误: " + e.getMessage());
         }
-        final Path workRoot = Paths.get(workDir);
+        final Path workRoot = workspace.cwd();
         final List<String> found = new ArrayList<String>();
-        // 遍历根：工作路径 + 技能目录（若在工作路径之外且存在）。
-        // 工作路径内的结果输出相对路径；技能目录内的结果输出绝对路径（模型可直接 Read）
+        // 遍历根：cwd + 技能目录（若在 cwd 之外且存在）。
+        // cwd 内的结果输出相对路径；技能目录内的结果输出绝对路径（模型可直接 Read）
         final List<Path> roots = new ArrayList<Path>();
         roots.add(workRoot);
         if (skillsDir != null && !skillsDir.isEmpty() && Files.isDirectory(Paths.get(skillsDir))) {

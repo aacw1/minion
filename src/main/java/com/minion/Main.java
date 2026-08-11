@@ -58,13 +58,13 @@ public class Main {
         // 技能目录解析为绝对路径：可能配置在工作路径之外（如 jar 外部的绝对路径），
         // 工具守卫需按此放行技能文件；SkillManager 用绝对路径扫描与守卫口径一致
         String skillsDir = Paths.get(config.skillsDir()).toAbsolutePath().normalize().toString();
-        registry.register(new ReadTool(workDir, skillsDir));
-        registry.register(new WriteTool(workDir, skillsDir));
-        registry.register(new EditTool(workDir, skillsDir));
-        registry.register(new GlobTool(workDir, skillsDir));
-        registry.register(new GrepTool(workDir, skillsDir));
-        // workspace 临时在此定义（仅 Bash 用）；Task 4 将挪到统一位置供全部工具共享
+        // 会话级工作区：Bash 与文件工具共用同一实例，cd 后文件相对路径跟随 cwd
         Workspace workspace = new Workspace(workDir);
+        registry.register(new ReadTool(workspace, skillsDir));
+        registry.register(new WriteTool(workspace, skillsDir));
+        registry.register(new EditTool(workspace, skillsDir));
+        registry.register(new GlobTool(workspace, skillsDir));
+        registry.register(new GrepTool(workspace, skillsDir));
         registry.register(new BashTool(workspace));
         registry.register(new WebFetchTool());
 

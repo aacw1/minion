@@ -11,13 +11,13 @@ import java.nio.file.Paths;
 /** 写文件。覆盖已存在文件为高危操作（需确认）。 */
 public class WriteTool implements Tool {
 
-    private final String workDir;
+    private final Workspace workspace;
     private final String skillsDir;
 
-    public WriteTool(String workDir) { this(workDir, null); }
+    public WriteTool(Workspace workspace) { this(workspace, null); }
 
-    public WriteTool(String workDir, String skillsDir) {
-        this.workDir = workDir;
+    public WriteTool(Workspace workspace, String skillsDir) {
+        this.workspace = workspace;
         this.skillsDir = skillsDir;
     }
 
@@ -36,14 +36,14 @@ public class WriteTool implements Tool {
     @Override
     public boolean isHighRisk(JsonObject args) {
         if (!args.has("path")) return false;
-        Path p = PathsGuard.resolve(workDir, args.get("path").getAsString());
+        Path p = PathsGuard.resolve(workspace.cwd().toString(), args.get("path").getAsString());
         return Files.exists(p);
     }
 
     @Override
     public ToolResult execute(JsonObject args) throws IOException {
         if (!args.has("path") || !args.has("content")) return ToolResult.error("缺少 path/content 参数");
-        Path p = PathsGuard.resolve(workDir, args.get("path").getAsString());
+        Path p = PathsGuard.resolve(workspace.cwd().toString(), args.get("path").getAsString());
         // T8 约定：存在性/目录检查在守卫之前；守卫的 toRealPath 对不存在的路径会误报越界
         if (Files.exists(p) && Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
         ToolResult guard = outsideGuard(p);
@@ -56,21 +56,21 @@ public class WriteTool implements Tool {
 
     /** 越界守卫：已存在路径交给 PathsGuard（toRealPath 防符号链接）；不存在路径向上找最深已存在祖先做真实路径校验 */
     private ToolResult outsideGuard(Path p) {
-        if (Files.exists(p)) return PathsGuard.errorIfOutside(workDir, skillsDir, p);
+        if (Files.exists(p)) return PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
         Path probe = p;
         while (probe != null && !Files.exists(probe)) {
             probe = probe.getParent();
         }
         if (probe == null) {
             // 整个祖先链都不存在（工作路径本身缺失）：无符号链接可绕过，退回规范化词法包含检查
-            if (!insideLexical(workDir, p) && !insideLexical(skillsDir, p)) {
+            if (!insideLexical(workspace.workDir(), p) && !insideLexical(skillsDir, p)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
             return null;
         }
         try {
             Path probeReal = probe.toRealPath();
-            if (!probeReal.startsWith(Paths.get(workDir).toRealPath())
+            if (!probeReal.startsWith(Paths.get(workspace.workDir()).toRealPath())
                     && !insideReal(skillsDir, probeReal)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }

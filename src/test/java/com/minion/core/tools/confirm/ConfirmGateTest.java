@@ -25,7 +25,8 @@ public class ConfirmGateTest {
     }
 
     private com.minion.core.tools.Tool writeTool() {
-        return new com.minion.core.tools.WriteTool(tmp.getRoot().getAbsolutePath());
+        return new com.minion.core.tools.WriteTool(
+                new com.minion.core.tools.Workspace(tmp.getRoot().getAbsolutePath()));
     }
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }

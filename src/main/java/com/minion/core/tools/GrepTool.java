@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.regex.Pattern;
@@ -18,13 +17,13 @@ public class GrepTool implements Tool {
 
     private static final int MAX_RESULTS = 250;
 
-    private final String workDir;
+    private final Workspace workspace;
     private final String skillsDir;
 
-    public GrepTool(String workDir) { this(workDir, null); }
+    public GrepTool(Workspace workspace) { this(workspace, null); }
 
-    public GrepTool(String workDir, String skillsDir) {
-        this.workDir = workDir;
+    public GrepTool(Workspace workspace, String skillsDir) {
+        this.workspace = workspace;
         this.skillsDir = skillsDir;
     }
 
@@ -54,12 +53,12 @@ public class GrepTool implements Tool {
             return ToolResult.error("正则语法错误: " + e.getMessage());
         }
         String start = args.has("path") ? args.get("path").getAsString() : ".";
-        final Path root = PathsGuard.resolve(workDir, start);
+        final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
         if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, root);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, root);
         if (guard != null) return guard;
-        // 结果路径格式：工作路径内输出相对路径（模型可直接 Read）；工作路径外（技能目录）输出绝对路径
-        final Path rootAbs = Paths.get(workDir).toAbsolutePath().normalize();
+        // 结果路径格式：cwd 内输出相对路径（模型可直接 Read）；cwd 外（技能目录等）输出绝对路径
+        final Path rootAbs = workspace.cwd().toAbsolutePath().normalize();
         final boolean rootInWork = root.toAbsolutePath().normalize().startsWith(rootAbs);
         final int max;
         try {
@@ -74,7 +73,7 @@ public class GrepTool implements Tool {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 if (count[0] >= max) return FileVisitResult.TERMINATE;
-                Path rel = rootInWork ? Paths.get(workDir).relativize(file) : file;
+                Path rel = rootInWork ? workspace.cwd().relativize(file) : file;
                 try {
                     java.util.List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
                     for (int i = 0; i < lines.size() && count[0] < max; i++) {

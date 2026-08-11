@@ -20,6 +20,7 @@ public class FileToolsTest {
     public TemporaryFolder tmp = new TemporaryFolder();
 
     private String work;
+    private Workspace ws;
     private ReadTool read;
     private GlobTool glob;
     private GrepTool grep;
@@ -27,9 +28,10 @@ public class FileToolsTest {
     @org.junit.Before
     public void setup() throws Exception {
         work = tmp.getRoot().getAbsolutePath();
-        read = new ReadTool(work);
-        glob = new GlobTool(work);
-        grep = new GrepTool(work);
+        ws = new Workspace(work);
+        read = new ReadTool(ws);
+        glob = new GlobTool(ws);
+        grep = new GrepTool(ws);
     }
 
     private JsonObject args(String json) {
@@ -159,9 +161,9 @@ public class FileToolsTest {
         Files.createDirectories(skillFile.getParent());
         Files.write(skillFile, "调试技能正文".getBytes(StandardCharsets.UTF_8));
         try {
-            ReadTool r = new ReadTool(work, skillsDir.toString());
-            GlobTool g = new GlobTool(work, skillsDir.toString());
-            GrepTool gr = new GrepTool(work, skillsDir.toString());
+            ReadTool r = new ReadTool(ws, skillsDir.toString());
+            GlobTool g = new GlobTool(ws, skillsDir.toString());
+            GrepTool gr = new GrepTool(ws, skillsDir.toString());
             String esc = skillFile.toString().replace("\\", "\\\\");
 
             ToolResult read = r.execute(args("{\"path\":\"" + esc + "\"}"));

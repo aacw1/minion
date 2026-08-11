@@ -13,13 +13,13 @@ public class ReadTool implements Tool {
 
     private static final int DEFAULT_LIMIT = 2000;
 
-    private final String workDir;
+    private final Workspace workspace;
     private final String skillsDir;
 
-    public ReadTool(String workDir) { this(workDir, null); }
+    public ReadTool(Workspace workspace) { this(workspace, null); }
 
-    public ReadTool(String workDir, String skillsDir) {
-        this.workDir = workDir;
+    public ReadTool(Workspace workspace, String skillsDir) {
+        this.workspace = workspace;
         this.skillsDir = skillsDir;
     }
 
@@ -40,10 +40,10 @@ public class ReadTool implements Tool {
     public ToolResult execute(JsonObject args) throws IOException {
         String path = args.has("path") ? args.get("path").getAsString() : "";
         if (path.isEmpty()) return ToolResult.error("缺少 path 参数");
-        Path p = PathsGuard.resolve(workDir, path);
+        Path p = PathsGuard.resolve(workspace.cwd().toString(), path);
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
         if (guard != null) return guard;
 
         int offset = 0;

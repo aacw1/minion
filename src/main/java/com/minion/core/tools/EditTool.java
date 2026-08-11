@@ -10,13 +10,13 @@ import java.nio.file.Path;
 /** 精确字符串替换。始终为高危操作（修改现有文件）。 */
 public class EditTool implements Tool {
 
-    private final String workDir;
+    private final Workspace workspace;
     private final String skillsDir;
 
-    public EditTool(String workDir) { this(workDir, null); }
+    public EditTool(Workspace workspace) { this(workspace, null); }
 
-    public EditTool(String workDir, String skillsDir) {
-        this.workDir = workDir;
+    public EditTool(Workspace workspace, String skillsDir) {
+        this.workspace = workspace;
         this.skillsDir = skillsDir;
     }
 
@@ -41,11 +41,11 @@ public class EditTool implements Tool {
         if (!args.has("path") || !args.has("oldString") || !args.has("newString")) {
             return ToolResult.error("缺少 path/oldString/newString 参数");
         }
-        Path p = PathsGuard.resolve(workDir, args.get("path").getAsString());
+        Path p = PathsGuard.resolve(workspace.cwd().toString(), args.get("path").getAsString());
         // T8 约定：存在性/目录检查在守卫之前；守卫的 toRealPath 对不存在的路径会误报越界
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workDir, skillsDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
         if (guard != null) return guard;
 
         String oldString = args.get("oldString").getAsString();

@@ -20,14 +20,16 @@ public class EditToolsTest {
     public TemporaryFolder tmp = new TemporaryFolder();
 
     private String work;
+    private Workspace ws;
     private WriteTool write;
     private EditTool edit;
 
     @org.junit.Before
     public void setup() {
         work = tmp.getRoot().getAbsolutePath();
-        write = new WriteTool(work);
-        edit = new EditTool(work);
+        ws = new Workspace(work);
+        write = new WriteTool(ws);
+        edit = new EditTool(ws);
     }
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
@@ -41,8 +43,8 @@ public class EditToolsTest {
         Files.createDirectories(skillFile.getParent());
         Files.write(skillFile, "旧内容".getBytes(StandardCharsets.UTF_8));
         try {
-            WriteTool w = new WriteTool(work, skillsDir.toString());
-            EditTool e = new EditTool(work, skillsDir.toString());
+            WriteTool w = new WriteTool(ws, skillsDir.toString());
+            EditTool e = new EditTool(ws, skillsDir.toString());
             String esc = skillFile.toString().replace("\\", "\\\\");
 
             ToolResult wr = w.execute(args("{\"path\":\"" + esc + "\",\"content\":\"新内容\"}"));
