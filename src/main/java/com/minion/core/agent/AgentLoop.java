@@ -172,11 +172,14 @@ public class AgentLoop {
 
     /** /new:清空当前会话内容并回到工作区根。
      *  todo/usage 必须原地清空而非换新实例：Main 注册 TodoWriteTool 时捕获的是 session.todos
-     *  的实例引用，换新实例会让工具继续写已废弃的空清单（任务状态丢失）。 */
+     *  的实例引用，换新实例会让工具继续写已废弃的空清单（任务状态丢失）。
+     *  id/createdAt 必须重新生成：旧 id 会话已随 /new 落盘，沿用旧 id 会让新会话的
+     *  自动落盘覆盖上一个会话文件。 */
     public void startNewSession() {
         session.messages.clear();
         session.todos.clear();
         session.usage.reset();
+        session.regenerateId();
         workspace.resetCwd();
     }
 

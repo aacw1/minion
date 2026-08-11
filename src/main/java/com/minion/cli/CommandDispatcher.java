@@ -13,7 +13,7 @@ import java.util.Locale;
 /** /命令分发。返回 null = 不是命令（按普通消息处理）。 */
 public class CommandDispatcher {
 
-    public enum Command { HELP, EXIT, SKILLS, SKILL, RESUME, COMPACT, TOKENS, CLEAR, MODEL }
+    public enum Command { HELP, EXIT, SKILLS, SKILL, RESUME, COMPACT, TOKENS, CLEAR, MODEL, NEW, DELETE }
 
     private final AgentLoop loop;
     private final Config config;
@@ -57,6 +57,10 @@ public class CommandDispatcher {
                 return Command.CLEAR;
             case "/model":
                 return formatModel();
+            case "/new":
+                return Command.NEW;
+            case "/delete":
+                return Command.DELETE;
             default:
                 return null;
         }

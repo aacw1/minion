@@ -54,6 +54,12 @@ public class CommandDispatcherTest {
     }
 
     @Test
+    public void dispatchNewAndDelete() {
+        assertEquals(CommandDispatcher.Command.NEW, dispatcher.dispatch("/new"));
+        assertEquals(CommandDispatcher.Command.DELETE, dispatcher.dispatch("/delete"));
+    }
+
+    @Test
     public void dispatch_unknownAndPlainText() {
         assertNull(dispatcher.dispatch("/nope"));
         assertNull(dispatcher.dispatch("普通消息"));

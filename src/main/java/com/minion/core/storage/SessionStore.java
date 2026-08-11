@@ -63,6 +63,11 @@ public class SessionStore {
         return load(metas.get(0).id);
     }
 
+    /** 删除会话文件（不存在也静默成功） */
+    public void delete(String id) throws IOException {
+        Files.deleteIfExists(dir.resolve(id + ".json"));
+    }
+
     public static class SessionMeta {
         public final String id;
         public final String createdAt;

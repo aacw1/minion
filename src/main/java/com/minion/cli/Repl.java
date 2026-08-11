@@ -138,6 +138,19 @@ public class Repl {
                     loop.messages().clear();
                     System.out.println("已清空当前上下文");
                     break;
+                case NEW:
+                    try {
+                        store.save(loop.session());
+                        System.out.println("已保存当前会话");
+                    } catch (Exception e) {
+                        System.out.println("保存当前会话失败: " + e.getMessage());
+                    }
+                    loop.startNewSession();
+                    System.out.println("已开始新会话");
+                    break;
+                case DELETE:
+                    deleteFlow();
+                    break;
                 default:
                     break;
             }
@@ -199,6 +212,40 @@ public class Repl {
         }
     }
 
+    private void deleteFlow() {
+        try {
+            List<SessionStore.SessionMeta> metas = store.list();
+            if (metas.isEmpty()) {
+                System.out.println("没有历史会话");
+                return;
+            }
+            System.out.println("历史会话:");
+            for (int i = 0; i < metas.size(); i++) {
+                System.out.println("  [" + (i + 1) + "] " + metas.get(i).createdAt
+                        + " — " + metas.get(i).preview);
+            }
+            System.out.print("输入要删除的会话编号（回车取消）: ");
+            String line;
+            try {
+                line = reader.readLine();
+            } catch (org.jline.reader.UserInterruptException e) {
+                return; // Ctrl+C 取消选择
+            } catch (org.jline.reader.EndOfFileException e) {
+                return; // EOF 视为取消
+            }
+            if (line == null || line.trim().isEmpty()) return;
+            int idx = Integer.parseInt(line.trim()) - 1;
+            if (idx < 0 || idx >= metas.size()) {
+                System.out.println("无效编号");
+                return;
+            }
+            store.delete(metas.get(idx).id);
+            System.out.println("已删除会话 " + metas.get(idx).createdAt);
+        } catch (Exception e) {
+            System.out.println("删除失败: " + e.getMessage());
+        }
+    }
+
     private void resumeSession(String id) throws Exception {
         com.minion.core.agent.Session s = store.load(id);
         loop.restoreSession(s);
@@ -224,6 +271,8 @@ public class Repl {
                 + "  /tokens       会话 token 统计\n"
                 + "  /clear        清空当前上下文（会话文件保留）\n"
                 + "  /model        模型配置概览\n"
+                + "  /new          保存当前会话并开始新会话\n"
+                + "  /delete       删除历史会话\n"
                 + "其他输入将作为消息发给模型。Ctrl+C 中断当前任务，再按退出。";
     }
 

@@ -25,17 +25,29 @@ public class Session {
 
     private static final AtomicLong SEQ = new AtomicLong();
 
+    /** 会话 id 生成：毫秒 + 自增序号。同毫秒内多次生成也唯一且递增（SessionStore 按字符串排序，
+     *  需要字典序=时间序且 id 不重复，秒级时间戳在测试中同秒碰撞会导致文件互相覆盖）。
+     *  create 与 regenerateId 共用同一机制，保证 id 格式始终一致。 */
+    private static String generateId() {
+        long seq = SEQ.incrementAndGet() % 10000L;
+        return new SimpleDateFormat("yyyyMMdd-HHmmss-SSS").format(new Date())
+                + "-" + String.format("%04d", seq);
+    }
+
     public static Session create(Config config) {
         Session s = new Session();
-        // 毫秒 + 自增序号：同毫秒内多次 create 也唯一且递增（SessionStore 按字符串排序，
-        // 需要字典序=时间序且 id 不重复，秒级时间戳在测试中同秒碰撞会导致文件互相覆盖）
-        long seq = SEQ.incrementAndGet() % 10000L;
-        s.id = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS").format(new Date())
-                + "-" + String.format("%04d", seq);
+        s.id = generateId();
         s.createdAt = s.id;
         s.workDir = config.workDir();
         s.modelName = config.modelName();
         return s;
+    }
+
+    /** /new 用：重新生成会话 id/createdAt（机制同 create）。旧 id 会话已随 /new 落盘，
+     *  新会话若沿用旧 id，后续自动落盘会覆盖上一个会话文件 */
+    public void regenerateId() {
+        id = generateId();
+        createdAt = id;
     }
 
     /** 恢复时用（Task 18） */

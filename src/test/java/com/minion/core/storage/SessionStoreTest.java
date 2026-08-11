@@ -8,6 +8,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -123,5 +124,29 @@ public class SessionStoreTest {
         store.save(s);
         Session loaded = store.load(s.id);
         assertEquals("/tmp/some/dir", loaded.cwd);
+    }
+
+    /** Task 6：/delete 删除会话文件后 load 抛 IOException */
+    @Test
+    public void deleteRemovesSession() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        Path dir = tmp.getRoot().toPath().resolve("sessions");
+        SessionStore store = new SessionStore(dir);
+        Session s = makeSession(config);
+        store.save(s);
+        assertNotNull(store.load(s.id));
+        store.delete(s.id);
+        assertFalse(Files.exists(dir.resolve(s.id + ".json")));
+        try {
+            store.load(s.id);
+            fail("应抛 IOException");
+        } catch (IOException expected) { }
+    }
+
+    /** Task 6：删除不存在的会话静默成功（不抛异常） */
+    @Test
+    public void deleteMissingIdSilent() throws Exception {
+        SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
+        store.delete("不存在的会话id");
     }
 }

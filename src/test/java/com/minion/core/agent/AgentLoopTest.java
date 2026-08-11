@@ -342,6 +342,19 @@ public class AgentLoopTest {
         assertEquals(tmp.getRoot().toPath(), ws.cwd());
     }
 
+    /** Task 6 回归：startNewSession 重新生成 id/createdAt。旧 id 会话已随 /new 落盘，
+     *  新会话若沿用旧 id，后续自动落盘会覆盖上一个会话文件 */
+    @Test
+    public void startNewSession_regeneratesSessionId() throws Exception {
+        AgentLoop loop = newLoop();
+        String oldId = loop.session().id;
+        String oldCreatedAt = loop.session().createdAt;
+        loop.startNewSession();
+        assertNotEquals(oldId, loop.session().id);
+        assertNotEquals(oldCreatedAt, loop.session().createdAt);
+        assertEquals(loop.session().id, loop.session().createdAt); // 与 Session.create 同机制
+    }
+
     /** T4 回归：startNewSession 原地清空 todo/usage，Main 注册的 TodoWriteTool
      *  捕获的实例引用在 /new 后仍指向会话清单（换新实例会导致任务状态丢失） */
     @Test
