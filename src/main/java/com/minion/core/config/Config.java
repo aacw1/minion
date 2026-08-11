@@ -109,6 +109,11 @@ public class Config {
     public Set<String> whitelistTools()    { return csv(get("confirm.whitelist.tools", "")); }
     public Set<String> whitelistCommands() { return csv(get("confirm.whitelist.commands", "")); }
     public boolean uiColor()     { return Boolean.parseBoolean(get("ui.color", "true")); }
+    public String browserPath()       { return get("browser.path", ""); }
+    public int browserPort()          { return Integer.parseInt(get("browser.port", "9222")); }
+    public String browserUserDataDir(){ return get("browser.userDataDir", "./.minion/browser-profile"); }
+    public boolean browserHeadless()  { return Boolean.parseBoolean(get("browser.headless", "false")); }
+    public int browserTimeoutMs()     { return Integer.parseInt(get("browser.timeoutMs", "30000")); }
 
     private static Set<String> csv(String s) {
         Set<String> set = new HashSet<String>();

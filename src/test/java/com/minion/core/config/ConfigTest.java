@@ -66,4 +66,15 @@ public class ConfigTest {
         Config c2 = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
         assertTrue(c2.whitelistTools().containsAll(new HashSet<String>(java.util.Arrays.asList("write", "edit"))));
     }
+
+    /** browser.* 默认值：空外部配置 → 走 getter 内置 fallback */
+    @Test
+    public void browserDefaults() throws Exception {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertEquals("", c.browserPath());
+        assertEquals(9222, c.browserPort());
+        assertEquals("./.minion/browser-profile", c.browserUserDataDir());
+        assertFalse(c.browserHeadless());
+        assertEquals(30000, c.browserTimeoutMs());
+    }
 }
