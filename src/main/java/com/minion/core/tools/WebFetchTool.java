@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -27,6 +28,13 @@ public class WebFetchTool implements Tool {
     /** Content-Length 超过该阈值（字节）直接拒绝，避免无谓下载 */
     private static final long CONTENT_LENGTH_LIMIT = MAX_TEXT * 10L;
     private static final int READ_CHUNK = 8192;
+    /** charset 探测段长度(字节):只扫 HTML 头部声明 */
+    private static final int CHARSET_PROBE_BYTES = 2048;
+    /** meta charset / http-equiv 声明正则 */
+    private static final Pattern META_CHARSET = Pattern.compile(
+            "<meta[^>]+charset\\s*=\\s*[\"']?([\\w-]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern HTTP_EQUIV_CHARSET = Pattern.compile(
+            "content\\s*=\\s*[\"'][^\"']*charset\\s*=\\s*([\\w-]+)", Pattern.CASE_INSENSITIVE);
 
     private final OkHttpClient http = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -81,7 +89,8 @@ public class WebFetchTool implements Tool {
                 return ToolResult.error("内容过大: " + contentLength + " 字节");
             }
             RawBody raw = readBody(response);
-            String text = stripHtml(raw.html);
+            Charset cs = detectCharset(contentType, raw.bytes);
+            String text = stripHtml(new String(raw.bytes, cs));
             if (text.length() > MAX_TEXT || raw.cut) {
                 text = text.substring(0, Math.min(MAX_TEXT, text.length()))
                         + "\n... 内容过长已截断";
@@ -105,8 +114,48 @@ public class WebFetchTool implements Tool {
             if (n == -1) break;
             out.write(chunk, 0, n);
         }
-        return new RawBody(new String(out.toByteArray(), StandardCharsets.UTF_8),
-                out.size() >= READ_LIMIT);
+        return new RawBody(out.toByteArray(), out.size() >= READ_LIMIT);
+    }
+
+    /**
+     * 解码字符集:Content-Type 头 charset 优先,其次 HTML meta 声明,均无回退 UTF-8。
+     * GBK/GB2312/GB18030 统一映射 GBK。探测段按 ISO-8859-1 解码(字节↔字符 1:1,meta 检测不受解码影响)。
+     */
+    static Charset detectCharset(String contentType, byte[] head) {
+        String cs = charsetFromHeader(contentType);
+        if (cs == null) {
+            String probe = new String(head, 0, Math.min(head.length, CHARSET_PROBE_BYTES),
+                    StandardCharsets.ISO_8859_1);
+            cs = charsetFromMeta(probe);
+        }
+        if (cs == null) return StandardCharsets.UTF_8;
+        if (cs.equalsIgnoreCase("GBK") || cs.equalsIgnoreCase("GB2312")
+                || cs.equalsIgnoreCase("GB18030")) {
+            return charsetOrUtf8("GBK");
+        }
+        return charsetOrUtf8(cs);
+    }
+
+    private static String charsetFromHeader(String contentType) {
+        if (contentType == null) return null;
+        Matcher m = Pattern.compile("charset\\s*=\\s*[\"']?([\\w-]+)", Pattern.CASE_INSENSITIVE)
+                .matcher(contentType);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static String charsetFromMeta(String head) {
+        Matcher m1 = META_CHARSET.matcher(head);
+        if (m1.find()) return m1.group(1);
+        Matcher m2 = HTTP_EQUIV_CHARSET.matcher(head);
+        return m2.find() ? m2.group(1) : null;
+    }
+
+    private static Charset charsetOrUtf8(String name) {
+        try {
+            return Charset.forName(name);
+        } catch (Exception e) {
+            return StandardCharsets.UTF_8;
+        }
     }
 
     /**
@@ -152,8 +201,8 @@ public class WebFetchTool implements Tool {
     }
 
     private static final class RawBody {
-        final String html;
+        final byte[] bytes;
         final boolean cut;
-        RawBody(String html, boolean cut) { this.html = html; this.cut = cut; }
+        RawBody(byte[] bytes, boolean cut) { this.bytes = bytes; this.cut = cut; }
     }
 }

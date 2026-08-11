@@ -4,9 +4,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okio.Buffer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.Assert.*;
 
@@ -27,6 +31,11 @@ public class WebFetchToolTest {
     public void teardown() throws Exception { server.shutdown(); }
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
+
+    /** mockwebserver 3.14 无 setBody(byte[])，用 okio Buffer 包原始字节（保证线上字节不被改写） */
+    private static MockResponse bodyWithBytes(byte[] bytes) {
+        return new MockResponse().setBody(new Buffer().write(bytes));
+    }
 
     @Test
     public void fetch_stripsHtml() throws Exception {
@@ -106,5 +115,34 @@ public class WebFetchToolTest {
         ToolResult r = strict.execute(args("{\"url\":\"http://example.invalid/x\"}"));
         assertFalse(r.ok);
         assertFalse(r.output.contains("SSRF")); // 域名解析失败是网络层错误，不是被防护拦截
+    }
+
+    /** Task5：GBK 页面按 Content-Type 头 charset 解码 */
+    @Test
+    public void gbkPageDecodedByHeader() throws Exception {
+        String html = "<html><body>中文标题</body></html>";
+        server.enqueue(bodyWithBytes(html.getBytes(Charset.forName("GBK")))
+                .addHeader("Content-Type", "text/html; charset=GBK"));
+        ToolResult r = tool.execute(args("{\"url\":\"" + server.url("/").toString() + "\"}"));
+        assertTrue(r.output, r.output.contains("中文标题"));
+    }
+
+    /** Task5：无头 charset 时按 HTML meta charset 声明解码 */
+    @Test
+    public void gbkPageDecodedByMeta() throws Exception {
+        String html = "<html><head><meta charset=\"gb2312\"></head><body>查询结果</body></html>";
+        server.enqueue(bodyWithBytes(html.getBytes(Charset.forName("GBK")))
+                .addHeader("Content-Type", "text/html"));
+        ToolResult r = tool.execute(args("{\"url\":\"" + server.url("/").toString() + "\"}"));
+        assertTrue(r.output, r.output.contains("查询结果"));
+    }
+
+    /** Task5：无 charset 声明的 UTF-8 页面回退解码不受影响 */
+    @Test
+    public void utf8PageWithoutDeclStillWorks() throws Exception {
+        server.enqueue(bodyWithBytes("<html><body>正常内容</body></html>".getBytes(StandardCharsets.UTF_8))
+                .addHeader("Content-Type", "text/html"));
+        ToolResult r = tool.execute(args("{\"url\":\"" + server.url("/").toString() + "\"}"));
+        assertTrue(r.output, r.output.contains("正常内容"));
     }
 }
