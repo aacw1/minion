@@ -34,14 +34,12 @@
 - 开关关闭时的确认交互复用 ConfirmGate：
   - ConfirmGate 新增 `checkReadOutside(Tool tool, JsonObject args, String path)`：
     开关开 → 直接 true；关 → `ui.ask("越界读取 ...")` 复用 Y-N-A 决策
-  - 会话放行采用 **per-path 粒度**（对齐 Claude Code 官方模型：弹窗"不再询问"记录的是
-    带路径规则如 `Read(//d:/xxx/config.ini)`，同会话内只有命中同一条规则才免弹窗）：
-    - ConfirmGate 维护 `Set<String> readSessionAllowed`（规范化绝对路径集合）
-    - Y = 放行本次；N = 拒绝；A/W = 将该路径记入集合后放行（W 不新增持久化配置键，YAGNI）
-    - 同路径再读 → 免弹窗；**其他路径或其他工具 → 仍弹窗**
-  - **不复用高危操作的全局 `sessionBypass`**：那会把 A 的语义扩大到"本会话高危操作
-    （Edit/Bash 危险命令）全部免确认"——既不符合用户意图，也不符合 Claude Code 的 per-rule 模型
-  - 确认动作：Y/A/W 放行后本次越界读继续执行；N 返回现拒绝文案
+  - **复用现有全局 `sessionBypass`**（用户确认）：A 的既有语义即"本会话所有确认
+    （高危操作 + 越界读）全部跳过"，不做 per-tool/per-path 改造——越界读与高危操作
+    语义统一为全局会话放行，实现最简
+  - 确认动作：Y 放行本次；N 返回现拒绝文案；A/W 置位 `sessionBypass` 后放行
+    （W 对越界读也按会话放行处理，不落持久化白名单，不新增配置键）
+  - 高危操作 `check()` 逻辑**不变**
 - 实现位置：ReadTool / GrepTool / GlobTool 构造注入 ConfirmGate（与现有 skillsDir 注入同模式），
   越界分支从 `return guard` 改为调 `checkReadOutside` 决定放行/拒绝
 - Main.java 需将 ConfirmGate 构造提前到读工具注册之前（当前在注册之后，Main.java:96）；
@@ -77,7 +75,7 @@
 |---|---|
 | `src/resource/config.properties` | 新增 `paths.read.allowOutside=false` + 注释 |
 | `src/main/java/com/minion/core/config/Config.java` | 新增 `readAllowOutside()` |
-| `src/main/java/com/minion/core/tools/confirm/ConfirmGate.java` | 新增 `checkReadOutside(tool, args, path)`：开关开→放行；关→弹确认复用 Y-N-A；A/W 记入 per-path 会话集合 `readSessionAllowed`（Set<String>），同路径免弹窗、其他路径/工具仍弹窗 |
+| `src/main/java/com/minion/core/tools/confirm/ConfirmGate.java` | 新增 `checkReadOutside(tool, args, path)`：开关开→放行；关→弹确认复用 Y-N-A；A/W 置位现有 `sessionBypass`（本会话全部确认跳过）；高危 `check()` 不变 |
 | `src/main/java/com/minion/core/tools/ReadTool.java` | 构造注入 ConfirmGate；越界分支改走确认 |
 | `src/main/java/com/minion/core/tools/GrepTool.java` | 同上 |
 | `src/main/java/com/minion/core/tools/GlobTool.java` | 新增可选 `path` 参数（越界时走确认）；构造注入 ConfirmGate |
@@ -90,8 +88,8 @@
 
 ## 测试
 
-- ConfirmGateTest：开关开→放行不弹；开关关→Y 放行 / N 拒绝 / A 本会话该路径放行 / W 同 A；
-  同一路径二次读不弹窗，**另一路径仍弹窗**；其他高危工具确认不受越界读 A 影响
+- ConfirmGateTest：开关开→放行不弹；开关关→Y 放行 / N 拒绝 / A 置位 sessionBypass 放行 /
+  W 同 A；A 后高危操作与越界读均免确认（与既有 sessionBypass 语义一致，回归）
 - FileToolsTest：越界读开关关+N→拒绝文案；开关关+Y→读到内容；开关开→直接读到内容；
   Glob path 参数指向外部目录时同上；写入类越界仍拒绝（回归）
 - AgentLoopTest：连续 30 次失败 → 消息数组中含 `[系统提醒]`；29 次不注入；成功一次计数清零；
