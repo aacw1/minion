@@ -29,6 +29,11 @@ public class ConfirmGateTest {
                 new com.minion.core.tools.Workspace(tmp.getRoot().getAbsolutePath()));
     }
 
+    private com.minion.core.tools.Tool readTool() {
+        return new com.minion.core.tools.ReadTool(
+                new com.minion.core.tools.Workspace(tmp.getRoot().getAbsolutePath()));
+    }
+
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
 
     @org.junit.Before
@@ -131,5 +136,51 @@ public class ConfirmGateTest {
         // 第二个本来会 REJECT，但会话已放行
         assertTrue(g.check(writeTool(), args("{\"path\":\"b.txt\"}")));
         assertEquals(1, ui.asked.size());
+    }
+
+    @Test
+    public void readOutside_switchOn_skipsAsk() throws Exception {
+        Files.write(java.nio.file.Paths.get(config.externalFile().toString()),
+                "\npaths.read.allowOutside=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        config = com.minion.core.config.Config.load(tmp.getRoot().toPath());
+        FakeConfirmUi ui = new FakeConfirmUi();
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/x.txt\"}"), "D:/x.txt"));
+        assertTrue(ui.asked.isEmpty());
+    }
+
+    @Test
+    public void readOutside_approveReject() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/x.txt\"}"), "D:/x.txt"));
+        assertEquals(1, ui.asked.size());
+        assertTrue(ui.asked.get(0).startsWith("! 越界读取 "));
+        assertTrue(ui.asked.get(0).contains("D:/x.txt"));
+
+        assertFalse(gate(new FakeConfirmUi(ConfirmUi.Decision.REJECT))
+                .checkReadOutside(readTool(), args("{\"path\":\"D:/x.txt\"}"), "D:/x.txt"));
+    }
+
+    @Test
+    public void readOutside_approveSession_bypassesHighRiskAndReads() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE_SESSION);
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/x.txt\"}"), "D:/x.txt"));
+        // 会话放行后：高危操作与越界读均不再弹窗（与既有 sessionBypass 全局语义一致）
+        assertTrue(g.check(writeTool(), args("{\"path\":\"a.txt\"}")));
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/y.txt\"}"), "D:/y.txt"));
+        assertEquals(1, ui.asked.size());
+    }
+
+    @Test
+    public void readOutside_approveWhitelist_isSessionBypassNotPersisted() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE_WHITELIST);
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/x.txt\"}"), "D:/x.txt"));
+        assertTrue(g.checkReadOutside(readTool(), args("{\"path\":\"D:/y.txt\"}"), "D:/y.txt"));
+        assertEquals(1, ui.asked.size()); // W 按会话放行，不落持久化白名单
+        assertFalse(config.whitelistTools().contains("read"));
     }
 }

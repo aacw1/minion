@@ -40,6 +40,18 @@ public class ConfirmGate {
         return false;
     }
 
+    /** 越界读审批：开关开或会话放行 → 直接放行；否则弹确认（Y 放行本次 / N 拒绝 / A/W 置位会话放行）。
+     *  W 对越界读按会话放行处理、不落持久化白名单（与高危操作的白名单语义区分，YAGNI）。 */
+    public synchronized boolean checkReadOutside(Tool tool, JsonObject args, String path) {
+        if (config.readAllowOutside() || sessionBypass) return true;
+        String detail = tool.name() + " → " + path;
+        ConfirmUi.Decision d = ui.ask("! 越界读取 " + detail);
+        if (d == ConfirmUi.Decision.APPROVE) return true;
+        if (d == ConfirmUi.Decision.REJECT) return false;
+        sessionBypass = true; // APPROVE_SESSION / APPROVE_WHITELIST 均会话放行
+        return true;
+    }
+
     private boolean isWhitelisted(Tool tool, JsonObject args) {
         String toolName = tool.name().toLowerCase();
         if (config.whitelistTools().contains(toolName)) return true;
