@@ -48,7 +48,8 @@ public class AgentLoopTest {
         llm = new FakeLlmClient();
         registry = new ToolRegistry();
         registry.register(new com.minion.core.tools.example.ExampleTool());
-        registry.register(new com.minion.core.tools.BashTool(config.workDir()));
+        registry.register(new com.minion.core.tools.BashTool(
+                new com.minion.core.tools.Workspace(config.workDir())));
         ui = new RecordingUi();
         confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
     }

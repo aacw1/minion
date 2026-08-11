@@ -24,6 +24,7 @@ import com.minion.core.tools.ReadTool;
 import com.minion.core.tools.TodoWriteTool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.WebFetchTool;
+import com.minion.core.tools.Workspace;
 import com.minion.core.tools.WriteTool;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
@@ -62,7 +63,9 @@ public class Main {
         registry.register(new EditTool(workDir, skillsDir));
         registry.register(new GlobTool(workDir, skillsDir));
         registry.register(new GrepTool(workDir, skillsDir));
-        registry.register(new BashTool(workDir));
+        // workspace 临时在此定义（仅 Bash 用）；Task 4 将挪到统一位置供全部工具共享
+        Workspace workspace = new Workspace(workDir);
+        registry.register(new BashTool(workspace));
         registry.register(new WebFetchTool());
 
         SkillManager skillManager = new SkillManager(skillsDir);

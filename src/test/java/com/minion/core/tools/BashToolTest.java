@@ -6,6 +6,9 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 import static org.junit.Assert.*;
 
 public class BashToolTest {
@@ -14,10 +17,12 @@ public class BashToolTest {
     public TemporaryFolder tmp = new TemporaryFolder();
 
     private BashTool bash;
+    private String workDir;
 
     @org.junit.Before
     public void setup() {
-        bash = new BashTool(tmp.getRoot().getAbsolutePath());
+        workDir = tmp.getRoot().getAbsolutePath();
+        bash = new BashTool(new Workspace(workDir));
     }
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
@@ -147,5 +152,52 @@ public class BashToolTest {
         ToolResult r = bash.execute(o);
         assertTrue(r.ok);
         assertTrue("乱码: " + r.output, r.output.contains("你好"));
+    }
+
+    @Test
+    public void cdPersistsAcrossCommands() throws Exception {
+        Files.createDirectories(Paths.get(workDir, "sub"));
+        BashTool tool = new BashTool(new Workspace(workDir));
+        ToolResult r1 = tool.execute(args("{\"command\":\"cd sub\"}"));
+        assertTrue(r1.output, r1.output.contains("当前目录"));
+        ToolResult r2 = tool.execute(args("{\"command\":\"pwd\"}"));
+        assertTrue(r2.output, r2.output.contains("sub"));
+    }
+
+    @Test
+    public void cdOutsideWorkDirRejected() throws Exception {
+        BashTool tool = new BashTool(new Workspace(workDir));
+        ToolResult r = tool.execute(args("{\"command\":\"cd ..\"}"));
+        assertTrue(r.output, r.output.contains("失败"));
+        ToolResult r2 = tool.execute(args("{\"command\":\"pwd\"}"));
+        assertFalse(r2.output.contains(".."));
+    }
+
+    @Test
+    public void cdUnknownDirRejected() throws Exception {
+        BashTool tool = new BashTool(new Workspace(workDir));
+        ToolResult r = tool.execute(args("{\"command\":\"cd 不存在\"}"));
+        assertTrue(r.output, r.output.contains("失败"));
+    }
+
+    @Test
+    public void cdCompoundCommandNotPersisted() throws Exception {
+        Files.createDirectories(Paths.get(workDir, "sub"));
+        BashTool tool = new BashTool(new Workspace(workDir));
+        // cd a && pwd 走 shell:进程内生效,不持久化
+        ToolResult r1 = tool.execute(args("{\"command\":\"cd sub && pwd\"}"));
+        assertTrue(r1.output, r1.output.contains("sub"));
+        ToolResult r2 = tool.execute(args("{\"command\":\"pwd\"}"));
+        assertFalse(r2.output, r2.output.contains("sub"));
+    }
+
+    @Test
+    public void cdNoArgReturnsToWorkDir() throws Exception {
+        Files.createDirectories(Paths.get(workDir, "sub"));
+        BashTool tool = new BashTool(new Workspace(workDir));
+        tool.execute(args("{\"command\":\"cd sub\"}"));
+        tool.execute(args("{\"command\":\"cd\"}"));
+        ToolResult r = tool.execute(args("{\"command\":\"pwd\"}"));
+        assertFalse(r.output.contains("sub"));
     }
 }

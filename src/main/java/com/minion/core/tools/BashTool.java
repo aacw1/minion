@@ -15,9 +15,12 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** 命令执行：工作路径内、默认超时 120s、输出截断 30k。危险命令需确认。 */
 public class BashTool implements Tool {
@@ -25,9 +28,13 @@ public class BashTool implements Tool {
     public static final int DEFAULT_TIMEOUT = 120;
     private static final int MAX_OUTPUT = 30000;
 
-    private final String workDir;
+    // 纯 cd 命令识别：整命令只有 cd [dir]，不含 && / | 等复合语法
+    private static final Pattern CD_PATTERN =
+            Pattern.compile("^cd(?:[ \\t]+(\\S+))?[ \\t]*$");
 
-    public BashTool(String workDir) { this.workDir = workDir; }
+    private final Workspace workspace;
+
+    public BashTool(Workspace workspace) { this.workspace = workspace; }
 
     @Override
     public String name() { return "Bash"; }
@@ -58,6 +65,17 @@ public class BashTool implements Tool {
         }
         if (timeout < 1) return ToolResult.error("timeoutSeconds 非法: " + timeout);
 
+        // 纯 cd 命令直接改会话级 cwd（跨命令持久化）；复合命令（含 && 等）走 shell 原样执行
+        String trimmed = command.trim();
+        Matcher cdM = CD_PATTERN.matcher(trimmed);
+        if (cdM.matches()) {
+            Path target = workspace.cd(cdM.group(1));
+            if (target == null) {
+                return ToolResult.error("cd 失败: 目录不存在或在工作路径之外(cd 仅限工作区内),当前目录: " + workspace.cwd());
+            }
+            return ToolResult.success("当前目录: " + target);
+        }
+
         // pid 探针文件：bash 启动时把自身 pid（$$）写进来，超时后据此按进程组清杀
         File pidFile = File.createTempFile("minion-pid", ".tmp");
         pidFile.deleteOnExit();
@@ -68,7 +86,7 @@ public class BashTool implements Tool {
         Files.write(scriptFile.toPath(), probe(command, pidFile).getBytes(StandardCharsets.UTF_8));
         List<String> cmd = buildShellCommand(command, scriptFile);
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.directory(new File(workDir));
+        pb.directory(workspace.cwd().toFile());
         pb.redirectErrorStream(true);
         long start = System.currentTimeMillis();
         final Process process = pb.start();

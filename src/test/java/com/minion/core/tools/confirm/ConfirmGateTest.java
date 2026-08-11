@@ -95,7 +95,8 @@ public class ConfirmGateTest {
         config = com.minion.core.config.Config.load(tmp.getRoot().toPath());
         FakeConfirmUi ui = new FakeConfirmUi();
         ConfirmGate g = gate(ui);
-        assertTrue(g.check(new com.minion.core.tools.BashTool(tmp.getRoot().getAbsolutePath()),
+        assertTrue(g.check(new com.minion.core.tools.BashTool(
+                        new com.minion.core.tools.Workspace(tmp.getRoot().getAbsolutePath())),
                 args("{\"command\":\"rm -rf x\"}")));
         assertTrue(ui.asked.isEmpty());
     }
@@ -105,7 +106,8 @@ public class ConfirmGateTest {
         FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE_WHITELIST);
         ConfirmGate g = gate(ui);
         com.minion.core.tools.BashTool bash =
-                new com.minion.core.tools.BashTool(tmp.getRoot().getAbsolutePath());
+                new com.minion.core.tools.BashTool(
+                        new com.minion.core.tools.Workspace(tmp.getRoot().getAbsolutePath()));
         JsonObject danger = args("{\"command\":\"rm -rf x\"}");
         // W 键：确认危险命令并写入 confirm.whitelist.commands（外部文件落盘）
         assertTrue(g.check(bash, danger));
