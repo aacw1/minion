@@ -1,6 +1,7 @@
 package com.minion.core.tools;
 
 import com.google.gson.JsonObject;
+import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -15,12 +16,16 @@ public class ReadTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final ConfirmGate confirm;
 
-    public ReadTool(Workspace workspace) { this(workspace, null); }
+    public ReadTool(Workspace workspace) { this(workspace, null, null); }
 
-    public ReadTool(Workspace workspace, String skillsDir) {
+    public ReadTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
+
+    public ReadTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.confirm = confirm;
     }
 
     @Override
@@ -44,7 +49,9 @@ public class ReadTool implements Tool {
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
         ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
-        if (guard != null) return guard;
+        if (guard != null) {
+            if (confirm == null || !confirm.checkReadOutside(this, args, p.toString())) return guard;
+        }
 
         int offset = 0;
         int limit = DEFAULT_LIMIT;

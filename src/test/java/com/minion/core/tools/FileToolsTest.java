@@ -201,6 +201,72 @@ public class FileToolsTest {
         }
     }
 
+    /** 读逃逸确认：构造可注入 ConfirmGate 的 Config（开关开/关由 allowOutside 控制） */
+    private com.minion.core.config.Config readConfig(boolean allowOutside) throws Exception {
+        com.minion.core.config.Config c = com.minion.core.config.Config.load(tmp.getRoot().toPath());
+        if (allowOutside) {
+            Files.write(c.externalFile(),
+                    "\npaths.read.allowOutside=true\n".getBytes(StandardCharsets.UTF_8),
+                    java.nio.file.StandardOpenOption.APPEND);
+            c = com.minion.core.config.Config.load(tmp.getRoot().toPath());
+        }
+        return c;
+    }
+
+    // ---- 读逃逸：越界读确认放行 / 拒绝 / 开关自动放行 ----
+
+    @Test
+    public void read_outside_confirmApprove_allows() throws Exception {
+        File outside = new File(System.getProperty("java.io.tmpdir"), "minion-read-approve.txt");
+        outside.deleteOnExit();
+        Files.write(outside.toPath(), "secret".getBytes(StandardCharsets.UTF_8));
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                        com.minion.core.tools.confirm.ConfirmUi.Decision.APPROVE)));
+        ToolResult res = r.execute(args("{\"path\":\"" + outside.getAbsolutePath().replace("\\", "\\\\") + "\"}"));
+        assertTrue(res.output, res.ok);
+        assertTrue(res.output.contains("secret"));
+    }
+
+    @Test
+    public void read_outside_confirmReject_rejects() throws Exception {
+        File outside = new File(System.getProperty("java.io.tmpdir"), "minion-read-reject.txt");
+        outside.deleteOnExit();
+        Files.write(outside.toPath(), "secret".getBytes(StandardCharsets.UTF_8));
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                        com.minion.core.tools.confirm.ConfirmUi.Decision.REJECT)));
+        ToolResult res = r.execute(args("{\"path\":\"" + outside.getAbsolutePath().replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.ok);
+        assertTrue(res.output.contains("工作路径之外"));
+    }
+
+    @Test
+    public void read_outside_switchOn_autoAllows() throws Exception {
+        File outside = new File(System.getProperty("java.io.tmpdir"), "minion-read-switchon.txt");
+        outside.deleteOnExit();
+        Files.write(outside.toPath(), "secret".getBytes(StandardCharsets.UTF_8));
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(true), new com.minion.core.tools.confirm.FakeConfirmUi()));
+        ToolResult res = r.execute(args("{\"path\":\"" + outside.getAbsolutePath().replace("\\", "\\\\") + "\"}"));
+        assertTrue(res.output, res.ok);
+        assertTrue(res.output.contains("secret"));
+    }
+
+    @Test
+    public void grep_outside_confirmApprove_allows() throws Exception {
+        File outside = new File(System.getProperty("java.io.tmpdir"), "minion-grep-approve.txt");
+        outside.deleteOnExit();
+        Files.write(outside.toPath(), "secret count value".getBytes(StandardCharsets.UTF_8));
+        GrepTool g = new GrepTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                        com.minion.core.tools.confirm.ConfirmUi.Decision.APPROVE)));
+        ToolResult res = g.execute(args("{\"pattern\":\"count\",\"path\":\""
+                + outside.getAbsolutePath().replace("\\", "\\\\") + "\"}"));
+        assertTrue(res.output, res.ok);
+        assertTrue(res.output.contains("secret count value"));
+    }
+
     private static void deleteRecursively(Path dir) throws Exception {
         if (dir == null || !Files.exists(dir)) return;
         Files.walkFileTree(dir, new java.nio.file.SimpleFileVisitor<Path>() {

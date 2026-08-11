@@ -1,6 +1,7 @@
 package com.minion.core.tools;
 
 import com.google.gson.JsonObject;
+import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -19,12 +20,16 @@ public class GrepTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final ConfirmGate confirm;
 
-    public GrepTool(Workspace workspace) { this(workspace, null); }
+    public GrepTool(Workspace workspace) { this(workspace, null, null); }
 
-    public GrepTool(Workspace workspace, String skillsDir) {
+    public GrepTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
+
+    public GrepTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.confirm = confirm;
     }
 
     @Override
@@ -56,7 +61,9 @@ public class GrepTool implements Tool {
         final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
         if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
         ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, root);
-        if (guard != null) return guard;
+        if (guard != null) {
+            if (confirm == null || !confirm.checkReadOutside(this, args, root.toString())) return guard;
+        }
         // 结果路径格式：cwd 内输出相对路径（模型可直接 Read）；cwd 外（技能目录等）输出绝对路径
         final Path rootAbs = workspace.cwd().toAbsolutePath().normalize();
         final boolean rootInWork = root.toAbsolutePath().normalize().startsWith(rootAbs);
