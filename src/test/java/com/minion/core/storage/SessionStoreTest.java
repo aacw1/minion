@@ -112,4 +112,16 @@ public class SessionStoreTest {
         assertEquals(a.id, loaded.id);
         assertEquals(5, loaded.messages.size());
     }
+
+    /** T4：会话级 cwd 随会话 JSON 持久化（恢复时工作区跟随） */
+    @Test
+    public void sessionCwdSerialized() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
+        Session s = Session.create(config);
+        s.cwd = "/tmp/some/dir";
+        store.save(s);
+        Session loaded = store.load(s.id);
+        assertEquals("/tmp/some/dir", loaded.cwd);
+    }
 }

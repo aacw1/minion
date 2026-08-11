@@ -12,6 +12,7 @@ import com.minion.core.skills.Skill;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
+import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.core.tools.confirm.FakeConfirmUi;
@@ -304,6 +305,41 @@ public class AgentLoopTest {
         assertEquals(5, loop.usage().sessionThinking());
         assertEquals(1, loop.session().todos.items.size());
         assertEquals("写文档", loop.session().todos.items.get(0).text);
+    }
+
+    /** T4：restoreSession 恢复会话 cwd（有效路径 → workspace 跟随） */
+    @Test
+    public void restoreSession_restoresCwd() throws Exception {
+        Path sub = tmp.newFolder("sub").toPath();
+        Session saved = Session.create(config);
+        saved.cwd = sub.toString();
+        Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
+        AgentLoop loop = new AgentLoop(config, llm, registry,
+                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        loop.restoreSession(saved);
+        assertEquals(sub, ws.cwd());
+    }
+
+    /** T4：startNewSession 清空会话内容（消息/任务/统计）并回到工作区根 */
+    @Test
+    public void startNewSession_clearsSessionAndResetsCwd() throws Exception {
+        Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
+        AgentLoop loop = new AgentLoop(config, llm, registry,
+                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        loop.session().messages.add(Message.user("任务"));
+        loop.session().todos.replace(Collections.singletonList(
+                new TodoList.TodoItem("写文档", false)));
+        Usage u = new Usage();
+        u.inputTokens = 10;
+        loop.session().usage.record(u);
+        Path sub = tmp.newFolder("sub").toPath();
+        ws.cd(sub.toString());
+        assertEquals(sub, ws.cwd());
+        loop.startNewSession();
+        assertEquals(0, loop.messages().size());
+        assertEquals(0, loop.session().todos.items.size());
+        assertEquals(0, loop.usage().sessionTotal());
+        assertEquals(tmp.getRoot().toPath(), ws.cwd());
     }
 
     /** 阻塞工具：进入 execute 后吞掉中断持续阻塞，保证工具执行阶段的稳定中断路径（M2） */

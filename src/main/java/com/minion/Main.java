@@ -85,7 +85,7 @@ public class Main {
                         .build(skills, Collections.<Skill>emptyList())));
 
         AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, renderer, ctx);
+                new SystemPromptBuilder(config), confirm, renderer, ctx, workspace);
         // TodoWriteTool 接线会话内任务清单（loop 创建后注册）：todos 随会话落盘/恢复，而非独立空清单
         registry.register(new TodoWriteTool(loop.session().todos));
         loop.setAllSkills(skills);

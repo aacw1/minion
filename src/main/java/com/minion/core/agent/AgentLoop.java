@@ -15,6 +15,7 @@ import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
+import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ public class AgentLoop {
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
     private final ContextManager contextManager; // null = 不启用压缩
+    private final Workspace workspace;
     private final Session session;
 
     /** 可选：会话自动落盘（Task 18）。null = 不保存 */
@@ -55,12 +57,13 @@ public class AgentLoop {
 
     public AgentLoop(Config config, LlmClient llm, ToolRegistry registry,
                      SystemPromptBuilder promptBuilder, ConfirmGate confirmGate, AgentUi ui) {
-        this(config, llm, registry, promptBuilder, confirmGate, ui, null);
+        this(config, llm, registry, promptBuilder, confirmGate, ui, null,
+                new Workspace(config.workDir()));
     }
 
     public AgentLoop(Config config, LlmClient llm, ToolRegistry registry,
                      SystemPromptBuilder promptBuilder, ConfirmGate confirmGate, AgentUi ui,
-                     ContextManager contextManager) {
+                     ContextManager contextManager, Workspace workspace) {
         this.config = config;
         this.llm = llm;
         this.registry = registry;
@@ -68,6 +71,7 @@ public class AgentLoop {
         this.confirmGate = confirmGate;
         this.ui = ui;
         this.contextManager = contextManager;
+        this.workspace = workspace;
         this.session = Session.create(config);
         // daemon 线程：main() 返回后 JVM 可正常退出（T21 REPL）
         this.pool = Executors.newFixedThreadPool(threads, r -> {
@@ -161,6 +165,15 @@ public class AgentLoop {
         scrubHalfTurn(); // 恢复历史同样清洗半轮残留（外部/旧格式文件可能含残缺 toolCalls）
         if (s.todos != null) session.todos = s.todos;
         if (s.usage != null) session.usage = s.usage;
+        workspace.restore(s.cwd);
+    }
+
+    /** /new:清空当前会话内容并回到工作区根 */
+    public void startNewSession() {
+        session.messages.clear();
+        session.todos = new TodoList();
+        session.usage = new UsageTracker();
+        workspace.resetCwd();
     }
 
     /**

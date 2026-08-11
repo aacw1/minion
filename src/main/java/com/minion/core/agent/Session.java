@@ -17,6 +17,8 @@ public class Session {
     public String createdAt;
     public String workDir;
     public String modelName;
+    /** 会话级工作目录(相对路径基准);null/空 = 跟随工作区根 */
+    public String cwd;
     public List<Message> messages = new ArrayList<Message>();
     public TodoList todos = new TodoList();
     public UsageTracker usage = new UsageTracker();
