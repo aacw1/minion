@@ -31,6 +31,9 @@ public class BrowserSession {
 
     private void ensureConnected() throws IOException {
         if (client.isConnected()) return;
+        // 断线重连:旧页面的域启用/辅助函数注入均失效,需重新执行
+        domainsEnabled = false;
+        helperInjected = false;
         String ws;
         try {
             ws = launcher.pageEndpoint();
@@ -124,7 +127,7 @@ public class BrowserSession {
         JsonObject r = client.command("Runtime.evaluate", params);
         if (r.has("exceptionDetails")) {
             String text = r.getAsJsonObject("exceptionDetails").get("text").getAsString();
-            return "JS 异常: " + text + consoleErrors(3);
+            throw new IOException("JS 异常: " + text + consoleErrors(3));
         }
         JsonObject result = r.has("result") ? r.getAsJsonObject("result") : new JsonObject();
         if (!result.has("value")) return "(无返回值)";

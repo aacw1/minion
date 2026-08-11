@@ -24,6 +24,35 @@ public class BrowserToolsTest {
         }
     }
 
+    /** 永远返回假调试端点的 launcher:配合 FakeCdpClient 走完连接流程,不真正拉起 Chrome */
+    private static class FakeLauncher extends ChromeLauncher {
+        FakeLauncher() {
+            super("", 1, Paths.get("."), false, 100);
+        }
+        @Override
+        public String pageEndpoint() {
+            return "ws://127.0.0.1:1/devtools/page/1";
+        }
+    }
+
+    /** 模拟 CDP 客户端:记录命令调用,不真正连接 Chrome */
+    private static class FakeCdpClient extends CdpClient {
+        final java.util.List<String> commands = new java.util.ArrayList<String>();
+        boolean connected;
+        JsonObject evalResponse = new JsonObject(); // 测试注入
+        FakeCdpClient() { super(100, 100); }
+        @Override
+        public void connect(String wsUrl) { connected = true; }
+        @Override
+        public boolean isConnected() { return connected; }
+        @Override
+        public JsonObject command(String method, JsonObject params) {
+            commands.add(method);
+            if ("Runtime.evaluate".equals(method) && evalResponse != null) return evalResponse;
+            return new JsonObject();
+        }
+    }
+
     private static JsonObject json(String key, String value) {
         JsonObject o = new JsonObject();
         o.addProperty(key, value);
@@ -90,6 +119,49 @@ public class BrowserToolsTest {
     public void browserDebugUnknownAction() {
         ToolResult r = new BrowserDebugTool(session()).execute(json("action", "x"));
         assertTrue(r.output, r.output.contains("未知 action"));
+    }
+
+    /** 断线重连后:Network/Runtime 域重新启用、辅助函数重新注入 */
+    @Test
+    public void testReconnectReenablesDomains() throws Exception {
+        FakeCdpClient fake = new FakeCdpClient();
+        BrowserSession session = new BrowserSession(new FakeLauncher(), fake);
+        // 首次连接:域启用 + 辅助函数注入各一次
+        session.evaluate("1+1");
+        assertTrue(fake.connected);
+        assertEquals(1, count(fake.commands, "Network.enable"));
+        assertEquals(1, count(fake.commands, "Runtime.enable"));
+        assertEquals(2, count(fake.commands, "Runtime.evaluate")); // 辅助函数注入 + 本次执行
+
+        // 模拟断线(连接中断 → 重新 open 场景),重连后域与辅助函数必须重新生效
+        fake.connected = false;
+        session.evaluate("1+1");
+        assertEquals(2, count(fake.commands, "Network.enable"));
+        assertEquals(2, count(fake.commands, "Runtime.enable"));
+        assertEquals(4, count(fake.commands, "Runtime.evaluate")); // 辅助函数再次注入 + 第二次执行
+    }
+
+    /** JS 异常按设计文档返回失败 ToolResult,消息含异常文本 */
+    @Test
+    public void testEvalJsExceptionIsError() {
+        FakeCdpClient fake = new FakeCdpClient();
+        fake.connected = true; // 已连接:跳过启动,直接命中 JS 异常分支
+        JsonObject exceptionDetails = new JsonObject();
+        exceptionDetails.addProperty("text", "ReferenceError: x is not defined");
+        fake.evalResponse.add("exceptionDetails", exceptionDetails);
+        fake.evalResponse.add("result", new JsonObject());
+        BrowserSession session = new BrowserSession(new FailingLauncher(), fake);
+        ToolResult r = new BrowserEvalTool(session).execute(json("expression", "x()"));
+        assertFalse(r.ok);
+        assertTrue(r.output, r.output.contains("JS 异常"));
+    }
+
+    private static int count(java.util.List<String> list, String method) {
+        int n = 0;
+        for (String s : list) {
+            if (method.equals(s)) n++;
+        }
+        return n;
     }
 
     private static JsonObject json2(String k1, String v1, String k2, String v2) {
