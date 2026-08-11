@@ -46,8 +46,8 @@
   工具构造签名变为 `(Workspace, String skillsDir, ConfirmGate)`
 - 配置同步：`Config.readAllowOutside()` + config.properties 新增
   `paths.read.allowOutside=false`（带注释）
-- 系统提示联动：开关开启时 SystemPromptBuilder 追加一句"已开启越界读取，可读取工作区外文件"，
-  让模型知道可读外部绝对路径
+- **不做系统提示联动**（用户指定）：模型天然会尝试越界读（现状只是失败），
+  提示"可读外部文件"反而会过度鼓励越界读；改造目标仅让越界读成功
 
 ### 改动 2：轮数上限 10000 → 1000
 
@@ -79,7 +79,7 @@
 | `src/main/java/com/minion/core/tools/ReadTool.java` | 构造注入 ConfirmGate；越界分支改走确认 |
 | `src/main/java/com/minion/core/tools/GrepTool.java` | 同上 |
 | `src/main/java/com/minion/core/tools/GlobTool.java` | 新增可选 `path` 参数（越界时走确认）；构造注入 ConfirmGate |
-| `src/main/java/com/minion/core/agent/SystemPromptBuilder.java` | BUILTIN 追加规则 7；开关开启时追加越界读说明 |
+| `src/main/java/com/minion/core/agent/SystemPromptBuilder.java` | BUILTIN 追加规则 7（卡住止损） |
 | `src/main/java/com/minion/core/agent/AgentLoop.java` | `DEFAULT_ROUND_LIMIT=1000`；连续失败计数 + ≥30 注入系统提醒 |
 | `src/main/java/com/minion/Main.java` | ConfirmGate 构造提前到读工具注册前；读工具构造传 ConfirmGate |
 | `src/test/.../confirm/ConfirmGateTest.java` | 新增 `checkReadOutside` 测试（开关开/关 × Y/N/A） |
