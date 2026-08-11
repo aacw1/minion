@@ -46,6 +46,7 @@ public class CdpClient extends WebSocketListener {
     /** 连接(阻塞至握手完成或超时);失败抛 IOException */
     public void connect(String wsUrl) throws IOException {
         if (connected) return;
+        error = null; // 重连前清理上次断线遗留的 error,避免新握手被旧错误误判为失败
         OkHttpClient client = new OkHttpClient.Builder()
                 .connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS) // 长连接,命令层自行控制超时
@@ -120,6 +121,7 @@ public class CdpClient extends WebSocketListener {
     @Override
     public void onOpen(WebSocket ws, Response response) {
         socket = ws;
+        error = null; // 握手成功即视为恢复:清除上次断线错误,否则重连后 connect 永远抛旧错误
         if (openLatch != null) openLatch.countDown();
     }
 

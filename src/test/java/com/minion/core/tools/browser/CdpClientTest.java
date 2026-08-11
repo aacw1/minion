@@ -20,34 +20,45 @@ public class CdpClientTest {
 
     private MockWebServer server;
     private WebSocket serverWs;
+    private WebSocket serverWs2;
+    /** 升级响应 listener 的服务端 WebSocket 槽位:Java 无法按引用写回字段,经数组槽位中转 */
+    private final WebSocket[] firstWsSlot = new WebSocket[1];
+    private final WebSocket[] secondWsSlot = new WebSocket[1];
 
     @Before
     public void setUp() throws Exception {
         server = new MockWebServer();
-        server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
-            @Override
-            public void onOpen(WebSocket ws, Response response) { serverWs = ws; }
-            @Override
-            public void onMessage(WebSocket ws, String text) {
-                // 自动应答:收到命令回同 id 的 result(网络事件除外,事件不发 id)
-                JsonObject msg = JsonParser.parseString(text).getAsJsonObject();
-                if (!msg.has("id")) return;
-                int id = msg.get("id").getAsInt();
-                JsonObject resp = new JsonObject();
-                resp.addProperty("id", id);
-                if ("Runtime.evaluate".equals(msg.get("method").getAsString())) {
-                    JsonObject value = new JsonObject();
-                    value.addProperty("value", "42");
-                    JsonObject result = new JsonObject();
-                    result.add("result", value);
-                    resp.add("result", result);
-                } else {
-                    resp.add("result", new JsonObject());
-                }
-                ws.send(resp.toString());
-            }
-        }));
+        server.enqueue(upgradeResponse(firstWsSlot));
         server.start();
+    }
+
+    /** 构造带自动应答的 WebSocket 升级响应(重连测试复用);服务端 WebSocket 写入 slot[0] */
+    private MockResponse upgradeResponse(final WebSocket[] slot) {
+        return new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            @Override
+            public void onOpen(WebSocket ws, Response response) { slot[0] = ws; }
+            @Override
+            public void onMessage(WebSocket ws, String text) { autoAnswer(ws, text); }
+        });
+    }
+
+    /** 自动应答:收到命令回同 id 的 result(网络事件除外,事件不发 id) */
+    private static void autoAnswer(WebSocket ws, String text) {
+        JsonObject msg = JsonParser.parseString(text).getAsJsonObject();
+        if (!msg.has("id")) return;
+        int id = msg.get("id").getAsInt();
+        JsonObject resp = new JsonObject();
+        resp.addProperty("id", id);
+        if ("Runtime.evaluate".equals(msg.get("method").getAsString())) {
+            JsonObject value = new JsonObject();
+            value.addProperty("value", "42");
+            JsonObject result = new JsonObject();
+            result.add("result", value);
+            resp.add("result", result);
+        } else {
+            resp.add("result", new JsonObject());
+        }
+        ws.send(resp.toString());
     }
 
     @After
@@ -59,8 +70,9 @@ public class CdpClientTest {
 
     private void waitServerWs() throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
-        while (serverWs == null && System.currentTimeMillis() < deadline) Thread.sleep(10);
-        assertNotNull("服务端 WebSocket 未建立", serverWs);
+        while (firstWsSlot[0] == null && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertNotNull("服务端 WebSocket 未建立", firstWsSlot[0]);
+        serverWs = firstWsSlot[0]; // 既有测试继续经 serverWs 字段收发
     }
 
     @Test
@@ -123,5 +135,31 @@ public class CdpClientTest {
             client.command("Page.navigate", new JsonObject());
             fail("应抛 IOException");
         } catch (IOException expected) { }
+    }
+
+    /** 断线重连回归:上次断线的 error 必须在重连 onOpen 时清理,
+     *  否则 connect 握手成功后仍抛「连接失败: 旧错误」,设计文档的「连接中断 → 重新 open」恢复流程被破坏 */
+    @Test
+    public void reconnect_afterServerClose_clearsStaleError() throws Exception {
+        CdpClient client = new CdpClient(5000, 5000);
+        client.connect(wsUrl());
+        waitServerWs();
+        serverWs.close(1000, "bye");
+        long deadline = System.currentTimeMillis() + 5000;
+        while (client.isConnected() && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertFalse("对端关闭后应标记断线", client.isConnected());
+        // 第二条升级响应:自动应答行为与首条一致,服务端 WebSocket 写入 serverWs2
+        server.enqueue(upgradeResponse(secondWsSlot));
+        client.connect(wsUrl());
+        deadline = System.currentTimeMillis() + 5000;
+        while (secondWsSlot[0] == null && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        serverWs2 = secondWsSlot[0];
+        assertNotNull("第二条连接的服务端 WebSocket 未建立", serverWs2);
+        assertTrue("重连后应恢复连接状态", client.isConnected());
+        // 命令需能完整往返,证明新连接真正可用而非仅状态位恢复
+        JsonObject params = new JsonObject();
+        params.addProperty("expression", "1+1");
+        JsonObject result = client.command("Runtime.evaluate", params);
+        assertEquals("42", result.getAsJsonObject("result").get("value").getAsString());
     }
 }
