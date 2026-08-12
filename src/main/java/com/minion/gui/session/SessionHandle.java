@@ -2,6 +2,7 @@ package com.minion.gui.session;
 
 import com.minion.core.agent.AgentLoop;
 import com.minion.core.agent.Session;
+import com.minion.core.llm.LlmClient;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -16,6 +17,8 @@ public class SessionHandle {
     public final SessionController controller;
     /** 会话独占工作线程（真并行：每会话一个单线程池，互不阻塞） */
     public final ExecutorService pool;
+    /** 会话独享的 LLM 客户端（会话删除/退出时 close 释放 okhttp 资源） */
+    public final LlmClient llm;
 
     /** 展示标题（新建会话由 LLM 摘要生成；恢复会话来自落盘） */
     public volatile String title;
@@ -28,7 +31,7 @@ public class SessionHandle {
 
     public SessionHandle(String id, String workspaceName, Session session,
                          AgentLoop loop, SessionController controller, String title,
-                         boolean titlePending) {
+                         boolean titlePending, LlmClient llm) {
         this.id = id;
         this.workspaceName = workspaceName;
         this.session = session;
@@ -36,6 +39,7 @@ public class SessionHandle {
         this.controller = controller;
         this.title = title;
         this.titlePending = titlePending;
+        this.llm = llm;
         String idPrefix = id.length() > 8 ? id.substring(0, 8) : id;
         this.pool = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "minion-session-" + workspaceName + "-" + idPrefix);

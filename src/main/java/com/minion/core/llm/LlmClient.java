@@ -14,4 +14,7 @@ public interface LlmClient {
 
     /** 中断进行中的请求（Ctrl+C / 用户打断） */
     default void cancel() { }
+
+    /** 释放底层资源（HTTP 连接池/线程）；默认无操作。关闭后不可再发起请求 */
+    default void close() { }
 }

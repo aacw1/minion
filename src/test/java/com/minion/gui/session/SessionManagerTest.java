@@ -2,8 +2,11 @@ package com.minion.gui.session;
 
 import com.minion.core.agent.Session;
 import com.minion.core.config.Config;
+import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.Message;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
@@ -279,5 +282,80 @@ public class SessionManagerTest {
         assertFalse("会话目录被退出落盘复活", Files.exists(sessionDir));
         assertNotEquals("projA", m.workspaces().currentName());
         assertEquals(0, m.sessions().size());
+    }
+
+    /** 资源释放：shutdown 关闭全部会话的 LLM 客户端（okhttp 残留修复） */
+    @Test
+    public void shutdown_closesAllSessionLlms() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        m.createSession(null);
+        m.createSession(null);
+        assertEquals(2, m.created.size());
+
+        m.shutdown();
+
+        for (FakeLlmClient llm : m.created) {
+            assertEquals("shutdown 后会话 LLM 应被关闭", 1, llm.closeCount);
+        }
+    }
+
+    /** 资源释放：删除会话关闭其 LLM 客户端 */
+    @Test
+    public void deleteSession_closesItsLlm() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h = m.createSession(null);
+        FakeLlmClient llm = m.created.get(0);
+        assertEquals(0, llm.closeCount);
+
+        m.deleteSession(h);
+
+        assertEquals("删除会话后其 LLM 应被关闭", 1, llm.closeCount);
+    }
+
+    /** 资源释放：删除工作空间关闭其全部会话的 LLM 客户端 */
+    @Test
+    public void deleteWorkspace_closesSessionLlms() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        m.switchWorkspace("projA");
+        m.createSession(null);
+        m.createSession(null);
+        assertEquals(2, m.created.size());
+
+        assertTrue(m.deleteWorkspace("projA"));
+
+        for (FakeLlmClient llm : m.created) {
+            assertEquals("删除工作空间后其会话 LLM 应被关闭", 1, llm.closeCount);
+        }
+    }
+
+    /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
+    private static class SpyManager extends SessionManager {
+        final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();
+
+        SpyManager(ConfirmUi ui, Config config, Path jar, WorkspaceManager ws,
+                   ModelManager models) {
+            super(ui, config, jar, ws, models, new ArrayList<Skill>(), null);
+        }
+
+        @Override
+        public LlmClient newLlm(ModelConfig mc) {
+            FakeLlmClient f = new FakeLlmClient();
+            created.add(f);
+            return f;
+        }
     }
 }

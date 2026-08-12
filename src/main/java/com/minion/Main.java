@@ -36,11 +36,17 @@ public class Main {
                 config.browserTimeoutMs());
         BrowserSession browserSession = new BrowserSession(chrome, new CdpClient(10000,
                 config.browserTimeoutMs()));
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> chrome.stop()));
 
         ConfirmUi confirmUi = new GuiConfirmUi();
         SessionManager manager = new SessionManager(confirmUi, config, jarDir,
                 workspaces, models, skills, browserSession);
+
+        // 退出钩子统一收口：先关会话（AgentLoop + LLM okhttp 资源 + 线程池），再停自启 Chrome
+        // （manager.shutdown 幂等——关窗已 shutdown 时此处空转）
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            manager.shutdown();
+            chrome.stop();
+        }));
 
         MinionApp.start(config, workspaces, models, manager);
     }

@@ -174,7 +174,7 @@ public class SessionManager {
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
                 ctx.sessions.add(new SessionHandle(s.id, ctx.name, s, loop, controller,
-                        s.title, false));
+                        s.title, false, llm));
             } catch (Exception e) {
                 notifyError("会话恢复失败（跳过）: " + e.getMessage());
             }
@@ -235,7 +235,7 @@ public class SessionManager {
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
-                title, title == null);
+                title, title == null, llm);
         ctx.sessions.add(h);
         try {
             ctx.store.save(s); // 立即落盘（含空会话）
@@ -280,6 +280,7 @@ public class SessionManager {
         if (h.running) stop(h);
         h.loop.shutdown();
         h.pool.shutdownNow();
+        h.llm.close(); // 会话删除即释放其 LLM 客户端（okhttp 资源）
         ctx.sessions.remove(h);
         try {
             ctx.store.delete(h.id);
@@ -353,6 +354,7 @@ public class SessionManager {
             if (h.running) { h.loop.interrupt(); hasRunning = true; } // 终止运行中循环（stop 语义）
             h.loop.shutdown();
             h.pool.shutdownNow();
+            h.llm.close(); // 工作空间删除即释放其全部会话的 LLM 客户端
             h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         }
         ctxByName.remove(name);
@@ -490,6 +492,7 @@ public class SessionManager {
                 if (h.running) h.loop.interrupt();
                 h.loop.shutdown();
                 h.pool.shutdownNow();
+                h.llm.close(); // 关 okhttp 连接池/线程，防 JVM 残留
             }
         }
         titlePool.shutdownNow();

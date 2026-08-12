@@ -33,6 +33,7 @@ public class DeepSeekClient implements LlmClient {
     private final String reasoningEffort;
     private final String provider;
     private final OkHttpClient http;
+    private volatile boolean closed;
 
     public DeepSeekClient(String url, String apiKey, String model,
                           boolean thinking, String reasoningEffort, String provider) {
@@ -103,6 +104,21 @@ public class DeepSeekClient implements LlmClient {
         for (okhttp3.Call c : inFlightCalls) {
             c.cancel();
         }
+    }
+
+    /**
+     * 释放底层资源：取消 in-flight 请求、关 dispatcher 线程、清空连接池。
+     * 幂等；okhttp 3.14 无 OkHttpClient.close()，连接池的 keep-alive 清理线程
+     * 是非 daemon 的（空闲 5 分钟才退出）——close 后连接池线程立即终止，
+     * JVM 不再被拖住（关窗约 5 分钟残留的根因）。
+     */
+    @Override
+    public void close() {
+        if (closed) return;
+        closed = true;
+        cancel();
+        http.dispatcher().executorService().shutdown();
+        http.connectionPool().evictAll();
     }
 
     @Override

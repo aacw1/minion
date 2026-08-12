@@ -84,4 +84,12 @@ public class FakeLlmClient implements LlmClient {
         lastRequestMessages = new ArrayList<Message>(all);
         return compressResult;
     }
+
+    /** close() 被调用次数（会话删除/退出时资源释放断言） */
+    public int closeCount = 0;
+
+    @Override
+    public void close() {
+        closeCount++;
+    }
 }
