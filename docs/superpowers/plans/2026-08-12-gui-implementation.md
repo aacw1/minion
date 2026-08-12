@@ -92,9 +92,11 @@
       <systemPath>${java.home}/lib/ext/jfxrt.jar</systemPath>
     </dependency>
     <!-- Markdown 渲染（0.64.x 为最后支持 JDK8 的版本线） -->
+    <!-- 注意坐标：0.62.2 起核心 artifact 更名回 umbrella `flexmark`（flexmark-core 止于 0.60.x）；
+         strikethrough 扩展 0.64.x 只有 gfm 变体（flexmark-ext-gfm-strikethrough） -->
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
-      <artifactId>flexmark-core</artifactId>
+      <artifactId>flexmark</artifactId>
       <version>0.64.8</version>
     </dependency>
     <dependency>
@@ -104,7 +106,7 @@
     </dependency>
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
-      <artifactId>flexmark-ext-strikethrough</artifactId>
+      <artifactId>flexmark-ext-gfm-strikethrough</artifactId>
       <version>0.64.8</version>
     </dependency>
 ```
@@ -2758,8 +2760,8 @@ import com.vladsch.flexmark.ast.SoftLineBreak;
 import com.vladsch.flexmark.ast.StrongEmphasis;
 import com.vladsch.flexmark.ast.Text;
 import com.vladsch.flexmark.ast.ThematicBreak;
-import com.vladsch.flexmark.ext.strikethrough.Strikethrough;
-import com.vladsch.flexmark.ext.strikethrough.StrikethroughExtension;
+import com.vladsch.flexmark.ext.gfm.strikethrough.Strikethrough;
+import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension;
 import com.vladsch.flexmark.ext.tables.TablesExtension;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.ast.Node;
