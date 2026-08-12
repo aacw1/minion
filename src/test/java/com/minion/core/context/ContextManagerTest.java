@@ -154,4 +154,26 @@ public class ContextManagerTest {
         // sampleHistory 6 条：内容 2+2+2+4+2+3=15 + 6×4 overhead=24 → 39；+50 → 89
         assertEquals(89, cm50.estimate(sampleHistory()));
     }
+
+    @Test
+    public void update_changesCompressionParams() {
+        ContextManager cm = new ContextManager(1000, 0.8, 5, new FakeLlmClient(), 10);
+        cm.update(100, 0.1, 8);
+        assertEquals(100, cm.maxTokens());
+        assertTrue(cm.shouldCompress(sampleHistory())); // 新阈值下必压缩
+    }
+
+    @Test
+    public void setLlm_usedForCompressionRequests() {
+        FakeLlmClient a = new FakeLlmClient();
+        a.compressResult = "【摘要】A";
+        FakeLlmClient b = new FakeLlmClient();
+        b.compressResult = "【摘要】B";
+        ContextManager cm = new ContextManager(100, 0.1, 0, a, 10); // 阈值极低：必触发压缩
+        List<Message> out = cm.compress(sampleHistory());
+        assertNotNull(a.lastRequestMessages); // 压缩走旧客户端
+        cm.setLlm(b);
+        out = cm.compress(sampleHistory());
+        assertTrue(out.get(0).content.contains("【摘要】B")); // 换客户端后走新客户端
+    }
 }

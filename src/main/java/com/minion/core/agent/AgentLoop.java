@@ -35,7 +35,7 @@ public class AgentLoop {
     private final SystemPromptBuilder promptBuilder;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
-    private final ContextManager contextManager; // null = 不启用压缩
+    private ContextManager contextManager; // null = 不启用压缩；final 移除
     private final Workspace workspace;
     private final Session session;
 
@@ -90,6 +90,9 @@ public class AgentLoop {
 
     /** 运行时切换模型（GUI 弹窗切换模型时调用；下轮请求生效） */
     public void setLlm(LlmClient llm) { this.llm = llm; }
+
+    /** 替换上下文管理器（模型参数热更新时用于换新实例；现有实例变更参数用 contextManager().update） */
+    public void setContextManager(ContextManager cm) { this.contextManager = cm; }
 
     public Session session() { return session; }
     public List<Message> messages() { return session.messages; }

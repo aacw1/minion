@@ -113,7 +113,9 @@ public class SessionManager {
     private void notifyTitleChanged(SessionHandle h) {
         for (Listener l : listeners) l.onSessionTitleChanged(h);
     }
+    /** running 回调：会话空闲时顺带回收换模型遗留的旧客户端（防 okhttp 资源滞留） */
     private void notifyRunningChanged(SessionHandle h, boolean running) {
+        if (!running) h.closeRetired();
         for (Listener l : listeners) l.onSessionRunningChanged(h, running);
     }
     private void notifyActivated(SessionHandle h) {
@@ -248,6 +250,28 @@ public class SessionManager {
                 mc.thinking, mc.reasoningEffort, mc.provider);
     }
 
+    /**
+     * 模型/参数变更 propagate：全部工作空间全部会话换新 LLM 客户端 + 压缩参数热更新。
+     * 旧客户端登记待回收（close 会 cancel 运行中请求，不可立即关）；会话空闲时回收。
+     */
+    public void applyModelChanged() {
+        ModelConfig mc = models.current();
+        for (WorkspaceCtx ctx : ctxByName.values()) {
+            for (SessionHandle h : ctx.sessions) {
+                LlmClient fresh = newLlm(mc);
+                LlmClient old = h.llm;
+                h.llm = fresh;
+                h.retireLlm(old); // 换引用后登记旧客户端（guard old != llm 防误登记当前客户端）
+                h.loop.setLlm(fresh); // 下轮请求生效
+                ContextManager cm = h.loop.contextManager();
+                if (cm != null) {
+                    cm.setLlm(fresh);
+                    cm.update(mc.maxContextTokens, mc.compressThreshold, mc.keepRecentMessages);
+                }
+            }
+        }
+    }
+
     public List<SessionHandle> sessions() {
         WorkspaceCtx ctx = ctxByName.get(currentWorkspaceName);
         return ctx == null ? new ArrayList<SessionHandle>() : new ArrayList<SessionHandle>(ctx.sessions);
@@ -269,7 +293,7 @@ public class SessionManager {
         if (h.running) stop(h);
         h.loop.shutdown();
         h.pool.shutdownNow();
-        h.llm.close(); // 会话删除即释放其 LLM 客户端（okhttp 资源）
+        h.closeAll(); // 会话删除即释放其 LLM 客户端（当前 + 待回收，okhttp 资源）
         ctx.sessions.remove(h);
         try {
             ctx.store.delete(h.id);
@@ -343,7 +367,7 @@ public class SessionManager {
             if (h.running) { h.loop.interrupt(); hasRunning = true; } // 终止运行中循环（stop 语义）
             h.loop.shutdown();
             h.pool.shutdownNow();
-            h.llm.close(); // 工作空间删除即释放其全部会话的 LLM 客户端
+            h.closeAll(); // 工作空间删除即释放其全部会话的 LLM 客户端（当前 + 待回收）
             h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         }
         ctxByName.remove(name);
@@ -452,7 +476,7 @@ public class SessionManager {
                 if (h.running) h.loop.interrupt();
                 h.loop.shutdown();
                 h.pool.shutdownNow();
-                h.llm.close(); // 关 okhttp 连接池/线程，防 JVM 残留
+                h.closeAll(); // 关 okhttp 连接池/线程（当前 + 待回收），防 JVM 残留
             }
         }
     }

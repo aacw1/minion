@@ -4,6 +4,8 @@ import com.minion.core.agent.AgentLoop;
 import com.minion.core.agent.Session;
 import com.minion.core.llm.LlmClient;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -17,8 +19,29 @@ public class SessionHandle {
     public final SessionController controller;
     /** 会话独占工作线程（真并行：每会话一个单线程池，互不阻塞） */
     public final ExecutorService pool;
-    /** 会话独享的 LLM 客户端（会话删除/退出时 close 释放 okhttp 资源） */
-    public final LlmClient llm;
+    /** 会话独享的 LLM 客户端（换模型时换新实例；删除/退出时 close 释放 okhttp 资源） */
+    public volatile LlmClient llm; // 由 final 改 volatile：模型热更新允许换实例
+
+    /** 已退役（换模型替换下来）的客户端：close 会 cancel 运行中请求，运行中不能立即关，登记待回收 */
+    private final List<LlmClient> retiredLlms = new ArrayList<LlmClient>();
+
+    /** 登记待回收客户端 */
+    public synchronized void retireLlm(LlmClient old) {
+        if (old != null && old != llm) retiredLlms.add(old);
+    }
+
+    /** 关闭全部客户端（当前 + 待回收）：会话删除/工作空间删除/应用退出时调用 */
+    public synchronized void closeAll() {
+        llm.close();
+        for (LlmClient c : retiredLlms) c.close();
+        retiredLlms.clear();
+    }
+
+    /** 会话空闲（running→false）时回收换模型遗留的旧客户端 */
+    public synchronized void closeRetired() {
+        for (LlmClient c : retiredLlms) c.close();
+        retiredLlms.clear();
+    }
 
     /** 展示标题（新建会话由 LLM 摘要生成；恢复会话来自落盘） */
     public volatile String title;

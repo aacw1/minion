@@ -369,6 +369,32 @@ public class SessionManagerTest {
         assertEquals(longText.substring(0, 5), h.title.substring(0, 5));
     }
 
+    /** 需求 13：模型变更 propagate——全部会话换新客户端，旧客户端登记待回收不立即 close，删除时全关 */
+    @Test
+    public void applyModelChanged_replacesLlmAndRetiresOld() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h1 = m.createSession(null);
+        SessionHandle h2 = m.createSession(null);
+        FakeLlmClient old1 = m.created.get(0);
+        FakeLlmClient old2 = m.created.get(1);
+
+        m.applyModelChanged();
+
+        assertEquals(4, m.created.size()); // 两个会话各新建一个
+        assertNotSame(old1, h1.llm);
+        assertNotSame(old2, h2.llm);
+        assertEquals(0, old1.closeCount); // 旧客户端不立即 close（可能 in-flight）
+        assertEquals(0, old2.closeCount);
+
+        m.deleteSession(h1); // 删除：当前 + 待回收全部关闭
+        assertEquals(1, old1.closeCount);
+        assertEquals(1, ((FakeLlmClient) h1.llm).closeCount);
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();

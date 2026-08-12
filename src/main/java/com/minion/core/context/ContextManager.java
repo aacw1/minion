@@ -15,11 +15,11 @@ public class ContextManager {
           + "未完成的任务与目标、已做出的关键决策及原因、使用过的工具与结果要点、"
           + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，500 字以内。";
 
-    private final int maxContextTokens;
-    private final double threshold;
-    private final int keepRecent;
-    private final LlmClient llm;
-    private final int systemTokens;
+    private int maxContextTokens;      // final 移除
+    private double threshold;
+    private int keepRecent;
+    private LlmClient llm;
+    private final int systemTokens;    // system 提示词 token 估算在构造时固定，保持不变
 
     public ContextManager(int maxContextTokens, double threshold, int keepRecent,
                           LlmClient llm, int systemTokens) {
@@ -29,6 +29,16 @@ public class ContextManager {
         this.llm = llm;
         this.systemTokens = systemTokens;
     }
+
+    /** 模型参数热更新（设置窗修改后调用；运行时生效于下一轮压缩判断） */
+    public void update(int maxContextTokens, double threshold, int keepRecent) {
+        this.maxContextTokens = maxContextTokens;
+        this.threshold = threshold;
+        this.keepRecent = keepRecent;
+    }
+
+    /** 换 LLM 客户端（模型切换后调用；压缩请求走新客户端） */
+    public void setLlm(LlmClient llm) { this.llm = llm; }
 
     /** 上下文窗口上限（AgentLoop 压缩百分比计算用） */
     public int maxTokens() { return maxContextTokens; }
