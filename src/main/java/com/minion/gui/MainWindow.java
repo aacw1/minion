@@ -10,7 +10,6 @@ import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -18,12 +17,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
-import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -227,28 +224,14 @@ public class MainWindow {
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
     }
 
-    /** 需求 10：消息区自动滚动到底；用户左键拖动滚动条期间暂停，释放后恢复 */
+    /** 需求 10：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复 */
     private void setupAutoScroll() {
-        final boolean[] dragging = new boolean[1];
-        // skin 就绪后才有滚动条节点（lookupAll 在 CSS 应用前为空）
-        chatScroll.skinProperty().addListener((obs, oldS, newS) -> {
-            if (newS == null) return;
-            for (Node n : chatScroll.lookupAll(".scroll-bar")) {
-                if (!(n instanceof ScrollBar)) continue;
-                ScrollBar sb = (ScrollBar) n;
-                if (sb.getOrientation() != Orientation.VERTICAL) continue;
-                sb.setOnMousePressed(e -> {
-                    if (e.getButton() == MouseButton.PRIMARY) dragging[0] = true; // 仅左键拖动暂停
-                });
-                sb.setOnMouseReleased(e -> {
-                    if (e.getButton() == MouseButton.PRIMARY) dragging[0] = false;
-                });
-            }
-        });
-        chatScroll.vmaxProperty().addListener((obs, oldV, newV) -> {
-            if (dragging[0]) return; // 用户正在拖动滚动条：不抢滚动位置
-            double max = newV == null ? 0 : newV.doubleValue();
-            Platform.runLater(() -> chatScroll.setVvalue(max));
+        // pinned：是否贴底——贴底时新内容到达自动跟随滚到底，离开底部即暂停
+        final boolean[] pinned = new boolean[] { true };
+        chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
+                pinned[0] = nv.doubleValue() >= chatScroll.getVmax() - 1.0);
+        chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
+            if (pinned[0]) chatScroll.setVvalue(nv.doubleValue());
         });
     }
 
