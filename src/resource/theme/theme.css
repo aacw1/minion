@@ -1,0 +1,123 @@
+/* minion 深色科技感主题 */
+.root {
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #0f1115;
+}
+
+/* 面板 */
+.panel { -fx-background-color: #15181f; -fx-border-color: #232733; -fx-border-width: 0 1 0 0; }
+.panel-dark { -fx-background-color: #101218; }
+.card {
+    -fx-background-color: #1a1d24;
+    -fx-background-radius: 8;
+    -fx-border-color: #232733;
+    -fx-border-radius: 8;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 10, 0, 0, 2);
+}
+
+/* 顶部栏 */
+.topbar {
+    -fx-background-color: #12141a;
+    -fx-border-color: transparent transparent #232733 transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 8 12 8 12;
+}
+.topbar-title { -fx-text-fill: #e6e8ee; -fx-font-size: 14px; -fx-font-weight: bold; }
+.topbar-model { -fx-text-fill: #8b949e; -fx-font-size: 12px; }
+
+/* 按钮 */
+.btn { -fx-background-radius: 6; -fx-padding: 6 14 6 14; -fx-cursor: hand; }
+.btn-primary {
+    -fx-background-color: linear-gradient(to bottom, #4f8cff, #3b6fe0);
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+.btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
+.btn-danger {
+    -fx-background-color: linear-gradient(to bottom, #e0504f, #c93a39);
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+.btn-danger:hover { -fx-background-color: linear-gradient(to bottom, #ef5f5e, #e0504f); }
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: #8b949e;
+    -fx-border-color: #232733;
+    -fx-border-radius: 6;
+}
+.btn-ghost:hover { -fx-text-fill: #e6e8ee; -fx-border-color: #4f8cff; }
+
+/* 输入区 */
+.input-area {
+    -fx-background-color: #1a1d24;
+    -fx-background-radius: 8;
+    -fx-border-color: #232733;
+    -fx-border-radius: 8;
+    -fx-text-fill: #e6e8ee;
+    -fx-prompt-text-fill: #5a6270;
+    -fx-control-inner-background: #1a1d24;
+    -fx-highlight-fill: #3b6fe0;
+}
+
+/* 列表 */
+.list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
+.list-view .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #c9cdd6;
+    -fx-padding: 7 10 7 10;
+}
+.list-view .list-cell:hover { -fx-background-color: #1c2029; }
+.list-view .list-cell:selected { -fx-background-color: #232a38; -fx-text-fill: #e6e8ee; }
+
+/* 页签 */
+.tab-pane .tab-header-area .tab-header-background { -fx-background-color: #12141a; }
+.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 8 8 0 0; }
+.tab-pane .tab:selected { -fx-background-color: #232a38; }
+.tab-pane .tab-label { -fx-text-fill: #8b949e; }
+.tab-pane .tab:selected .tab-label { -fx-text-fill: #e6e8ee; }
+
+/* 消息 */
+.msg-user {
+    -fx-background-color: #23408f;
+    -fx-background-radius: 10 10 2 10;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #eaf0ff;
+}
+.msg-assistant {
+    -fx-background-color: #1a1d24;
+    -fx-background-radius: 10 10 10 2;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #e6e8ee;
+}
+.msg-thinking { -fx-background-color: #13161c; -fx-background-radius: 6; -fx-text-fill: #6b7280; -fx-font-size: 12px; }
+.code-block {
+    -fx-background-color: #0d1117;
+    -fx-background-radius: 6;
+    -fx-border-color: #232733;
+    -fx-border-radius: 6;
+    -fx-padding: 8 12 8 12;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #c9d1d9;
+}
+.msg-error { -fx-background-color: #3d1d1d; -fx-background-radius: 6; -fx-text-fill: #f85149; }
+.msg-warning { -fx-background-color: #3d2f14; -fx-background-radius: 6; -fx-text-fill: #e3b341; }
+
+/* 状态点（呼吸动画） */
+.status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
+.status-dot-running {
+    -fx-background-color: #3fb950;
+    -fx-animation: pulse 1.2s infinite;
+}
+
+/* 滚动条 */
+.scroll-pane { -fx-background-color: transparent; }
+.scroll-pane > .viewport { -fx-background-color: transparent; }
+.scroll-bar:vertical { -fx-background-color: transparent; }
+.scroll-bar:vertical .thumb { -fx-background-color: #2a2f3a; -fx-background-radius: 4; }
+
+.tooltip { -fx-background-color: #232a38; -fx-text-fill: #c9cdd6; -fx-background-radius: 4; }
+
+/* 侧栏分区标题 */
+.section-title { -fx-text-fill: #8b949e; -fx-font-size: 11px; -fx-font-weight: bold; }
