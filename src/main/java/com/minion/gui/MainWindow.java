@@ -1,5 +1,6 @@
 package com.minion.gui;
 
+import com.minion.gui.chat.ChatView;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
@@ -10,6 +11,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.layout.BorderPane;
@@ -27,6 +29,8 @@ public class MainWindow {
     private final SessionManager manager;
     private final TabPane tabs = new TabPane();
     private SessionListView sessionList;
+    private ChatView chatView;
+    private ScrollPane chatScroll;
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -77,13 +81,15 @@ public class MainWindow {
         Region wsListPlaceholder = new Region();      // Task 12
         sidebar.getChildren().addAll(sessionTitle, sessionBox, wsTitle, wsListPlaceholder);
 
-        // 右侧 4/5：消息区 + 输入区占位（Task 10/11 填充）
+        // 右侧 4/5：消息区（ChatView）+ 输入区占位（Task 11 填充）
         VBox right = new VBox(8);
         right.getStyleClass().add("panel-dark");
-        Region chatPlaceholder = new Region();        // Task 10
-        VBox.setVgrow(chatPlaceholder, Priority.ALWAYS);
+        chatScroll = new ScrollPane();
+        chatScroll.setFitToWidth(true);
+        chatScroll.setContent(new Region()); // 激活会话后换 ChatView
+        VBox.setVgrow(chatScroll, Priority.ALWAYS);
         Region inputPlaceholder = new Region();       // Task 11
-        right.getChildren().addAll(chatPlaceholder, inputPlaceholder);
+        right.getChildren().setAll(chatScroll, inputPlaceholder);
 
         // 注册 manager 监听（Tab 维护）
         manager.addListener(new SessionManager.Listener() {
@@ -95,15 +101,22 @@ public class MainWindow {
                 // inputView.onRunningChanged 接线在 Task 11
             }
             @Override public void onSessionActivated(SessionHandle h) {
-                Platform.runLater(() -> selectTab(h));
-                // chatView 重建绑定在 Task 10 Step 8 追加
+                Platform.runLater(() -> {
+                    selectTab(h);
+                    // 每会话一个 ChatView（绑定其 EventList）：重建 + bind(true) 清空后重放存量
+                    chatView = ChatView.forSession(h);
+                    chatView.bind(true);
+                    chatScroll.setContent(chatView);
+                });
             }
             @Override public void onWorkspaceChanged() {
                 Platform.runLater(() -> { sessionList.refresh(); rebuildTabs(); });
             }
             @Override public void onError(String message) {
-                // 消息区未建（Task 10 前）→ 先落控制台；Task 10 改为 chatView 横幅
-                System.err.println("[minion] " + message);
+                Platform.runLater(() -> {
+                    if (chatView != null) chatView.appendSystemLine(message);
+                    System.err.println("[minion] " + message);
+                });
             }
         });
 

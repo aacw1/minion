@@ -43,23 +43,24 @@
       <scope>system</scope>
       <systemPath>${java.home}/lib/ext/jfxrt.jar</systemPath>
     </dependency>
-    <!-- Markdown 渲染（0.64.x 为最后支持 JDK8 的版本线） -->
+    <!-- Markdown 渲染（0.62.2 为最后支持 JDK8 的版本线：0.64.0 起字节码升到 Java 11，
+         与 pom 的 maven.compiler 1.8 / JDK8 构建不兼容，实测 0.64.8 类文件 major=55 编译报错） -->
     <!-- 注意坐标：0.62.2 起核心 artifact 更名回 umbrella `flexmark`（flexmark-core 止于 0.60.x）；
-         strikethrough 扩展 0.64.x 只有 gfm 变体（flexmark-ext-gfm-strikethrough） -->
+         strikethrough 扩展用 gfm 变体（flexmark-ext-gfm-strikethrough） -->
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark-ext-tables</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark-ext-gfm-strikethrough</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
