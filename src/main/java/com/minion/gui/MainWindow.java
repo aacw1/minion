@@ -1,27 +1,35 @@
 package com.minion.gui;
 
+import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
+import com.minion.gui.sidebar.WorkspaceListView;
 import javafx.application.Platform;
+import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
+
+import java.util.Optional;
 
 /** 主窗口：顶部栏 / 左侧 1/5（上会话下工作空间）/ 右侧 4/5（消息区 + 输入区） */
 public class MainWindow {
@@ -80,8 +88,49 @@ public class MainWindow {
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
         Label wsTitle = new Label("工作空间");
         wsTitle.getStyleClass().add("section-title");
-        Region wsListPlaceholder = new Region();      // Task 12
-        sidebar.getChildren().addAll(sessionTitle, sessionBox, wsTitle, wsListPlaceholder);
+        WorkspaceListView wsList = new WorkspaceListView(manager);
+        VBox.setVgrow(wsList, Priority.ALWAYS);
+        Button newWs = new Button("＋ 新建工作空间");
+        newWs.getStyleClass().add("btn-ghost");
+        newWs.setMaxWidth(Double.MAX_VALUE);
+        newWs.setOnAction(e -> {
+            Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
+            d.setTitle("新建工作空间");
+            d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            GridPane g = new GridPane();
+            g.setHgap(8); g.setVgap(8); g.setPadding(new Insets(10));
+            TextField n = new TextField();
+            n.setPromptText("名称");
+            TextField wd = new TextField();
+            wd.setPromptText("work.dir");
+            TextField pm = new TextField();
+            pm.setPromptText("project.md（可空）");
+            g.addRow(0, new Label("名称:"), n);
+            g.addRow(1, new Label("work.dir:"), wd);
+            g.addRow(2, new Label("project.md:"), pm);
+            d.getDialogPane().setContent(g);
+            d.setResultConverter(bt -> {
+                if (bt != ButtonType.OK) return null;
+                WorkspaceConfig out = new WorkspaceConfig();
+                out.workSpaceName = n.getText().trim();
+                out.workDir = wd.getText().trim();
+                out.projectMd = pm.getText().trim();
+                return out;
+            });
+            Optional<WorkspaceConfig> r = d.showAndWait();
+            if (r.isPresent()) {
+                if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd)) {
+                    Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
+                    a.setTitle("新建失败");
+                    a.showAndWait();
+                }
+                wsList.refresh();
+            }
+        });
+        VBox wsBox = new VBox(6);
+        wsBox.getChildren().addAll(newWs, wsList);
+        VBox.setVgrow(wsBox, Priority.ALWAYS);
+        sidebar.getChildren().setAll(sessionTitle, sessionBox, wsTitle, wsBox);
 
         // 右侧 4/5：消息区（ChatView）+ 输入区占位（Task 11 填充）
         VBox right = new VBox(8);
@@ -113,7 +162,7 @@ public class MainWindow {
                 });
             }
             @Override public void onWorkspaceChanged() {
-                Platform.runLater(() -> { sessionList.refresh(); rebuildTabs(); });
+                Platform.runLater(() -> { wsList.refresh(); sessionList.refresh(); rebuildTabs(); });
             }
             @Override public void onError(String message) {
                 Platform.runLater(() -> {

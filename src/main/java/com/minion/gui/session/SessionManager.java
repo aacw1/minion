@@ -305,6 +305,54 @@ public class SessionManager {
         notifyWorkspaceChanged();
     }
 
+    /** 新建工作空间：配置落盘 + 建上下文（不自动切换，用户点击列表项切换）。false=名称非法或重名 */
+    public boolean addWorkspace(String name, String workDir, String projectMd) {
+        if (!workspaces.add(name, workDir, projectMd)) return false;
+        ctxByName.put(name, buildCtx(workspaces.get(name)));
+        return true;
+    }
+
+    /** 重命名：配置迁移 + 会话目录迁移（WorkspaceManager.rename 内部完成）+ ctx 换键 + 当前名同步。false=新名非法/重名 */
+    public boolean renameWorkspace(String oldName, String newName) {
+        if (!workspaces.rename(oldName, newName)) return false;
+        WorkspaceCtx ctx = ctxByName.remove(oldName);
+        ctxByName.put(newName, ctx);
+        if (currentWorkspaceName.equals(oldName)) currentWorkspaceName = newName;
+        notifyWorkspaceChanged();
+        return true;
+    }
+
+    /**
+     * 修改工作空间：仅更新配置落盘。运行中的会话持有旧 workspace 引用，
+     * 热更新会连锁重建整套上下文（registry/store/loop 引用），YAGNI 不做——
+     * 修改在重启后对新会话生效。
+     */
+    public void updateWorkspace(String name, String workDir, String projectMd) {
+        workspaces.update(name, workDir, projectMd);
+    }
+
+    /**
+     * 删除工作空间：WorkspaceManager.remove 拒绝删除最后一个并已删会话目录；
+     * 此处先终止该空间所有会话 → 关池 → 删配置（remove）→ 当前名同步。
+     * false=空间不存在或删最后一个被拒绝
+     */
+    public boolean deleteWorkspace(String name) {
+        WorkspaceCtx ctx = ctxByName.get(name);
+        if (ctx == null) return false;
+        if (!workspaces.remove(name)) return false; // 删最后一个被拒，会话上下文不动
+        for (SessionHandle h : ctx.sessions) {
+            if (h.running) h.loop.interrupt();
+            h.pool.shutdownNow();
+        }
+        ctxByName.remove(name);
+        if (currentWorkspaceName.equals(name)) {
+            currentWorkspaceName = workspaces.currentName(); // remove 已回落 currentName
+            currentSession = null;
+            notifyWorkspaceChanged();
+        }
+        return true;
+    }
+
     /** 发送：新会话（titlePending）先摘要生成标题，再跑正式任务 */
     public void send(final SessionHandle h, final String text) {
         if (h == null) return;

@@ -166,4 +166,65 @@ public class SessionManagerTest {
         m.deleteSession(h);
         assertFalse(Files.exists(f));
     }
+
+    /** 新建工作空间：配置落盘 + 会话上下文可建 */
+    @Test
+    public void addWorkspace_buildsContext() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.addWorkspace("projX", tmp.newFolder("x").getPath(), "");
+        m.switchWorkspace("projX");
+        SessionHandle h = m.createSession(null);
+        assertEquals(1, m.sessions().size());
+        assertEquals("projX", m.workspaces().currentName());
+    }
+
+    /** 删除工作空间：配置删除 + 会话目录删除 + 当前空间回落 */
+    @Test
+    public void deleteWorkspace_removesConfigAndDir() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.switchWorkspace("projA");
+        m.createSession(null);
+        Path sessionDir = WorkspaceManager.sessionDirFor(jar, "projA");
+        assertTrue(Files.exists(sessionDir));
+
+        m.deleteWorkspace("projA");
+        assertNull(ws.get("projA"));
+        assertFalse(Files.exists(sessionDir));
+        assertNotEquals("projA", m.workspaces().currentName());
+        assertEquals(0, m.sessions().size());
+    }
+
+    /** 重命名工作空间：配置迁移 + 会话目录迁移 + 会话上下文随新名 */
+    @Test
+    public void renameWorkspace_migratesSessionDir() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.switchWorkspace("default");
+        m.createSession(null);
+        Path oldDir = WorkspaceManager.sessionDirFor(jar, "default");
+        assertTrue(Files.exists(oldDir));
+
+        m.renameWorkspace("default", "主空间");
+        assertNull(ws.get("default"));
+        assertNotNull(ws.get("主空间"));
+        assertFalse(Files.exists(oldDir));
+        assertTrue(Files.exists(WorkspaceManager.sessionDirFor(jar, "主空间")));
+        assertEquals("主空间", m.workspaces().currentName());
+    }
 }
