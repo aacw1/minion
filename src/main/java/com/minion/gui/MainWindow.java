@@ -30,6 +30,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -232,21 +233,32 @@ public class MainWindow {
         // 消息区/输入区绑定由 Task 10/11 在 onSessionActivated 中接线
     }
 
-    /** 新建工作空间弹窗（名称/work.dir/project.md 三字段；Task 10 将在此追加「浏览…」按钮） */
+    /** 新建工作空间弹窗（Task 9 从 show() 抽取）：work.dir 支持系统文件夹选择框 */
     private void onNewWorkspace(WorkspaceListView wsList) {
         Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
         d.setTitle("新建工作空间");
+        Theme.style(d);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         GridPane g = new GridPane();
         g.setHgap(8); g.setVgap(8); g.setPadding(new Insets(10));
         TextField n = new TextField();
         n.setPromptText("名称");
+        HBox wdBox = new HBox(6);
         TextField wd = new TextField();
         wd.setPromptText("work.dir");
+        HBox.setHgrow(wd, Priority.ALWAYS);
+        Button browse = new Button("浏览…");
+        browse.getStyleClass().add("btn-ghost");
+        browse.setOnAction(e -> {
+            DirectoryChooser dc = new DirectoryChooser();
+            java.io.File dir = dc.showDialog(d.getOwner());
+            if (dir != null) wd.setText(dir.getAbsolutePath());
+        });
+        wdBox.getChildren().addAll(wd, browse);
         TextField pm = new TextField();
         pm.setPromptText("project.md（可空）");
         g.addRow(0, new Label("名称:"), n);
-        g.addRow(1, new Label("work.dir:"), wd);
+        g.addRow(1, new Label("work.dir:"), wdBox);
         g.addRow(2, new Label("project.md:"), pm);
         d.getDialogPane().setContent(g);
         d.setResultConverter(bt -> {
@@ -261,6 +273,7 @@ public class MainWindow {
         if (r.isPresent()) {
             if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd)) {
                 Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
+                Theme.style(a);
                 a.setTitle("新建失败");
                 a.showAndWait();
             }

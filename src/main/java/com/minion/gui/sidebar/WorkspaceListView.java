@@ -7,6 +7,7 @@ import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Dialog;
@@ -20,6 +21,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.stage.DirectoryChooser;
 
 import java.util.Optional;
 
@@ -91,7 +93,7 @@ public class WorkspaceListView extends ListView<String> {
         WorkspaceConfig w = workspaces.get(name);
         Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
         d.setTitle("修改工作空间");
-        d.setHeaderText("工作空间「" + name + "」（修改将在重启后对新会话生效）");
+        d.setHeaderText("工作空间「" + name + "」（修改对新会话生效）");
         Theme.style(d); // 弹窗深色
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
@@ -99,9 +101,24 @@ public class WorkspaceListView extends ListView<String> {
         grid.setHgap(8);
         grid.setVgap(8);
         grid.setPadding(new Insets(10));
+        HBox workDirBox = new HBox(6);
         TextField workDir = new TextField(w.workDir);
+        HBox.setHgrow(workDir, Priority.ALWAYS);
+        Button browse = new Button("浏览…");
+        browse.getStyleClass().add("btn-ghost");
+        browse.setOnAction(e -> {
+            DirectoryChooser dc = new DirectoryChooser();
+            String cur = workDir.getText().trim();
+            if (!cur.isEmpty()) {
+                java.io.File f = new java.io.File(cur);
+                if (f.isDirectory()) dc.setInitialDirectory(f);
+            }
+            java.io.File dir = dc.showDialog(d.getOwner());
+            if (dir != null) workDir.setText(dir.getAbsolutePath());
+        });
+        workDirBox.getChildren().addAll(workDir, browse);
         TextField projectMd = new TextField(w.projectMd == null ? "" : w.projectMd);
-        grid.addRow(0, new Label("work.dir:"), workDir);
+        grid.addRow(0, new Label("work.dir:"), workDirBox);
         grid.addRow(1, new Label("project.md:"), projectMd);
         d.getDialogPane().setContent(grid);
 
