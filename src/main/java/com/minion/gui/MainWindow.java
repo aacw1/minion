@@ -1,6 +1,7 @@
 package com.minion.gui;
 
 import com.minion.gui.chat.ChatView;
+import com.minion.gui.input.InputView;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
@@ -31,6 +32,7 @@ public class MainWindow {
     private SessionListView sessionList;
     private ChatView chatView;
     private ScrollPane chatScroll;
+    private InputView inputView;
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -88,8 +90,8 @@ public class MainWindow {
         chatScroll.setFitToWidth(true);
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
-        Region inputPlaceholder = new Region();       // Task 11
-        right.getChildren().setAll(chatScroll, inputPlaceholder);
+        inputView = new InputView(manager);
+        right.getChildren().setAll(chatScroll, inputView);
 
         // 注册 manager 监听（Tab 维护）
         manager.addListener(new SessionManager.Listener() {
@@ -98,7 +100,7 @@ public class MainWindow {
             }
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
                 Platform.runLater(() -> updateTab(h));
-                // inputView.onRunningChanged 接线在 Task 11
+                if (inputView != null) inputView.onRunningChanged(h, running);
             }
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
@@ -107,6 +109,7 @@ public class MainWindow {
                     chatView = ChatView.forSession(h);
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
+                    if (inputView != null) inputView.bindSession(h);
                 });
             }
             @Override public void onWorkspaceChanged() {
