@@ -114,6 +114,34 @@ public class Config {
 
     public Path externalFile() { return externalFile; }
 
+    /**
+     * 运行时写回配置：更新内存 + 重写外部 config.properties（保留注释行，替换/追加 key 行）。
+     * 实时生效核对：confirmSkip/whitelist/readAllowOutside 每次使用即读 Config → 立即生效；
+     * skills.dir 由新会话 buildCtx 读取 → 新会话生效。
+     */
+    public void set(String key, String value) {
+        props.put(key, value);
+        try {
+            List<String> lines = Files.exists(externalFile)
+                    ? Files.readAllLines(externalFile, StandardCharsets.UTF_8)
+                    : new java.util.ArrayList<String>();
+            StringBuilder sb = new StringBuilder();
+            boolean replaced = false;
+            for (String line : lines) {
+                if (line.trim().startsWith(key + "=")) {
+                    sb.append(key).append('=').append(value).append('\n');
+                    replaced = true;
+                } else {
+                    sb.append(line).append('\n');
+                }
+            }
+            if (!replaced) sb.append(key).append('=').append(value).append('\n');
+            Files.write(externalFile, sb.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            System.err.println("[minion] 写入配置失败: " + e.getMessage());
+        }
+    }
+
     /** 追加白名单（去重）。section 形如 confirm.whitelist.tools */
     public void appendWhitelist(String section, String value) {
         String v = value.trim().toLowerCase();

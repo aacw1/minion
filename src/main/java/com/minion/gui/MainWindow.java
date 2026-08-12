@@ -2,7 +2,7 @@ package com.minion.gui;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
-import com.minion.gui.dialog.ModelDialog;
+import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
@@ -70,7 +70,7 @@ public class MainWindow {
         Button gear = new Button("⚙");
         gear.getStyleClass().add("btn-ghost");
         gear.setOnAction(e -> {
-            ModelDialog.show(stage, manager.models());
+            SettingsDialog.show(stage, manager.models(), manager, MinionApp.config());
             // 顶部模型名刷新（切换模型后显示新标识）
             modelLabel.setText("模型: " + manager.models().currentName());
         });

@@ -83,4 +83,15 @@ public class ConfigTest {
         Config c2 = Config.load(root, TEST_DEFAULTS);
         assertTrue(c2.readAllowOutside());
     }
+
+    /** 需求 2/13：Config.set 更新内存并写回外部文件（设置窗基础设置页保存用） */
+    @Test
+    public void set_updatesMemoryAndPersists() throws IOException {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        c.set("confirm.skip", "true");
+        assertTrue(c.confirmSkip());
+        // 重载验证外部文件已写回
+        Config c2 = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertTrue(c2.confirmSkip());
+    }
 }
