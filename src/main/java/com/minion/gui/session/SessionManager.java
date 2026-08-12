@@ -47,8 +47,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 会话外壳：每会话一个 AgentLoop + 工作线程（真并行）；
- * 每工作空间一套上下文（ToolRegistry/Workspace/SessionStore/ConfirmGate）；
+ * 会话外壳：每会话一个 AgentLoop + 独占工作线程（真并行）；
+ * 每工作空间一套上下文（Workspace/SessionStore/ConfirmGate 空间级共享，
+ * ToolRegistry 每会话独立——AgentLoop 构造按名注册 TaskTool 绑定本会话 loop）；
  * 切换不打断后台运行，EventList 事件缓冲由 UI 重放。
  */
 public class SessionManager {
@@ -79,28 +80,22 @@ public class SessionManager {
         return t;
     });
 
-    /** 每工作空间上下文 */
+    /** 每工作空间上下文（空间级共享对象；工具注册与工作线程下沉到每会话） */
     private static class WorkspaceCtx {
         final String name;
-        final ToolRegistry registry;
         final Workspace workspace;
         final SessionStore store;
         final ConfirmGate confirmGate;
-        final ExecutorService pool;
+        final String skillsDir;
         final List<SessionHandle> sessions = new ArrayList<SessionHandle>();
 
-        WorkspaceCtx(String name, ToolRegistry registry, Workspace workspace,
-                     SessionStore store, ConfirmGate confirmGate) {
+        WorkspaceCtx(String name, Workspace workspace, SessionStore store,
+                     ConfirmGate confirmGate, String skillsDir) {
             this.name = name;
-            this.registry = registry;
             this.workspace = workspace;
             this.store = store;
             this.confirmGate = confirmGate;
-            this.pool = Executors.newFixedThreadPool(1, r -> {
-                Thread t = new Thread(r, "minion-session-" + name);
-                t.setDaemon(true);
-                return t;
-            });
+            this.skillsDir = skillsDir;
         }
     }
 
@@ -139,7 +134,7 @@ public class SessionManager {
         for (Listener l : listeners) l.onError(msg);
     }
 
-    /** 装配所有工作空间上下文（工具注册每空间独立，对照 Main 现有注册代码），并恢复历史会话 */
+    /** 装配所有工作空间上下文（对照 Main 现有注册代码），并恢复历史会话 */
     private void loadWorkspaceContexts() {
         for (WorkspaceConfig w : workspaces.list()) {
             WorkspaceCtx ctx = buildCtx(w);
@@ -170,9 +165,10 @@ public class SessionManager {
                         TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name))
                                 .build(allSkills, new ArrayList<Skill>())));
                 SessionController controller = new SessionController();
-                AgentLoop loop = new AgentLoop(llm, ctx.registry,
+                AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
                         new SystemPromptBuilder(projectMdPath(ctx.name)),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
+                loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
                 ctx.sessions.add(new SessionHandle(s.id, ctx.name, s, loop, controller,
                         s.title, false));
@@ -183,10 +179,25 @@ public class SessionManager {
     }
 
     private WorkspaceCtx buildCtx(WorkspaceConfig w) {
-        ToolRegistry registry = new ToolRegistry();
         String skillsDir = Paths.get(config.skillsDir()).toAbsolutePath().normalize().toString();
         Workspace workspace = new Workspace(w.workDir);
         ConfirmGate gate = new ConfirmGate(config, confirmUi);
+        return new WorkspaceCtx(w.workSpaceName, workspace,
+                new SessionStore(WorkspaceManager.sessionDirFor(jarDir, w.workSpaceName)),
+                gate, skillsDir);
+    }
+
+    /**
+     * 每会话独立 ToolRegistry：AgentLoop 构造时按名注册 TaskTool(this)，若同空间共享
+     * 单个 registry，task 工具会永远绑定最后构造的 loop（会话 A 的 task 调用事件流入会话 B）。
+     * 工具对象本身无状态（构造参数 workspace/skillsDir/gate 为空间级共享对象），
+     * 每次 new ToolRegistry 复制注册同样的工具即可；TaskTool 由 AgentLoop 自动注册、绑定本会话。
+     */
+    private ToolRegistry newRegistry(WorkspaceCtx ctx) {
+        ToolRegistry registry = new ToolRegistry();
+        String skillsDir = ctx.skillsDir;
+        Workspace workspace = ctx.workspace;
+        ConfirmGate gate = ctx.confirmGate;
         registry.register(new ReadTool(workspace, skillsDir, gate));
         registry.register(new WriteTool(workspace, skillsDir));
         registry.register(new EditTool(workspace, skillsDir));
@@ -200,8 +211,7 @@ public class SessionManager {
             registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir));
             registry.register(new BrowserDebugTool(browserSession));
         }
-        return new WorkspaceCtx(w.workSpaceName, registry, workspace,
-                new SessionStore(WorkspaceManager.sessionDirFor(jarDir, w.workSpaceName)), gate);
+        return registry;
     }
 
     /** 创建会话（恢复会话传 title；新建传 null → titlePending） */
@@ -216,9 +226,10 @@ public class SessionManager {
                 TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName))
                         .build(allSkills, new ArrayList<Skill>())));
         SessionController controller = new SessionController();
-        AgentLoop loop = new AgentLoop(llm, ctx.registry,
+        AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
                 new SystemPromptBuilder(projectMdPath(currentWorkspaceName)),
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
+        loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
                 title, title == null);
         ctx.sessions.add(h);
@@ -259,19 +270,24 @@ public class SessionManager {
     }
 
     public void deleteSession(SessionHandle h) {
+        h.deleted = true; // 先置位：send 中据此中止，防已删除会话的文件/事件复活
         WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
         if (ctx == null) return;
         if (h.running) stop(h);
+        h.loop.shutdown();
+        h.pool.shutdownNow();
         ctx.sessions.remove(h);
         try {
             ctx.store.delete(h.id);
         } catch (Exception e) {
             notifyError("删除会话文件失败: " + e.getMessage());
         }
+        h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         if (currentSession == h) currentSession = null;
     }
 
     public void activateSession(SessionHandle h) {
+        if (!currentWorkspaceName.equals(h.workspaceName)) return; // 非当前工作空间的句柄不激活
         if (currentSession != null) currentSession.controller.eventList().setActive(false, null);
         currentSession = h;
         h.controller.eventList().setActive(true, null);
@@ -290,13 +306,14 @@ public class SessionManager {
 
     /** 发送：新会话（titlePending）先摘要生成标题，再跑正式任务 */
     public void send(final SessionHandle h, final String text) {
-        final WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
-        if (ctx == null) return;
-        ctx.pool.submit(new Runnable() {
+        if (h == null) return;
+        h.pool.submit(new Runnable() {
             @Override public void run() {
                 try {
+                    if (h.deleted) return; // 队列积压期间被删除
                     if (h.titlePending) {
                         h.title = generateTitle(text);
+                        if (h.deleted) return; // 摘要期间被删除：不再落盘/通知
                         h.titlePending = false;
                         h.session.title = h.title;
                         persist(h);
@@ -334,6 +351,8 @@ public class SessionManager {
         });
         try {
             String raw = f.get(10, TimeUnit.SECONDS);
+            // Callable 内吞 LLM 异常 → null：按失败回退（clean(null) 会退成「新会话」，失真）
+            if (raw == null) return TitleGenerator.fallbackTitle(text);
             return TitleGenerator.clean(raw);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -365,11 +384,10 @@ public class SessionManager {
         for (WorkspaceCtx ctx : ctxByName.values()) {
             for (SessionHandle h : ctx.sessions) {
                 if (h.running) h.loop.interrupt();
+                h.loop.shutdown();
+                h.pool.shutdownNow();
             }
         }
         titlePool.shutdownNow();
-        for (WorkspaceCtx ctx : ctxByName.values()) {
-            ctx.pool.shutdownNow();
-        }
     }
 }

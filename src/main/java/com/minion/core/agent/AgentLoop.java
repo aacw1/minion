@@ -143,6 +143,11 @@ public class AgentLoop {
         }
     }
 
+    /** 关闭工具执行池（会话删除/应用退出时调用；daemon 线程，shutdownNow 不等任务完成） */
+    public void shutdown() {
+        pool.shutdownNow();
+    }
+
     public void compactNow() {
         if (contextManager == null) {
             ui.onWarning("未启用上下文压缩");
