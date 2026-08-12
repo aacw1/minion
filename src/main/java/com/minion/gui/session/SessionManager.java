@@ -287,6 +287,7 @@ public class SessionManager {
     }
 
     public void activateSession(SessionHandle h) {
+        if (h.deleted) return; // 已删句柄不可再激活（防已删会话残留激活态/后续 send 落空）
         if (!currentWorkspaceName.equals(h.workspaceName)) return; // 非当前工作空间的句柄不激活
         if (currentSession != null) currentSession.controller.eventList().setActive(false, null);
         currentSession = h;

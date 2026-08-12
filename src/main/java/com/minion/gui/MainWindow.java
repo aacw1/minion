@@ -26,6 +26,7 @@ public class MainWindow {
     private final Stage stage;
     private final SessionManager manager;
     private final TabPane tabs = new TabPane();
+    private SessionListView sessionList;
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -61,7 +62,8 @@ public class MainWindow {
         sidebar.setPrefWidth(220);
         Label sessionTitle = new Label("会话管理");
         sessionTitle.getStyleClass().add("section-title");
-        SessionListView sessionList = new SessionListView(manager);
+        sessionList = new SessionListView(manager,
+                h -> { removeTabById(h.id); sessionList.refresh(); });
         VBox.setVgrow(sessionList, Priority.ALWAYS);
         Button newSession = new Button("＋ 新建会话");
         newSession.getStyleClass().add("btn-ghost");
@@ -118,6 +120,7 @@ public class MainWindow {
 
     private void onNewSession() {
         SessionHandle h = manager.createSession(null); // titlePending，无页签
+        sessionList.refresh(); // createSession 无 Listener 通知，UI 层自行刷新
         manager.activateSession(h);
         // 消息区/输入区绑定由 Task 10/11 在 onSessionActivated 中接线
     }
@@ -147,11 +150,22 @@ public class MainWindow {
                 if (bt == ButtonType.OK) {
                     manager.deleteSession(h);
                     tabs.getTabs().remove(t);
+                    sessionList.refresh(); // 页签关闭路径同样联动刷新列表
                 }
             });
         });
         tabs.getTabs().add(t);
         tabs.getSelectionModel().select(t);
+    }
+
+    /** 按会话 id 移除页签（删除联动；侧栏右键删除回调与页签关闭共用） */
+    private void removeTabById(String id) {
+        for (Tab t : tabs.getTabs()) {
+            if (id.equals(t.getUserData())) {
+                tabs.getTabs().remove(t);
+                return;
+            }
+        }
     }
 
     private void selectTab(SessionHandle h) {
