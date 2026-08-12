@@ -15,7 +15,8 @@
 | 后台语义 | 真并行：切走的会话在后台线程继续跑完，切回时 UI 增量补显 |
 | 杂项配置 | config.properties 保留（browser/confirm/paths），模型与工作空间配置迁往 json |
 | 消息渲染 | flexmark（JDK8 兼容）Markdown 渲染，代码块深色底+等宽字体，不做语法高亮 |
-| 模型弹窗 | 右上角 ⚙ 弹窗：模型列表 + 切换 + 新建 + **修改**（含 skill 路径、上下文压缩参数） |
+| 模型弹窗 | 右上角 ⚙ 弹窗：模型列表 + 切换 + 新建 + **修改**（含上下文压缩参数） |
+| skill 路径 | 属于全局 config.properties（skills.dir），不属于模型配置 |
 | 迁移策略 | 不自动搬旧 config.properties 值，直接生成默认 json |
 | 会话目录 | `jarDir/session/<workSpaceName>/` |
 
@@ -66,7 +67,7 @@
 }
 ```
 
-- 移除 `skills.dir`（skill 路径归模型管理）与 `session.dir`（会话目录自动派生）
+- 不包含 skill 路径（全局 config.properties 的 `skills.dir`）；不包含 `session.dir`（会话目录自动派生）
 - 会话存储路径：`jarDir/session/<workSpaceName>/<sessionId>.json`
 - 工作空间重命名 → 会话目录同步迁移（目录 rename）；重名/非法字符（`\/:*?"<>|`）拒绝
 - project.md 允许配置为工作空间目录外的绝对路径（PathsGuard 按绝对路径放行，机制同现有 skillsDir）
@@ -86,8 +87,7 @@
       "reasoningEffort": "max",
       "maxContextTokens": 131072,
       "compressThreshold": 0.8,
-      "keepRecentMessages": 10,
-      "skillsDir": "./skills"
+      "keepRecentMessages": 10
     }
   ],
   "currentModelName": "deepseek-v4-flash"
@@ -100,8 +100,8 @@
 
 ### 3.3 config.properties（保留，仅杂项）
 
-- 保留键：`browser.*`、`confirm.*`、`paths.read.allowOutside`；`ui.color` 移除（GUI 下无意义）
-- 移除键：`model.*`、`context.*`、`work.dir`、`project.md.path`、`skills.dir`、`session.dir`
+- 保留键：`browser.*`、`confirm.*`、`paths.read.allowOutside`、`skills.dir`（全局技能目录，所有模型/工作空间共用）；`ui.color` 移除（GUI 下无意义）
+- 移除键：`model.*`、`context.*`、`work.dir`、`project.md.path`、`session.dir`
 - 首启自动生成机制不变；workspace.json / model.json 不存在时生成默认文件（默认工作空间 workDir="."、默认模型参数）
 
 ### 3.4 配置解析与持久化
@@ -123,8 +123,8 @@ WorkspaceManager（单例）
 ```
 
 - 每会话：一个 `AgentLoop` + 一个工作线程（复用现有 pool，`runUserTurn` 在线程池执行）
-- 每工作空间：独立的 `ToolRegistry`、`Workspace`、`SkillManager`、`SessionStore`（指向 `session/<名>/`）、`ConfirmGate`——切换工作空间 = 整套上下文切换
-- 全局共享：Chrome 浏览器实例（共享一个 BrowserSession；多会话同时用浏览器工具限制为每会话串行）；各 AgentLoop 持有独立 LlmClient 实例（多会话并行请求互不干扰）
+- 每工作空间：独立的 `ToolRegistry`、`Workspace`、`SessionStore`（指向 `session/<名>/`）、`ConfirmGate`——切换工作空间 = 整套上下文切换
+- 全局共享：`SkillManager`（skillsDir 全局，启动时扫描一次，各会话注入同一技能集）、Chrome 浏览器实例（共享一个 BrowserSession；多会话同时用浏览器工具限制为每会话串行）、各 AgentLoop 持有独立 LlmClient 实例（多会话并行请求互不干扰）
 
 ### 4.2 切换语义（真并行）
 
