@@ -2,6 +2,7 @@ package com.minion.gui;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
+import com.minion.gui.dialog.ModelDialog;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
@@ -66,7 +67,11 @@ public class MainWindow {
         HBox.setHgrow(tabs, Priority.ALWAYS);
         Button gear = new Button("⚙");
         gear.getStyleClass().add("btn-ghost");
-        gear.setOnAction(e -> { }); // Task 13 模型弹窗
+        gear.setOnAction(e -> {
+            ModelDialog.show(stage, manager.models());
+            // 顶部模型名刷新（切换模型后显示新标识）
+            modelLabel.setText("模型: " + manager.models().currentName());
+        });
         topbar.getChildren().addAll(title, modelLabel, tabs, gear);
 
         // 左侧 1/5：上会话管理 / 下工作空间管理（Task 12 填充工作空间列表）
