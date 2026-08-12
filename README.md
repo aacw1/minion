@@ -4,9 +4,10 @@
 
 ## 启动（GUI）
 
-    java -jar minion-0.1.0.jar
+    minion.bat                # 推荐：自动探测含 JavaFX 的 JDK 8 并启动
+    java -jar minion-0.1.0.jar   # 直接运行（须用含 JavaFX 的 JDK 8 的 java）
 
-图形界面为唯一界面（CLI 已移除）。需要 JDK 8 且自带 JavaFX：Oracle JDK 8 或 Zulu/AdoptOpenJDK 8 含 OpenJFX 的发行版；Win7 用户注意 Win7 只支持到 8u251 之前的 Oracle 版本。
+图形界面为唯一界面（CLI 已移除）。需要 JDK 8 且自带 JavaFX：Oracle JDK 8 或 Zulu/AdoptOpenJDK 8 含 OpenJFX 的发行版；Win7 用户注意 Win7 只支持到 8u251 之前的 Oracle 版本。若 PATH 里的 `java` 不是含 JavaFX 的 JDK 8（会报 `NoClassDefFoundError: javafx/application/Application`），请用 `minion.bat` 启动——它按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测，全部落空时给出清晰错误提示。
 
 首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`。
 
