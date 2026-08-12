@@ -15,15 +15,17 @@
 
 | 文件 | 内容 |
 |---|---|
-| `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建 |
-| `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；界面 ⚙ 弹窗管理 |
-| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录） |
+| `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建（work.dir 可用系统文件夹选择框选） |
+| `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；⚙ 设置窗「模型」页管理 |
+| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）；⚙ 设置窗「基础设置」页可改（浏览器项重启生效） |
 
 ## 快捷操作
 
 - Ctrl+Enter 发送、Enter 换行
-- ⚙ 模型管理（顶部栏，切换模型即时生效）
-- 关闭会话页签 = 删除会话（有确认）
+- ⚙ 设置（右上角）：模型 / 基础设置 / 关于；切换模型、修改参数即时生效（运行中会话下一轮生效）
+- 无会话时直接发送自动新建会话；发送后输入框自动清空
+- 消息区滚动条贴底时随新内容自动滚动，离开底部暂停；拖回底部恢复
+- 关闭会话页签 = 删除会话（有确认）；删除会话/切换工作空间后右侧自动清空
 - 关闭窗口时若有会话仍在运行会弹确认
 
 ## 会话存储
@@ -52,7 +54,7 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 
 ## 模型供应商配置（deepseek / qwen）
 
-默认对接 deepseek（thinking max）。切千问（阿里百炼 DashScope OpenAI 兼容模式）在 ⚙ 模型弹窗或 model.json 里改：
+默认对接 deepseek（thinking max）。切千问（阿里百炼 DashScope OpenAI 兼容模式）在 ⚙ 设置窗「模型」页或 model.json 里改：
 
     provider=qwen
     url=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
@@ -68,7 +70,3 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 - qwen 下请求自动带 `stream_options: {include_usage: true}`（token 统计准确）
 - `provider` 为未知值时回退 deepseek 行为
 - 模板参考：源码目录 `src/resource/config_deepseek.properties` / `config_qwen.properties`（仅记录，实际生效仍为 jar 同目录的配置）
-
-## Win7 说明（2026-08-10）
-
-GUI 界面不受控制台代码页影响；残留的控制台错误输出（System.err）在中文系统 936 代码页下按 GBK 显示正常。Windows 上不要加 `-Dfile.encoding=UTF-8` 启动参数。

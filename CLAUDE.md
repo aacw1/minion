@@ -5,8 +5,8 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
 
 ## 常用命令
 
-    JAVA_HOME="D:/javame/jdk1.8" mvn clean package   # 构建（产物 target/minion-0.1.0.jar，含依赖；必须 JDK8 含 JavaFX）
-    JAVA_HOME="D:/javame/jdk1.8" mvn test            # 运行测试
+    JAVA_HOME="E:/javame/jdk8" mvn clean package   # 构建（产物 target/minion-0.1.0.jar，含依赖；必须 JDK8 含 JavaFX）
+    JAVA_HOME="E:/javame/jdk8" mvn test            # 运行测试
     minion.bat                                       # 启动 GUI（自动探测含 JavaFX 的 JDK 8；PATH 的 java 须是 JDK 8）
 
 ## 包结构（详见 docs/ARCHITECTURE.md）
@@ -14,12 +14,13 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     com.minion
     ├── Main         入口：装配配置/技能/浏览器/确认 UI → SessionManager → MinionApp；退出钩子统一收口（manager.shutdown + chrome.stop）
     ├── gui/         JavaFX 界面
-    │   ├── MainWindow        主窗口（页签/聊天区/状态点呼吸动画 StatusDot）
+    │   ├── MainWindow        主窗口（无边框自绘标题栏 TitleBar、SplitPane 1:3、ResizeHelper 缩放、状态点呼吸动画 StatusDot）
     │   ├── MinionApp         Application 启动（静态注入 Config/WorkspaceManager/ModelManager/SessionManager）
     │   ├── sidebar/          SessionListView（会话列表）、WorkspaceListView（工作空间列表）
     │   ├── chat/             ChatView（消息区）、MarkdownRenderer + BlockNodeFactory（flexmark 渲染）
     │   ├── input/            InputView（多行输入，Ctrl+Enter 发送）
-    │   ├── dialog/           ModelDialog（⚙ 模型管理）、ConfirmDialog（高危确认弹窗）
+    │   ├── dialog/           SettingsDialog（设置窗三页签）、ConfirmDialog（高危确认弹窗）
+    │   ├── theme/            Theme（弹窗深色挂载）
     │   ├── confirm/          GuiConfirmUi（FutureTask 投递 FX 线程阻塞工具线程）
     │   └── session/          SessionManager（多会话并行/工作空间 CRUD）、SessionHandle、EventList
     └── core/

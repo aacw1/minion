@@ -30,11 +30,14 @@ com.minion
 | 类 | 职责 |
 |---|---|
 | MinionApp | JavaFX 启动（Application），静态注入 Config/WorkspaceManager/ModelManager/SessionManager |
-| MainWindow | 主窗口：顶部栏（标识/当前模型/会话页签/⚙）、左侧 1/5 侧栏（上会话下工作空间）、右侧 4/5（消息区+输入区）；关闭窗口时若 `manager.hasRunning()` 弹确认再 `shutdown()` |
+| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ SplitPane 1:3（左侧会话/工作空间，右侧消息区+输入区）；关闭确认 confirmClose 由 ✕ 按钮与系统关闭共用 |
+| TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，⚙ 设置入口） |
+| ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换、右键删除） |
 | chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染 |
 | input/InputView | 输入区（Ctrl+Enter 发送、Enter 换行）；绑定会话后发送走 SessionManager.send |
-| dialog/ModelDialog、ConfirmDialog | 模型管理弹窗；高危操作确认弹窗 |
+| dialog/SettingsDialog、ConfirmDialog | 设置窗（模型/基础设置/关于三页签）；高危操作确认弹窗 |
+| theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → FutureTask 投递 FX 线程弹窗 → 阻塞等待（无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
@@ -94,6 +97,7 @@ com.minion
 - **确认交互**：GuiConfirmUi 用 FutureTask 把弹窗投到 FX 线程并**阻塞工具线程**等结果（不阻塞 FX 线程）；无 GUI 环境防御性 REJECT
 - 会话落盘：`loop.setSessionStore(store)` 每轮/退出兜底落盘；关闭窗口 `shutdown()` 终止全部运行中会话（有运行中会话先弹确认）
 - **资源生命周期**：每会话一个 DeepSeekClient（`LlmClient.close()` 取消 in-flight + `dispatcher().executorService().shutdown()` + `connectionPool().evictAll()`，幂等）；会话删除/工作空间删除/`shutdown()` 三处释放，退出钩子统一收口（`manager.shutdown()` + `chrome.stop()`）——否则 okhttp 连接池非 daemon 清理线程把 JVM 拖住约 5 分钟
+- **模型变更**：经 `SessionManager.applyModelChanged()` 全量 propagate（换 LlmClient + ContextManager.update，旧客户端延迟回收）
 
 ## 4. 核心数据流
 
