@@ -446,7 +446,10 @@ public class SessionManager {
     }
 
     public void stop(SessionHandle h) {
-        if (h != null && h.running) h.loop.interrupt();
+        if (h != null && h.running) {
+            h.loop.interrupt(); // 只取消当前客户端；换模型后 in-flight 请求在旧（已退役）客户端上
+            h.closeRetired();   // 一并取消旧客户端的流式请求，防「终止」失效等旧流自然结束（数分钟）
+        }
     }
 
     private void persist(SessionHandle h) {

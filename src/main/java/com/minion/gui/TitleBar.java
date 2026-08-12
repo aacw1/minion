@@ -38,10 +38,9 @@ public class TitleBar extends HBox {
 
         final Button max = new Button("□");
         max.getStyleClass().add("btn-ghost");
-        max.setOnAction(e -> {
-            stage.setMaximized(!stage.isMaximized());
-            max.setText(stage.isMaximized() ? "❐" : "□");
-        });
+        max.setOnAction(e -> stage.setMaximized(!stage.isMaximized()));
+        // 图标与状态单向同步：双击标题栏/OS 快捷键等路径最大化也能刷新（按钮点击经 setMaximized 触发同一监听）
+        stage.maximizedProperty().addListener((o, ov, nv) -> max.setText(nv ? "❐" : "□"));
 
         Button close = new Button("✕");
         close.getStyleClass().add("btn-close");
@@ -58,10 +57,11 @@ public class TitleBar extends HBox {
             stage.setX(e.getScreenX() - dragX);
             stage.setY(e.getScreenY() - dragY);
         });
-        // 双击标题栏空白处切换最大化（空白 = 点在标题栏自身或其 Label；按钮节点自己消费 click，不会命中此处）
+        // 双击标题栏空白处切换最大化：只认标题栏自身与其两个 Label（应用名/模型名）；
+        // 页签文本也是 Label（TabHeaderSkin 内部），用 == 收窄排除，防双击页签误触发最大化
         setOnMouseClicked(e -> {
             if (e.getClickCount() == 2
-                    && (e.getTarget() == this || e.getTarget() instanceof Label)) {
+                    && (e.getTarget() == this || e.getTarget() == app || e.getTarget() == modelLabel)) {
                 stage.setMaximized(!stage.isMaximized());
             }
         });

@@ -230,7 +230,7 @@ public class MainWindow {
         if (h == null) return; // 终审修复：当前空间删除中（后台 awaitTermination ≤5s）被点击，createSession 返回 null，忽略即可
         sessionList.refresh(); // createSession 无 Listener 通知，UI 层自行刷新
         manager.activateSession(h);
-        // 消息区/输入区绑定由 Task 10/11 在 onSessionActivated 中接线
+        // 会话激活后，onSessionActivated 回调在 show() 注册的监听器中绑定消息区与输入区
     }
 
     /** 新建工作空间弹窗（Task 9 从 show() 抽取）：work.dir 支持系统文件夹选择框 */
@@ -302,6 +302,7 @@ public class MainWindow {
             e.consume();
             Alert a = new Alert(Alert.AlertType.CONFIRMATION,
                     "删除会话「" + h.title + "」？", ButtonType.OK, ButtonType.CANCEL);
+            Theme.style(a); // 需求 6：所有弹窗深色（会话删除确认是全代码库唯一漏配的一处）
             a.showAndWait().ifPresent(bt -> {
                 if (bt == ButtonType.OK) {
                     manager.deleteSession(h);

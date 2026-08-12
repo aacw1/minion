@@ -15,10 +15,11 @@ public class ContextManager {
           + "未完成的任务与目标、已做出的关键决策及原因、使用过的工具与结果要点、"
           + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，500 字以内。";
 
-    private int maxContextTokens;      // final 移除
-    private double threshold;
-    private int keepRecent;
-    private LlmClient llm;
+    // FX 线程 update/setLlm 写入、会话工作线程 shouldCompress/compress 读取——volatile 防 JMM 数据竞争
+    private volatile int maxContextTokens;      // final 移除
+    private volatile double threshold;
+    private volatile int keepRecent;
+    private volatile LlmClient llm;
     private final int systemTokens;    // system 提示词 token 估算在构造时固定，保持不变
 
     public ContextManager(int maxContextTokens, double threshold, int keepRecent,

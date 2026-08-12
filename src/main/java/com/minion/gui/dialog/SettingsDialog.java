@@ -20,10 +20,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
@@ -239,8 +237,11 @@ public class SettingsDialog {
         save.getStyleClass().add("btn-primary");
         save.setOnAction(e -> {
             config.set("skills.dir", skillsDir.getText().trim());
-            config.set("confirm.whitelist.tools", toolWhitelist.getText().trim());
-            config.set("confirm.whitelist.commands", cmdWhitelist.getText().trim());
+            // 白名单是逗号分隔的单行配置：多行粘贴的换行替换为空格，否则落盘后重载会静默丢内容
+            config.set("confirm.whitelist.tools",
+                    toolWhitelist.getText().trim().replace('\n', ' ').replace('\r', ' '));
+            config.set("confirm.whitelist.commands",
+                    cmdWhitelist.getText().trim().replace('\n', ' ').replace('\r', ' '));
             config.set("paths.read.allowOutside", String.valueOf(allowOutside.isSelected()));
             config.set("confirm.skip", String.valueOf(skipConfirm.isSelected()));
             config.set("browser.path", browserPath.getText().trim());

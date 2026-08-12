@@ -395,6 +395,39 @@ public class SessionManagerTest {
         assertEquals(1, ((FakeLlmClient) h1.llm).closeCount);
     }
 
+    /** 行为锁：换模型后跑完一轮（running→false），空闲回收路径关闭旧客户端（防回归——删除 closeRetired 调用会漏关 okhttp） */
+    @Test
+    public void turnCompletion_reclaimsRetiredLlm() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h = m.createSession(null);
+        FakeLlmClient old1 = m.created.get(0);
+
+        m.applyModelChanged(); // 换模型：旧客户端登记待回收，新客户端接管
+        FakeLlmClient fresh = (FakeLlmClient) h.llm;
+        fresh.addTurn("完成"); // 无脚本时 FakeLlmClient 取 turns.get(-1) 越界，须先出牌
+        assertEquals(0, old1.closeCount); // 换模型不立即关闭（可能 in-flight）
+
+        final CountDownLatch idle = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
+                if (!running) idle.countDown();
+            }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { }
+        });
+        m.send(h, "继续");
+        assertTrue("等待会话空闲超时", idle.await(5, TimeUnit.SECONDS));
+        assertFalse(h.running);
+        assertEquals("空闲回收：换模型遗留的旧客户端应被关闭", 1, old1.closeCount);
+        assertEquals(0, fresh.closeCount); // 当前客户端仍在使用，不得关闭
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();
