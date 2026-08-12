@@ -32,6 +32,9 @@ public class ChatView extends VBox {
         return new ChatView(h.controller.eventList(), h);
     }
 
+    /** 本视图绑定的会话句柄（MainWindow 判断「删除的是当前展示会话」用） */
+    public SessionHandle handle() { return handle; }
+
     /** 绑定/解绑事件流：active=true 先清空，再经 EventList 同步重放存量 + 后续直通 */
     public void bind(boolean active) {
         if (active) clear(); // FX 线程调用：先清再重放，避免存量事件重复渲染

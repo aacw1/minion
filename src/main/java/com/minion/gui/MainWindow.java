@@ -81,7 +81,11 @@ public class MainWindow {
         Label sessionTitle = new Label("会话管理");
         sessionTitle.getStyleClass().add("section-title");
         sessionList = new SessionListView(manager,
-                h -> { removeTabById(h.id); sessionList.refresh(); });
+                h -> {
+                    removeTabById(h.id);
+                    if (chatView != null && chatView.handle() == h) clearChatPane(); // 删除当前展示会话 → 右侧清空
+                    sessionList.refresh();
+                });
         VBox.setVgrow(sessionList, Priority.ALWAYS);
         Button newSession = new Button("＋ 新建会话");
         newSession.getStyleClass().add("btn-ghost");
@@ -174,7 +178,12 @@ public class MainWindow {
                 });
             }
             @Override public void onWorkspaceChanged() {
-                Platform.runLater(() -> { wsList.refresh(); sessionList.refresh(); rebuildTabs(); });
+                Platform.runLater(() -> {
+                    clearChatPane(); // 需求 16：切换工作空间后右侧清空（先清再刷列表/页签）
+                    wsList.refresh();
+                    sessionList.refresh();
+                    rebuildTabs();
+                });
             }
             @Override public void onError(String message) {
                 Platform.runLater(() -> {
@@ -212,6 +221,16 @@ public class MainWindow {
         stage.show();
     }
 
+    /** 清空右侧面板：解绑事件流、回占位提示、解绑输入区（删除会话/切换工作空间后调用） */
+    private void clearChatPane() {
+        if (chatView != null) {
+            chatView.bind(false);  // 分离监听器（EventList 缓冲保留，会话仍在时下次 bind(true) 重放）
+            chatView.clear();      // 回「输入消息开始新的会话」占位
+        }
+        chatView = null;
+        if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
+    }
+
     private void onNewSession() {
         SessionHandle h = manager.createSession(null); // titlePending，无页签
         if (h == null) return; // 终审修复：当前空间删除中（后台 awaitTermination ≤5s）被点击，createSession 返回 null，忽略即可
@@ -245,6 +264,7 @@ public class MainWindow {
                 if (bt == ButtonType.OK) {
                     manager.deleteSession(h);
                     tabs.getTabs().remove(t);
+                    if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh(); // 页签关闭路径同样联动刷新列表
                 }
             });
