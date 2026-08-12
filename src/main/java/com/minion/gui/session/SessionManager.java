@@ -13,7 +13,6 @@ import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.DeepSeekClient;
 import com.minion.core.llm.LlmClient;
-import com.minion.core.llm.Message;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.BashTool;
@@ -39,12 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * 会话外壳：每会话一个 AgentLoop + 独占工作线程（真并行）；
@@ -77,11 +71,6 @@ public class SessionManager {
     private final Map<String, WorkspaceCtx> ctxByName = new HashMap<String, WorkspaceCtx>();
     private String currentWorkspaceName;
     private SessionHandle currentSession;
-    private final ExecutorService titlePool = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "minion-title");
-        t.setDaemon(true);
-        return t;
-    });
 
     /** 每工作空间上下文（空间级共享对象；工具注册与工作线程下沉到每会话） */
     private static class WorkspaceCtx {
@@ -392,7 +381,7 @@ public class SessionManager {
         }
     }
 
-    /** 发送：新会话（titlePending）先摘要生成标题，再跑正式任务 */
+    /** 发送：新会话（titlePending）先本地置标题，再跑正式任务 */
     public void send(final SessionHandle h, final String text) {
         if (h == null) return;
         final WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
@@ -402,7 +391,7 @@ public class SessionManager {
                 try {
                     if (h.deleted) return; // 队列积压期间被删除
                     if (h.titlePending) {
-                        h.title = generateTitle(text);
+                        h.title = TitleGenerator.localTitle(text); // 本地截取，不再走 LLM 摘要
                         if (h.deleted) return; // 摘要期间被删除：不再落盘/通知
                         h.titlePending = false;
                         h.session.title = h.title;
@@ -430,35 +419,6 @@ public class SessionManager {
                 }
             }
         });
-    }
-
-    /** 摘要标题：当前模型 completeChat + 10s 超时；失败回退 */
-    private String generateTitle(String text) {
-        ModelConfig mc = models.current();
-        final LlmClient llm = newLlm(mc);
-        Future<String> f = titlePool.submit(() -> {
-            try {
-                List<Message> msgs = new ArrayList<Message>();
-                msgs.add(Message.user(text));
-                return llm.completeChat(msgs, TitleGenerator.buildPrompt(text));
-            } catch (Exception e) {
-                return null;
-            }
-        });
-        try {
-            String raw = f.get(10, TimeUnit.SECONDS);
-            // Callable 内吞 LLM 异常 → null：按失败回退（clean(null) 会退成「新会话」，失真）
-            if (raw == null) return TitleGenerator.fallbackTitle(text);
-            return TitleGenerator.clean(raw);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return TitleGenerator.fallbackTitle(text);
-        } catch (ExecutionException e) {
-            return TitleGenerator.fallbackTitle(text);
-        } catch (TimeoutException e) {
-            f.cancel(true);
-            return TitleGenerator.fallbackTitle(text);
-        }
     }
 
     public void stop(SessionHandle h) {
@@ -495,6 +455,5 @@ public class SessionManager {
                 h.llm.close(); // 关 okhttp 连接池/线程，防 JVM 残留
             }
         }
-        titlePool.shutdownNow();
     }
 }

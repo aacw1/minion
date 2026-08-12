@@ -7,40 +7,29 @@ import static org.junit.Assert.*;
 public class TitleGeneratorTest {
 
     @Test
-    public void buildPrompt_containsInstructionAndMessage() {
-        String p = TitleGenerator.buildPrompt("帮我实现登录功能");
-        assertTrue(p.contains("登录功能"));
-        assertTrue(p.contains("20"));
+    public void localTitle_truncatesTo20Chars() {
+        String longText = "帮我修复登录问题需要修改三个文件的位置和配置信息";
+        String t = TitleGenerator.localTitle(longText);
+        assertEquals(TitleGenerator.MAX_TITLE_LEN, t.length());
+        assertEquals(longText.substring(0, 20), t);
     }
 
     @Test
-    public void clean_stripsQuotesAndTrims() {
-        assertEquals("修复乱码", TitleGenerator.clean("「修复乱码」"));
-        assertEquals("修复乱码", TitleGenerator.clean("\"修复乱码\""));
-        assertEquals("修复乱码", TitleGenerator.clean("  修复乱码  "));
-        assertEquals("a b", TitleGenerator.clean("a\nb"));
+    public void localTitle_normalizesNewlinesAndTrim() {
+        assertEquals("修复乱码", TitleGenerator.localTitle("  修复乱码  "));
+        assertEquals("a b", TitleGenerator.localTitle("a\nb"));
+        assertEquals("a b c", TitleGenerator.localTitle("a\r\nb\nc"));
     }
 
     @Test
-    public void clean_truncatesOverLength() {
-        String longTitle = "这是一个非常非常非常非常非常非常非常非常非常长的标题超过二十个字的长度限制";
-        String c = TitleGenerator.clean(longTitle);
-        assertTrue(c.length() <= TitleGenerator.MAX_TITLE_LEN);
+    public void localTitle_shortTextUnchanged() {
+        assertEquals("修复登录", TitleGenerator.localTitle("修复登录"));
     }
 
     @Test
-    public void clean_emptyFallsBack() {
-        assertEquals("新会话", TitleGenerator.clean(""));
-        assertEquals("新会话", TitleGenerator.clean("   "));
-        assertEquals("新会话", TitleGenerator.clean(null));
-    }
-
-    @Test
-    public void fallbackTitle_truncatesAndDefaults() {
-        assertEquals("新会话", TitleGenerator.fallbackTitle(""));
-        assertEquals("新会话", TitleGenerator.fallbackTitle(null));
-        assertEquals("修复中文乱码问题", TitleGenerator.fallbackTitle("修复中文乱码问题"));
-        String longMsg = "这是一个超过三十个字的消息内容用来测试兜底标题的截断行为是否符合预期";
-        assertTrue(TitleGenerator.fallbackTitle(longMsg).length() <= 30);
+    public void localTitle_emptyFallsBackToNewSession() {
+        assertEquals("新会话", TitleGenerator.localTitle(""));
+        assertEquals("新会话", TitleGenerator.localTitle("   "));
+        assertEquals("新会话", TitleGenerator.localTitle(null));
     }
 }

@@ -1,6 +1,7 @@
 package com.minion.gui.session;
 
 import com.minion.core.agent.Session;
+import com.minion.core.agent.TitleGenerator;
 import com.minion.core.config.Config;
 import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
@@ -340,6 +341,32 @@ public class SessionManagerTest {
         for (FakeLlmClient llm : m.created) {
             assertEquals("删除工作空间后其会话 LLM 应被关闭", 1, llm.closeCount);
         }
+    }
+
+    /** 需求 8：send 后标题为本地截取的前 20 字（不再走 LLM 摘要） */
+    @Test
+    public void send_setsLocalTitleSynchronously() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h = m.createSession(null);
+        assertTrue(h.titlePending);
+        final CountDownLatch titleSet = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { titleSet.countDown(); }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { } // FakeLlmClient 无脚本 turn 会抛异常，走 onError，忽略
+        });
+        String longText = "帮我修复登录问题需要修改三个文件的位置和配置";
+        m.send(h, longText);
+        assertTrue("标题回调超时", titleSet.await(5, TimeUnit.SECONDS));
+        assertFalse(h.titlePending);
+        assertTrue(h.title.length() <= TitleGenerator.MAX_TITLE_LEN);
+        assertEquals(longText.substring(0, 5), h.title.substring(0, 5));
     }
 
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
