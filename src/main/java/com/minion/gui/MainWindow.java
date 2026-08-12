@@ -10,6 +10,7 @@ import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -17,10 +18,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -147,14 +150,7 @@ public class MainWindow {
         chatScroll.setFitToWidth(true);
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
-        // 终审修复：消息区自动滚动到底（设计 §5.1）。ScrollPane 的 vmax 为像素单位
-        // （= 内容高 − 视口高），vvalue 达到 vmax 即底部；监听 vmax（布局时随内容更新）
-        // 后 setVvalue(max) 精确到底——比 setVvalue(1.0) 可靠（vmax≠1）。runLater 保证
-        // 当帧布局完成后生效。用户手动回滚时不暂停自动滚动（最小实现，不做上滚暂停）
-        chatScroll.vmaxProperty().addListener((obs, oldV, newV) -> {
-            double max = newV == null ? 0 : newV.doubleValue();
-            Platform.runLater(() -> chatScroll.setVvalue(max));
-        });
+        setupAutoScroll();
         inputView = new InputView(manager);
         right.getChildren().setAll(chatScroll, inputView);
 
@@ -229,6 +225,31 @@ public class MainWindow {
         }
         chatView = null;
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
+    }
+
+    /** 需求 10：消息区自动滚动到底；用户左键拖动滚动条期间暂停，释放后恢复 */
+    private void setupAutoScroll() {
+        final boolean[] dragging = new boolean[1];
+        // skin 就绪后才有滚动条节点（lookupAll 在 CSS 应用前为空）
+        chatScroll.skinProperty().addListener((obs, oldS, newS) -> {
+            if (newS == null) return;
+            for (Node n : chatScroll.lookupAll(".scroll-bar")) {
+                if (!(n instanceof ScrollBar)) continue;
+                ScrollBar sb = (ScrollBar) n;
+                if (sb.getOrientation() != Orientation.VERTICAL) continue;
+                sb.setOnMousePressed(e -> {
+                    if (e.getButton() == MouseButton.PRIMARY) dragging[0] = true; // 仅左键拖动暂停
+                });
+                sb.setOnMouseReleased(e -> {
+                    if (e.getButton() == MouseButton.PRIMARY) dragging[0] = false;
+                });
+            }
+        });
+        chatScroll.vmaxProperty().addListener((obs, oldV, newV) -> {
+            if (dragging[0]) return; // 用户正在拖动滚动条：不抢滚动位置
+            double max = newV == null ? 0 : newV.doubleValue();
+            Platform.runLater(() -> chatScroll.setVvalue(max));
+        });
     }
 
     private void onNewSession() {
