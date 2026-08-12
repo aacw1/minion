@@ -150,4 +150,20 @@ public class SessionManagerTest {
         assertEquals("已保存的会话", m.sessions().get(0).title);
         assertFalse(m.sessions().get(0).titlePending);
     }
+
+    /** 删除会话：会话文件同步删除（防重启后 restore 复活） */
+    @Test
+    public void deleteSession_removesSessionFile() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        SessionHandle h = m.createSession(null);
+        Path f = WorkspaceManager.sessionDirFor(jar, ws.currentName()).resolve(h.id + ".json");
+        assertTrue(Files.exists(f));
+        m.deleteSession(h);
+        assertFalse(Files.exists(f));
+    }
 }

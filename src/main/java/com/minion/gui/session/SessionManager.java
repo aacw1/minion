@@ -307,6 +307,8 @@ public class SessionManager {
     /** 发送：新会话（titlePending）先摘要生成标题，再跑正式任务 */
     public void send(final SessionHandle h, final String text) {
         if (h == null) return;
+        final WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
+        if (ctx == null) return;
         h.pool.submit(new Runnable() {
             @Override public void run() {
                 try {
@@ -324,6 +326,12 @@ public class SessionManager {
                     try {
                         h.loop.runUserTurn(text);
                     } finally {
+                        if (h.deleted) {
+                            // 运行中被删除：runUserTurn 退出路径已把文件写回（deleted 对 AgentLoop 不可见），
+                            // 此处补删，防重启后 restore 复活
+                            try { ctx.store.delete(h.id); }
+                            catch (Exception e) { notifyError("删除会话文件失败: " + e.getMessage()); }
+                        }
                         h.running = false;
                         notifyRunningChanged(h, false);
                     }
