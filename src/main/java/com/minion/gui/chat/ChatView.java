@@ -56,6 +56,9 @@ public class ChatView extends VBox {
                 l.setWrapText(true);
                 l.getStyleClass().add("msg-user");
                 getChildren().add(l);
+                // 新轮次开始：重置上一轮流式缓冲，防止与下一轮内容拼接（评审 I-1）
+                pendingContent.setLength(0);
+                pendingThinking.setLength(0);
                 break;
             }
             case THINKING:
@@ -109,6 +112,9 @@ public class ChatView extends VBox {
         getChildren().add(alert(text, "msg-error"));
     }
 
+    /** 流式节点哨兵：仅思考块与助手内容块携带，标识「可被流式增量替换」 */
+    private static final Object STREAMING_MARK = new Object();
+
     private Node hint(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("msg-thinking");
@@ -126,12 +132,14 @@ public class ChatView extends VBox {
         Label l = new Label("思考: " + pendingThinking.toString());
         l.setWrapText(true);
         l.getStyleClass().add("msg-thinking");
+        l.setUserData(STREAMING_MARK); // 流式块标记：多段思考增量合并为同一块
         return l;
     }
 
     private Node assistantBlock(String md) {
         VBox box = new VBox(6);
         box.getStyleClass().add("msg-assistant");
+        box.setUserData(STREAMING_MARK); // 流式块标记：CONTENT 增量替换助手块
         for (MarkdownRenderer.Block b : MarkdownRenderer.parse(md)) {
             box.getChildren().add(BlockNodeFactory.create(b));
         }
@@ -152,9 +160,9 @@ public class ChatView extends VBox {
         }
     }
 
+    /** 仅带哨兵标记的节点才是流式节点；工具结果/统计/子任务等横幅不标记，永不参与流式替换（评审 I-2） */
     private boolean isStreaming(Node n) {
-        return (n instanceof VBox && ((VBox) n).getStyleClass().contains("msg-assistant"))
-                || (n instanceof Label && ((Label) n).getStyleClass().contains("msg-thinking"));
+        return n.getUserData() == STREAMING_MARK;
     }
 
     private static String shorten(String s, int max) {
