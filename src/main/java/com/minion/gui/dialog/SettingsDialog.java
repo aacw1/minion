@@ -244,10 +244,14 @@ public class SettingsDialog {
             config.set("paths.read.allowOutside", String.valueOf(allowOutside.isSelected()));
             config.set("confirm.skip", String.valueOf(skipConfirm.isSelected()));
             config.set("browser.path", browserPath.getText().trim());
-            config.set("browser.port", browserPort.getText().trim());
+            if (!setInt("browser.port", browserPort.getText(), config)) {
+                error("保存失败", "browser.port 必须是整数，未保存");
+            }
             config.set("browser.userDataDir", browserUserData.getText().trim());
             config.set("browser.headless", String.valueOf(browserHeadless.isSelected()));
-            config.set("browser.timeoutMs", browserTimeout.getText().trim());
+            if (!setInt("browser.timeoutMs", browserTimeout.getText(), config)) {
+                error("保存失败", "browser.timeoutMs 必须是整数，未保存");
+            }
         });
         HBox bottom = new HBox(10);
         bottom.getChildren().addAll(save);
@@ -278,6 +282,13 @@ public class SettingsDialog {
 
     private static int parseInt(String s, int def) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    /** 保存前校验整数型配置项：非法（非整数/负数/空）→ 不写回并返回 false（调用方弹错）；合法 → 写回 */
+    static boolean setInt(String key, String text, Config config) {
+        if (parseInt(text, -1) < 0) return false;
+        config.set(key, text.trim());
+        return true;
     }
 
     private static double parseDouble(String s, double def) {

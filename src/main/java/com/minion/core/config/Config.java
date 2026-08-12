@@ -99,10 +99,17 @@ public class Config {
     public Set<String> whitelistTools()    { return csv(get("confirm.whitelist.tools", "")); }
     public Set<String> whitelistCommands() { return csv(get("confirm.whitelist.commands", "")); }
     public String browserPath()       { return get("browser.path", ""); }
-    public int browserPort()          { return Integer.parseInt(get("browser.port", "9222")); }
+    /** 数值非法（手改/历史脏数据写坏）时回落默认值，避免启动时 NumberFormatException 崩溃 */
+    public int browserPort() {
+        try { return Integer.parseInt(get("browser.port", "9222")); }
+        catch (NumberFormatException e) { return 9222; }
+    }
     public String browserUserDataDir(){ return get("browser.userDataDir", "./.minion/browser-profile"); }
     public boolean browserHeadless()  { return Boolean.parseBoolean(get("browser.headless", "false")); }
-    public int browserTimeoutMs()     { return Integer.parseInt(get("browser.timeoutMs", "30000")); }
+    public int browserTimeoutMs() {
+        try { return Integer.parseInt(get("browser.timeoutMs", "30000")); }
+        catch (NumberFormatException e) { return 30000; }
+    }
 
     private static Set<String> csv(String s) {
         Set<String> set = new HashSet<String>();
