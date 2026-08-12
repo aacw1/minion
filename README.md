@@ -1,6 +1,6 @@
 # minion
 
-个人助手，代码开发工具，使用 java8 开发，只有基础依赖，打完包 2M，对接多供应商大模型（deepseek/qwen，OpenAI 兼容协议），含有子 agent、工具（包含网页抓取）、上下文压缩、风险操作确认、使用技能等功能。个人学习项目。解决公司内网 win7 不能使用编程助手的问题。结合 superpowers 使用效率大增。
+个人助手，代码开发工具，使用 java8 开发，单 fat jar 分发约 2.5M（gson/okhttp/snakeyaml/flexmark 等全量依赖打进去，JavaFX 用 JDK 自带 jfxrt 不入包），对接多供应商大模型（deepseek/qwen，OpenAI 兼容协议），含有子 agent、工具（包含网页抓取）、上下文压缩、风险操作确认、使用技能等功能。个人学习项目。解决公司内网 win7 不能使用编程助手的问题。结合 superpowers 使用效率大增。
 
 ## 启动（GUI）
 

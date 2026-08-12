@@ -197,7 +197,9 @@ WorkspaceManager（单例）
 | 依赖 | 用途 | 引入方式 |
 |---|---|---|
 | JavaFX 8（jfxrt.jar） | GUI 框架 | 编译期 pom `system scope` 引用 `${java.home}/lib/ext/jfxrt.jar`；运行时依赖 JDK 8 自带 ext 加载，不打进 fat jar（避免双份冲突）。README 注明需 Oracle JDK 8 / 含 JavaFX 的发行版 |
-| flexmark 0.64.x | Markdown 渲染 | flexmark-core + flexmark-ext-tables + flexmark-ext-strikethrough |
+| flexmark 0.62.2 | Markdown 渲染 | umbrella `flexmark` + flexmark-ext-tables + flexmark-ext-gfm-strikethrough |
+
+- flexmark 版本说明：0.64.x 起字节码升为 Java 11（major=55）、JDK 8 不兼容，故锁 0.62.2（最后支持 JDK8 的版本线）；0.62.2 起核心 artifact 更名回 umbrella `flexmark`（flexmark-core 止于 0.60.x），strikethrough 扩展用 gfm 变体
 
 - 不做语法高亮（YAGNI）；不做 JNA/JNI
 - 以上均满足 JDK 8 兼容规约（CONVENTIONS.md 第 1 条），理由见本表

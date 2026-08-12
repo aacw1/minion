@@ -6,7 +6,7 @@
 
 **Architecture:** 核心层（AgentLoop/工具/存储）几乎不动，新增 `com.minion.gui` 界面层 + `com.minion.gui.session` 会话外壳（多 AgentLoop 生命周期与 AgentUi 事件路由）。每会话一个 AgentLoop 实例+工作线程真并行；切走不打断，事件进缓冲，切回重放。
 
-**Tech Stack:** JDK 8（Oracle JDK 8 自带 JavaFX）、JavaFX 8 原生控件 + CSS 深色主题、flexmark 0.64.8 Markdown 渲染、gson（现有）、JUnit4。
+**Tech Stack:** JDK 8（Oracle JDK 8 自带 JavaFX）、JavaFX 8 原生控件 + CSS 深色主题、flexmark 0.62.2 Markdown 渲染、gson（现有）、JUnit4。
 
 **Spec:** `docs/superpowers/specs/2026-08-11-gui-design.md`
 
@@ -91,23 +91,23 @@
       <scope>system</scope>
       <systemPath>${java.home}/lib/ext/jfxrt.jar</systemPath>
     </dependency>
-    <!-- Markdown 渲染（0.64.x 为最后支持 JDK8 的版本线） -->
+    <!-- Markdown 渲染（0.62.2 为最后支持 JDK8 的版本线：0.64.0 起字节码升到 Java 11，JDK8 不兼容） -->
     <!-- 注意坐标：0.62.2 起核心 artifact 更名回 umbrella `flexmark`（flexmark-core 止于 0.60.x）；
-         strikethrough 扩展 0.64.x 只有 gfm 变体（flexmark-ext-gfm-strikethrough） -->
+         strikethrough 扩展用 gfm 变体（flexmark-ext-gfm-strikethrough） -->
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark-ext-tables</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
     <dependency>
       <groupId>com.vladsch.flexmark</groupId>
       <artifactId>flexmark-ext-gfm-strikethrough</artifactId>
-      <version>0.64.8</version>
+      <version>0.62.2</version>
     </dependency>
 ```
 
@@ -2658,7 +2658,7 @@ git commit -m "feat: 会话列表与页签 UI（新建/重命名/删除/状态�
 - Modify: `src/main/java/com/minion/gui/MainWindow.java`
 
 **Interfaces:**
-- Consumes: flexmark 0.64.8、EventList（Task 6）
+- Consumes: flexmark 0.62.2、EventList（Task 6）
 - Produces:
   - `MarkdownRenderer.parse(String md)` → `List<Block>`（纯函数可测）；`Block{Type; text; lang; level; spans; items; rows}`；`Span{text; style}`；`TableRowData{cells; header}`
   - `ChatView(EventList, SessionHandle)`：`bind(boolean active)`、`clear()`、`appendSystemLine(String)`（错误横幅）
@@ -2734,7 +2734,7 @@ public class MarkdownRendererTest {
 }
 ```
 
-（表格解析依赖 flexmark TablesExtension，0.64 的 TableBlock 类路径 `com.vladsch.flexmark.ast.TableBlock` + `com.vladsch.flexmark.ext.tables.TablesExtension`——若编译/断言异常，按实际 jar 调整 import；表格测试在实现稳定后补 `parse_table` 断言，本任务先保证上述 6 个通过。）
+（表格解析依赖 flexmark TablesExtension，0.62.2 的 TableBlock 类路径 `com.vladsch.flexmark.ast.TableBlock` + `com.vladsch.flexmark.ext.tables.TablesExtension`——若编译/断言异常，按实际 jar 调整 import；表格测试在实现稳定后补 `parse_table` 断言，本任务先保证上述 6 个通过。）
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -2912,7 +2912,7 @@ public class MarkdownRenderer {
 }
 ```
 
-（表格解析后续补：`import com.vladsch.flexmark.ast.TableBlock/TableHead/TableBody/TableRow/TableCell` 并加 convert 分支——首次实现若这些类路径与 flexmark 0.64.8 不符，用 `jar tf ~/.m2/repository/com/vladsch/flexmark/flexmark-core/0.64.8/flexmark-core-0.64.8.jar | grep Table` 确认实际类名后补上。**表格列为"可后补"项：核心断言（6 个测试）先行通过，表格功能在 Task 10 Step 5 后补实现并补测试。**）
+（表格解析后续补：`import com.vladsch.flexmark.ast.TableBlock/TableHead/TableBody/TableRow/TableCell` 并加 convert 分支——首次实现若这些类路径与 flexmark 0.62.2 不符，用 `jar tf ~/.m2/repository/com/vladsch/flexmark/flexmark/0.62.2/flexmark-0.62.2.jar | grep Table` 确认实际类名后补上。**表格列为"可后补"项：核心断言（6 个测试）先行通过，表格功能在 Task 10 Step 5 后补实现并补测试。**）
 
 - [ ] **Step 4: 运行测试，修正 flexmark API 细节**
 
@@ -2921,7 +2921,7 @@ Expected: 修正 import/API 后 PASS（6 个测试全绿）。测试断言语义
 
 - [ ] **Step 5: 补表格支持（TableBlock 分支 + parse_table 测试）**
 
-确认 flexmark 0.64.8 表格类实际位置后，在 `convert` 中加入：
+确认 flexmark 0.62.2 表格类实际位置后，在 `convert` 中加入：
 
 ```java
         } else if (n instanceof TableBlock) {

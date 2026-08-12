@@ -76,6 +76,10 @@ public class AgentLoop {
         });
         // T15：构造末尾自动注册 task 工具并注入默认子 agent 执行器
         registry.register(new com.minion.core.tools.TaskTool(this));
+        // 终审修复：TodoWriteTool 按会话自动注册（构造捕获 session.todos 实例引用，
+        // restoreSession/startNewSession 原地装载保证引用持续有效——与旧 Main 接线语义一致；
+        // 每会话独立 registry 下模型可见 todo 工具，此前仅 TaskTool 自动注册导致 TodoWrite 静默丢失）
+        registry.register(new com.minion.core.tools.TodoWriteTool(session.todos));
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             ui.onSubAgentStart(desc);

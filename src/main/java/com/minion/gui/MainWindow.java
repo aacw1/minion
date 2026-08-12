@@ -144,6 +144,14 @@ public class MainWindow {
         chatScroll.setFitToWidth(true);
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
+        // 终审修复：消息区自动滚动到底（设计 §5.1）。ScrollPane 的 vmax 为像素单位
+        // （= 内容高 − 视口高），vvalue 达到 vmax 即底部；监听 vmax（布局时随内容更新）
+        // 后 setVvalue(max) 精确到底——比 setVvalue(1.0) 可靠（vmax≠1）。runLater 保证
+        // 当帧布局完成后生效。用户手动回滚时不暂停自动滚动（最小实现，不做上滚暂停）
+        chatScroll.vmaxProperty().addListener((obs, oldV, newV) -> {
+            double max = newV == null ? 0 : newV.doubleValue();
+            Platform.runLater(() -> chatScroll.setVvalue(max));
+        });
         inputView = new InputView(manager);
         right.getChildren().setAll(chatScroll, inputView);
 
@@ -207,6 +215,7 @@ public class MainWindow {
 
     private void onNewSession() {
         SessionHandle h = manager.createSession(null); // titlePending，无页签
+        if (h == null) return; // 终审修复：当前空间删除中（后台 awaitTermination ≤5s）被点击，createSession 返回 null，忽略即可
         sessionList.refresh(); // createSession 无 Listener 通知，UI 层自行刷新
         manager.activateSession(h);
         // 消息区/输入区绑定由 Task 10/11 在 onSessionActivated 中接线

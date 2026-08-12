@@ -220,6 +220,7 @@ public class SessionManager {
     /** 创建会话（恢复会话传 title；新建传 null → titlePending） */
     public SessionHandle createSession(String title) {
         WorkspaceCtx ctx = ctxByName.get(currentWorkspaceName);
+        if (ctx == null) return null; // 终审修复：deleteWorkspace 有运行中会话时 ctx 先移除、currentWorkspaceName 后台回退（≤5s 窗口），防 FX 线程 NPE
         ModelConfig mc = models.current();
         Session s = Session.create(ctx.workspace.workDir(), mc.modelName);
         s.title = title;
