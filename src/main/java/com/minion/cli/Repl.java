@@ -2,6 +2,7 @@ package com.minion.cli;
 
 import com.minion.core.agent.AgentLoop;
 import com.minion.core.config.Config;
+import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.skills.Skill;
@@ -26,14 +27,14 @@ public class Repl {
     private final CommandDispatcher dispatcher;
     private final SkillManager skillManager;
     private final SessionStore store;
-    private final ConfirmReader confirmReader;
+    private final ConfirmUi confirmReader;
     /** JLine 行编辑器：主循环、/resume、确认交互共用同一实例，避免双输入源争读控制台 */
     private LineReader reader;
     private volatile boolean exitRequested = false;
 
     public Repl(Config config, LlmClient llm, AgentLoop loop,
                 CommandDispatcher dispatcher, SkillManager skillManager, SessionStore store,
-                ConfirmReader confirmReader) {
+                ConfirmUi confirmReader) {
         this.config = config;
         this.llm = llm;
         this.loop = loop;
@@ -62,9 +63,7 @@ public class Repl {
                 .terminal(terminal)
                 .completer(completer)
                 .build();
-        // 全应用唯一 LineReader：确认交互与主循环共用，避免双终端后台线程竞争抢读 System.in
-        // （按键会被随机错分，表现为确认无响应、按键堆积后突然刷屏）
-        confirmReader.setLineReader(reader);
+        // CLI 确认已由 GUI 接管（Task 14），Task 15 移除本类
 
         terminal.handle(Terminal.Signal.INT, sig -> {
             if (exitRequested) {
