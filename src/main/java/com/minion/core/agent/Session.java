@@ -1,6 +1,5 @@
 package com.minion.core.agent;
 
-import com.minion.core.config.Config;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.UsageTracker;
 
@@ -15,6 +14,8 @@ public class Session {
 
     public String id;
     public String createdAt;
+    /** 会话标题（GUI 显示用；新建会话由 LLM 摘要生成，恢复旧会话可能为 null） */
+    public String title;
     public String workDir;
     public String modelName;
     /** 会话级工作目录(相对路径基准);null/空 = 跟随工作区根 */
@@ -34,12 +35,12 @@ public class Session {
                 + "-" + String.format("%04d", seq);
     }
 
-    public static Session create(Config config) {
+    public static Session create(String workDir, String modelName) {
         Session s = new Session();
         s.id = generateId();
         s.createdAt = s.id;
-        s.workDir = config.workDir();
-        s.modelName = config.modelName();
+        s.workDir = workDir;
+        s.modelName = modelName;
         return s;
     }
 
@@ -51,13 +52,14 @@ public class Session {
     }
 
     /** 恢复时用（Task 18） */
-    public static Session resume(Config config, String id, String createdAt, String workDir,
-                                 String modelName, List<Message> messages) {
+    public static Session resume(String id, String createdAt, String workDir,
+                                 String modelName, String title, List<Message> messages) {
         Session s = new Session();
         s.id = id;
         s.createdAt = createdAt;
         s.workDir = workDir;
         s.modelName = modelName;
+        s.title = title;
         s.messages = messages;
         return s;
     }

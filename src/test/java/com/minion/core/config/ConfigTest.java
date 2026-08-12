@@ -25,17 +25,11 @@ public class ConfigTest {
     @Test
     public void load_createsExternalFileWithDefaults() throws IOException {
         Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
-        assertEquals("https://api.deepseek.com/v1/chat/completions", c.modelUrl());
-        assertEquals("deepseek-v4-flash", c.modelName());
-        assertEquals("max", c.reasoningEffort());
-        assertEquals(131072, c.maxContextTokens());
-        assertEquals(0.8, c.compressThreshold(), 0.001);
-        assertEquals(10, c.keepRecentMessages());
         assertFalse(c.confirmSkip());
-        assertTrue(c.uiColor());
+        assertEquals("./skills", c.skillsDir());
         Path external = c.externalFile();
         assertTrue(Files.exists(external));
-        assertTrue(new String(Files.readAllBytes(external), StandardCharsets.UTF_8).contains("model.url"));
+        assertTrue(new String(Files.readAllBytes(external), StandardCharsets.UTF_8).contains("skills.dir"));
     }
 
     /** 外部文件覆盖默认值 */
@@ -44,15 +38,13 @@ public class ConfigTest {
         Path root = tmp.getRoot().toPath();
         Config c1 = Config.load(root, TEST_DEFAULTS);
         Path ext = c1.externalFile();
-        Files.write(ext, ("model.name=my-model\nmodel.key=sk-test-key\n"
-                + "confirm.skip=true\nui.color=false\n").getBytes(StandardCharsets.UTF_8),
+        Files.write(ext, ("skills.dir=/my/skills\nconfirm.skip=true\n"
+                + "browser.port=9999\n").getBytes(StandardCharsets.UTF_8),
                 java.nio.file.StandardOpenOption.APPEND);
         Config c2 = Config.load(root, TEST_DEFAULTS);
-        assertEquals("my-model", c2.modelName());
-        assertEquals("sk-test-key", c2.modelKey());
+        assertEquals("/my/skills", c2.skillsDir());
         assertTrue(c2.confirmSkip());
-        assertFalse(c2.uiColor());
-        assertEquals(131072, c2.maxContextTokens()); // 未覆盖的取默认
+        assertEquals(9999, c2.browserPort());
     }
 
     /** 白名单追加：去重、写入外部文件 */

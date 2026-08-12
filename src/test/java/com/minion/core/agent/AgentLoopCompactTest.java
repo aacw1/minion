@@ -30,9 +30,11 @@ public class AgentLoopCompactTest {
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
         // 小上下文上限，快速触发压缩（60×0.8=48 需 5 轮才够，50×0.8=40 在第 4 轮触发）
         ContextManager cm = new ContextManager(50, 0.8, 2, llm, 0);
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui, cm,
-                new Workspace(config.workDir()));
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
         // 塞满历史：3 轮 user+assistant ≈ 每轮 12 token
         for (int i = 0; i < 3; i++) {
@@ -57,9 +59,11 @@ public class AgentLoopCompactTest {
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
         ContextManager cm = new ContextManager(100000, 0.8, 1, llm, 0);
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui, cm,
-                new Workspace(config.workDir()));
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         llm.addTurn("回复");
         loop.runUserTurn("问题");
         assertFalse(loop.messages().get(0).summary); // 未触发

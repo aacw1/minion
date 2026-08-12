@@ -48,7 +48,8 @@ public class Config {
         return c;
     }
 
-    private static Path jarDir() {
+    /** jar 所在目录（workspace.json/model.json/会话目录的基准） */
+    public static Path jarDir() {
         try {
             Path p = Paths.get(Config.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             return p.getParent() != null ? p.getParent() : Paths.get(".");
@@ -90,28 +91,13 @@ public class Config {
         return v == null || v.isEmpty() ? def : v;
     }
 
-    public String modelUrl()     { return get("model.url", ""); }
-    public String modelKey()     { return get("model.key", ""); }
-    public String modelName()    { return get("model.name", "deepseek-v4-flash"); }
-    public String provider()     { return get("model.provider", "deepseek"); }
-    public boolean thinkingEnabled() { return Boolean.parseBoolean(get("model.thinking", "true")); }
-    public String reasoningEffort()  { return get("model.reasoningEffort", "max"); }
-    public int maxContextTokens() {
-        return Integer.parseInt(get("model.maxContextTokens", "131072"));
-    }
-    public double compressThreshold() { return Double.parseDouble(get("context.compressThreshold", "0.8")); }
-    public int keepRecentMessages()   { return Integer.parseInt(get("context.keepRecentMessages", "10")); }
-    public String workDir()      { return get("work.dir", "."); }
-    public String projectMdPath(){ return get("project.md.path", "./project.md"); }
     public String skillsDir()    { return get("skills.dir", "./skills"); }
-    public String sessionDir()   { return get("session.dir", "./.minion/sessions"); }
 
     /** 读逃逸：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
     public boolean readAllowOutside() { return Boolean.parseBoolean(get("paths.read.allowOutside", "false")); }
     public boolean confirmSkip() { return Boolean.parseBoolean(get("confirm.skip", "false")); }
     public Set<String> whitelistTools()    { return csv(get("confirm.whitelist.tools", "")); }
     public Set<String> whitelistCommands() { return csv(get("confirm.whitelist.commands", "")); }
-    public boolean uiColor()     { return Boolean.parseBoolean(get("ui.color", "true")); }
     public String browserPath()       { return get("browser.path", ""); }
     public int browserPort()          { return Integer.parseInt(get("browser.port", "9222")); }
     public String browserUserDataDir(){ return get("browser.userDataDir", "./.minion/browser-profile"); }

@@ -1,7 +1,6 @@
 package com.minion.core.storage;
 
 import com.minion.core.agent.Session;
-import com.minion.core.config.Config;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
 import org.junit.Rule;
@@ -22,8 +21,8 @@ public class SessionStoreTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
-    private Session makeSession(Config config) {
-        Session s = Session.create(config);
+    private Session makeSession() {
+        Session s = Session.create(tmp.getRoot().getPath(), "test-model");
         // 顺序对齐断言：0=摘要, 1=assistant(思考过程), 2=assistant(toolCalls), 3=user, 4=toolResult
         com.minion.core.llm.Usage u = new com.minion.core.llm.Usage();
         u.inputTokens = 7;
@@ -48,9 +47,8 @@ public class SessionStoreTest {
 
     @Test
     public void saveLoad_roundTrip() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
-        Session s = makeSession(config);
+        Session s = makeSession();
         store.save(s);
 
         Session loaded = store.load(s.id);
@@ -60,7 +58,7 @@ public class SessionStoreTest {
         assertEquals("c1", loaded.messages.get(2).toolCalls.get(0).id);
         assertTrue(loaded.messages.get(0).summary);
         assertEquals(Message.Role.TOOL, loaded.messages.get(4).role);
-        assertEquals(config.workDir(), loaded.workDir);
+        assertEquals(tmp.getRoot().getPath(), loaded.workDir);
         assertEquals(10, loaded.usage.sessionTotal());
         assertEquals(2, loaded.usage.sessionThinking());
     }
@@ -68,10 +66,9 @@ public class SessionStoreTest {
     /** S6：目录中单个损坏 .json 文件不影响 list()/latest()，正常条目仍在 */
     @Test
     public void list_skipsCorruptFiles() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         Path dir = tmp.getRoot().toPath().resolve("sessions");
         SessionStore store = new SessionStore(dir);
-        Session a = makeSession(config);
+        Session a = makeSession();
         store.save(a);
         // 非法 JSON
         Files.write(dir.resolve("broken.json"),
@@ -88,10 +85,9 @@ public class SessionStoreTest {
 
     @Test
     public void list_sortedByNewest() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
-        Session a = makeSession(config);
-        Session b = makeSession(config);
+        Session a = makeSession();
+        Session b = makeSession();
         // 手动保证时间序：写两次
         store.save(a);
         Thread.sleep(1100);
@@ -105,9 +101,8 @@ public class SessionStoreTest {
 
     @Test
     public void latest_returnsMostRecent() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
-        Session a = makeSession(config);
+        Session a = makeSession();
         store.save(a);
         Session loaded = store.latest();
         assertEquals(a.id, loaded.id);
@@ -117,9 +112,8 @@ public class SessionStoreTest {
     /** T4：会话级 cwd 随会话 JSON 持久化（恢复时工作区跟随） */
     @Test
     public void sessionCwdSerialized() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
-        Session s = Session.create(config);
+        Session s = Session.create(tmp.getRoot().getPath(), "test-model");
         s.cwd = "/tmp/some/dir";
         store.save(s);
         Session loaded = store.load(s.id);
@@ -129,10 +123,9 @@ public class SessionStoreTest {
     /** Task 6：/delete 删除会话文件后 load 抛 IOException */
     @Test
     public void deleteRemovesSession() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
         Path dir = tmp.getRoot().toPath().resolve("sessions");
         SessionStore store = new SessionStore(dir);
-        Session s = makeSession(config);
+        Session s = makeSession();
         store.save(s);
         assertNotNull(store.load(s.id));
         store.delete(s.id);

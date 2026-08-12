@@ -8,6 +8,7 @@ import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.ToolRegistry;
+import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.core.tools.confirm.FakeConfirmUi;
 import org.junit.Rule;
@@ -46,7 +47,7 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务结果：完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                config.workDir(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         // 子 agent 请求 = [system, user(任务描述)]
@@ -73,10 +74,12 @@ public class SubAgentLoopTest {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
         ToolRegistry registry = new ToolRegistry();
         registry.register(new com.minion.core.tools.example.ExampleTool());
-        AgentLoop loop = new AgentLoop(config, new FakeLlmClient(), registry,
-                new SystemPromptBuilder(config),
+        AgentLoop loop = new AgentLoop(new FakeLlmClient(), registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)),
-                new RecordingUi());
+                new RecordingUi(), null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         assertNotNull(loop);
         assertNotNull(registry.get("task"));
         assertEquals("task", registry.get("task").name());
@@ -92,8 +95,11 @@ public class SubAgentLoopTest {
         FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
         ConfirmGate confirm = new ConfirmGate(config, confirmUi);
         RecordingUi ui = new RecordingUi();
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
         // 主 agent 出 task 调用牌 → 默认 runner 派发子 agent（子 agent 消费第 2 张牌）
         ToolCall tc = new ToolCall();
@@ -141,9 +147,12 @@ public class SubAgentLoopTest {
         }
         CapturingUi ui = new CapturingUi();
         // 构造 AgentLoop 让 registry 真实含 task（生产中即此状态）
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config),
-                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)),
+                ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
 
         ToolCall tc = new ToolCall();
@@ -152,7 +161,7 @@ public class SubAgentLoopTest {
         tc.arguments = "{\"description\":\"再派发\"}";
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("只做了自己的事");
-        SubAgentLoop sub = new SubAgentLoop("sys", "任务", config.workDir(), llm, registry,
+        SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(), llm, registry,
                 new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui);
         assertEquals("只做了自己的事", sub.run());
         // 防御拦截：task 调用作为错误 tool 结果回传
@@ -171,7 +180,7 @@ public class SubAgentLoopTest {
         ToolRegistry registry = new ToolRegistry();
         registry.register(new com.minion.core.tools.example.ExampleTool());
         llm.addTurn("直接回答");
-        SubAgentLoop sub = new SubAgentLoop("sys", "任务", config.workDir(), llm, registry,
+        SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(), llm, registry,
                 new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)),
                 new RecordingUi());
         assertEquals("直接回答", sub.run());
@@ -186,11 +195,14 @@ public class SubAgentLoopTest {
         FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
         ConfirmGate confirm = new ConfirmGate(config, confirmUi);
         RecordingUi ui = new RecordingUi();
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.setSubAgentRunner(args ->
                 new SubAgentLoop("sys", args.get("description").getAsString(),
-                        config.workDir(), llm, registry, confirm, ui).run());
+                        tmp.getRoot().getPath(), llm, registry, confirm, ui).run());
 
         com.minion.core.tools.TaskTool task = new com.minion.core.tools.TaskTool(loop);
         llm.addTurn("子agent结果");

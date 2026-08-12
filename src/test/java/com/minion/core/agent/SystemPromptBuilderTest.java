@@ -22,12 +22,8 @@ public class SystemPromptBuilderTest {
         Path work = tmp.getRoot().toPath();
         File md = new File(work.toFile(), "project.md");
         Files.write(md.toPath(), "这是一个测试项目".getBytes(StandardCharsets.UTF_8));
-        File cf = new File(work.toFile(), "config.properties");
-        Files.write(cf.toPath(), ("model.name=x\nwork.dir=.\nproject.md.path="
-                + md.getAbsolutePath() + "\n").getBytes(StandardCharsets.UTF_8));
 
-        com.minion.core.config.Config config = com.minion.core.config.Config.load(work);
-        SystemPromptBuilder b = new SystemPromptBuilder(config);
+        SystemPromptBuilder b = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md");
 
         Skill available = new Skill("review", "代码审查技能", "审查指令全文", "SKILL.md");
         Skill loaded = new Skill("debug", "调试技能", "调试指令全文", "SKILL.md");
@@ -47,11 +43,7 @@ public class SystemPromptBuilderTest {
 
     @Test
     public void build_missingProjectMd_skipsSection() throws Exception {
-        Path work = tmp.getRoot().toPath();
-        File cf = new File(work.toFile(), "config.properties");
-        Files.write(cf.toPath(), "model.name=x\nproject.md.path=./nope.md\n".getBytes(StandardCharsets.UTF_8));
-        com.minion.core.config.Config config = com.minion.core.config.Config.load(work);
-        String prompt = new SystemPromptBuilder(config).build(
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/nope.md").build(
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertFalse(prompt.contains("=== 项目介绍 ==="));
@@ -60,11 +52,7 @@ public class SystemPromptBuilderTest {
 
     @Test
     public void build_includesStuckStopRule() throws Exception {
-        Path work = tmp.getRoot().toPath();
-        File cf = new File(work.toFile(), "config.properties");
-        Files.write(cf.toPath(), "model.name=x\n".getBytes(StandardCharsets.UTF_8));
-        com.minion.core.config.Config config = com.minion.core.config.Config.load(work);
-        String prompt = new SystemPromptBuilder(config).build(
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertTrue(prompt.contains("停止调用工具"));
@@ -73,11 +61,7 @@ public class SystemPromptBuilderTest {
 
     @Test
     public void build_clarificationRuleIsFirst() throws Exception {
-        Path work = tmp.getRoot().toPath();
-        File cf = new File(work.toFile(), "config.properties");
-        Files.write(cf.toPath(), "model.name=x\n".getBytes(StandardCharsets.UTF_8));
-        com.minion.core.config.Config config = com.minion.core.config.Config.load(work);
-        String prompt = new SystemPromptBuilder(config).build(
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         int iClarify = prompt.indexOf("不要猜测用户意图");

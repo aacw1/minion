@@ -33,8 +33,11 @@ public class CommandDispatcherTest {
         ToolRegistry registry = new ToolRegistry();
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        loop = new AgentLoop(config, llm, registry,
-                new com.minion.core.agent.SystemPromptBuilder(config), confirm, ui);
+        loop = new AgentLoop(llm, registry,
+                new com.minion.core.agent.SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new com.minion.core.tools.Workspace(tmp.getRoot().getPath()),
+                com.minion.core.agent.Session.create(tmp.getRoot().getPath(), "test-model"));
         dispatcher = new CommandDispatcher(loop, config,
                 new SessionStore(tmp.getRoot().toPath().resolve("sessions")), null, ui);
     }

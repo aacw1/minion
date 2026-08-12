@@ -90,15 +90,6 @@ public class CommandDispatcher {
     }
 
     private String formatModel() {
-        return "模型: " + config.modelName() + " · 思考: " + (config.thinkingEnabled() ? "on("
-                + config.reasoningEffort() + ")" : "off")
-                + " · 上下文上限: " + config.maxContextTokens()
-                + " · key: " + maskKey(config.modelKey());
-    }
-
-    private String maskKey(String key) {
-        if (key == null || key.isEmpty()) return "(未配置)";
-        if (key.equals("sk-your-key")) return "(默认占位，请修改)";
-        return key.length() <= 6 ? "***" : key.substring(0, 3) + "***" + key.substring(key.length() - 3);
+        return "模型配置已迁移至 model.json（GUI 版本提供可视化配置）";
     }
 }

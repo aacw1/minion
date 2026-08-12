@@ -30,6 +30,9 @@ public class ContextManager {
         this.systemTokens = systemTokens;
     }
 
+    /** 上下文窗口上限（AgentLoop 压缩百分比计算用） */
+    public int maxTokens() { return maxContextTokens; }
+
     public int estimate(List<Message> messages) {
         return systemTokens + TokenCounter.estimateMessages(messages);
     }

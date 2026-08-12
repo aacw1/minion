@@ -2,7 +2,6 @@ package com.minion.core.agent;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.minion.core.config.Config;
 import com.minion.core.context.ContextManager;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
@@ -31,8 +30,7 @@ public class AgentLoop {
 
     public static final int DEFAULT_ROUND_LIMIT = 1000;
 
-    private final Config config;
-    private final LlmClient llm;
+    private volatile LlmClient llm;
     private final ToolRegistry registry;
     private final SystemPromptBuilder promptBuilder;
     private final ConfirmGate confirmGate;
@@ -59,16 +57,9 @@ public class AgentLoop {
     /** 进行中的工具 future（供 interrupt() 取消） */
     private final List<Future<ToolResult>> inFlight = new ArrayList<Future<ToolResult>>();
 
-    public AgentLoop(Config config, LlmClient llm, ToolRegistry registry,
-                     SystemPromptBuilder promptBuilder, ConfirmGate confirmGate, AgentUi ui) {
-        this(config, llm, registry, promptBuilder, confirmGate, ui, null,
-                new Workspace(config.workDir()));
-    }
-
-    public AgentLoop(Config config, LlmClient llm, ToolRegistry registry,
+    public AgentLoop(LlmClient llm, ToolRegistry registry,
                      SystemPromptBuilder promptBuilder, ConfirmGate confirmGate, AgentUi ui,
-                     ContextManager contextManager, Workspace workspace) {
-        this.config = config;
+                     ContextManager contextManager, Workspace workspace, Session session) {
         this.llm = llm;
         this.registry = registry;
         this.promptBuilder = promptBuilder;
@@ -76,7 +67,7 @@ public class AgentLoop {
         this.ui = ui;
         this.contextManager = contextManager;
         this.workspace = workspace;
-        this.session = Session.create(config);
+        this.session = session;
         // daemon 线程：main() 返回后 JVM 可正常退出（T21 REPL）
         this.pool = Executors.newFixedThreadPool(threads, r -> {
             Thread t = new Thread(r, "minion-tools");
@@ -88,10 +79,13 @@ public class AgentLoop {
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             ui.onSubAgentStart(desc);
-            return new SubAgentLoop(buildSystemPrompt(), desc, config.workDir(),
+            return new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
                     llm, registry, confirmGate, ui).run();
         });
     }
+
+    /** 运行时切换模型（GUI 弹窗切换模型时调用；下轮请求生效） */
+    public void setLlm(LlmClient llm) { this.llm = llm; }
 
     public Session session() { return session; }
     public List<Message> messages() { return session.messages; }
@@ -178,6 +172,7 @@ public class AgentLoop {
         session.createdAt = s.createdAt;
         session.workDir = s.workDir;
         session.modelName = s.modelName;
+        session.title = s.title;
         scrubHalfTurn(); // 恢复历史同样清洗半轮残留（外部/旧格式文件可能含残缺 toolCalls）
         if (s.todos != null) session.todos.replace(s.todos.items); // 原地装载（replace 内部 clear+addAll）
         if (s.usage != null) session.usage.restore(s.usage);
@@ -242,7 +237,7 @@ public class AgentLoop {
                     session.messages = contextManager.compress(session.messages);
                     if (session.messages.size() < before) {
                         int pct = (int) (contextManager.estimate(session.messages) * 100
-                                / config.maxContextTokens());
+                                / contextManager.maxTokens());
                         ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
                     }
                 }

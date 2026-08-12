@@ -77,7 +77,7 @@ public class Repl {
         });
 
         renderer().setEchoUser(false); // JLine 已回显用户输入，避免二次打印
-        System.out.println(renderer().wrapBanner(StartupBanner.format(config)));
+        System.out.println(renderer().wrapBanner(StartupBanner.format()));
         System.out.println(renderer().wrapBanner("minion — 代码开发助手  (输入 /help 查看命令)"));
         System.out.println(renderer().wrapBanner("输入 /skills 查看所有技能，/skill <技能名> 加载技能"));
         printResumeHint();
@@ -104,7 +104,8 @@ public class Repl {
                 int currentCtx = loop.contextManager() != null
                         ? loop.contextManager().estimate(loop.messages())
                         : TokenCounter.estimateMessages(loop.messages());
-                String stats = StatsLine.format(loop.usage(), elapsed, currentCtx, config.maxContextTokens());
+                String stats = StatsLine.format(loop.usage(), elapsed, currentCtx,
+                        loop.contextManager() != null ? loop.contextManager().maxTokens() : 0);
                 renderer().printlnStats(stats);
             }
         }

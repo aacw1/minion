@@ -1,6 +1,5 @@
 package com.minion.core.agent;
 
-import com.minion.core.config.Config;
 import com.minion.core.skills.Skill;
 
 import java.io.IOException;
@@ -24,13 +23,13 @@ public class SystemPromptBuilder {
           + "6. 涉及删除/覆盖等破坏性操作时，等待用户确认（系统会拦截）。\n"
           + "7. 当工具连续失败、或发现缺少完成任务所必需的信息/权限时，停止调用工具；向用户说明已尝试的方案、失败原因，并列出需要用户补充的信息或需要用户选择的方案，等待用户回复。不要反复重试同一方法。";
 
-    private final Config config;
+    private final String projectMdPath;
 
-    public SystemPromptBuilder(Config config) { this.config = config; }
+    public SystemPromptBuilder(String projectMdPath) { this.projectMdPath = projectMdPath; }
 
     public String build(List<Skill> allSkills, List<Skill> loadedSkills) {
         StringBuilder sb = new StringBuilder(BUILTIN);
-        String projectMd = loadProjectMd(config.projectMdPath());
+        String projectMd = loadProjectMd(projectMdPath);
         if (!projectMd.isEmpty()) {
             sb.append("\n\n=== 项目介绍 ===\n").append(projectMd.trim());
         }

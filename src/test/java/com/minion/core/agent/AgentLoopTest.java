@@ -51,14 +51,17 @@ public class AgentLoopTest {
         registry = new ToolRegistry();
         registry.register(new com.minion.core.tools.example.ExampleTool());
         registry.register(new com.minion.core.tools.BashTool(
-                new com.minion.core.tools.Workspace(config.workDir())));
+                new com.minion.core.tools.Workspace(tmp.getRoot().getPath())));
         ui = new RecordingUi();
         confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
     }
 
     private AgentLoop newLoop() {
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10; // 测试用
         return loop;
     }
@@ -152,9 +155,11 @@ public class AgentLoopTest {
         tc.arguments = "{\"command\":\"rm -rf x\"}";
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("好，换个方案");
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config),
-                new ConfirmGate(config, rejectUi), ui);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                new ConfirmGate(config, rejectUi), ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
         loop.runUserTurn("删掉");
         Message tool = loop.messages().get(2);
@@ -166,8 +171,11 @@ public class AgentLoopTest {
     public void interrupt_cancelsInFlightTurn() throws Exception {
         BlockingLlmClient blocking = new BlockingLlmClient();
         blocking.addTurn("长回复");
-        AgentLoop loop = new AgentLoop(config, blocking, registry,
-                new SystemPromptBuilder(config), confirm, ui);
+        AgentLoop loop = new AgentLoop(blocking, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
         Thread t = new Thread(() -> loop.runUserTurn("长任务"));
         t.start();
@@ -209,8 +217,11 @@ public class AgentLoopTest {
     public void thinking_reasoningContentInHistory() {
         // 带 thinking 的 turn：assistant 消息 reasoningContent 必须入历史并随请求回传（DeepSeek 硬性要求）
         ThinkingLlmClient thinkingLlm = new ThinkingLlmClient();
-        AgentLoop loop = new AgentLoop(config, thinkingLlm, registry,
-                new SystemPromptBuilder(config), confirm, ui);
+        AgentLoop loop = new AgentLoop(thinkingLlm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
         loop.runUserTurn("思考题");
         assertEquals(2, loop.messages().size());
@@ -256,7 +267,7 @@ public class AgentLoopTest {
         tc.name = "example";
         tc.arguments = "{}";
         // 纯工具调用空壳：整条移除
-        Session saved = Session.create(config);
+        Session saved = Session.create(tmp.getRoot().getPath(), "test-model");
         saved.messages.add(Message.user("任务"));
         Message half = Message.assistant(null);
         half.toolCalls = Collections.singletonList(tc);
@@ -266,7 +277,7 @@ public class AgentLoopTest {
         assertEquals(1, loop.messages().size());
         assertEquals(Message.Role.USER, loop.messages().get(0).role);
         // 带正文的 assistant：保留正文、剥离 toolCalls
-        Session saved2 = Session.create(config);
+        Session saved2 = Session.create(tmp.getRoot().getPath(), "test-model");
         saved2.messages.add(Message.user("任务2"));
         Message half2 = Message.assistant("已分析");
         half2.toolCalls = Collections.singletonList(tc);
@@ -293,7 +304,7 @@ public class AgentLoopTest {
     /** S5：restoreSession 恢复 usage 与 todos（T21 M6） */
     @Test
     public void restoreSession_restoresUsageAndTodos() {
-        Session saved = Session.create(config);
+        Session saved = Session.create(tmp.getRoot().getPath(), "test-model");
         Usage u = new Usage();
         u.inputTokens = 30;
         u.outputTokens = 20;
@@ -312,11 +323,13 @@ public class AgentLoopTest {
     @Test
     public void restoreSession_restoresCwd() throws Exception {
         Path sub = tmp.newFolder("sub").toPath();
-        Session saved = Session.create(config);
+        Session saved = Session.create(tmp.getRoot().getPath(), "test-model");
         saved.cwd = sub.toString();
         Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, ws,
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.restoreSession(saved);
         assertEquals(sub, ws.cwd());
     }
@@ -325,8 +338,10 @@ public class AgentLoopTest {
     @Test
     public void startNewSession_clearsSessionAndResetsCwd() throws Exception {
         Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, ws,
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.session().messages.add(Message.user("任务"));
         loop.session().todos.replace(Collections.singletonList(
                 new TodoList.TodoItem("写文档", false)));
@@ -351,8 +366,10 @@ public class AgentLoopTest {
         Path storeDir = tmp.newFolder("sessions").toPath();
         SessionStore store = new SessionStore(storeDir);
         Workspace ws = new Workspace(tmp.getRoot().toPath().toString());
-        AgentLoop loop = new AgentLoop(config, llm, registry,
-                new SystemPromptBuilder(config), confirm, ui, null, ws);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, ws,
+                Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.setSessionStore(store);
         ws.cd(sub.toString());
         loop.persistSession();
@@ -412,7 +429,7 @@ public class AgentLoopTest {
                 new com.minion.core.tools.TodoWriteTool(loop.session().todos);
         com.minion.core.llm.UsageTracker captured = loop.usage();
         // 保存的会话带任务与统计
-        Session saved = Session.create(config);
+        Session saved = Session.create(tmp.getRoot().getPath(), "test-model");
         saved.todos.replace(Collections.singletonList(
                 new TodoList.TodoItem("写文档", false)));
         Usage u = new Usage();
