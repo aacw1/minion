@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /** 工作空间配置：jarDir/workspace.json 单文件多工作空间；会话目录按工作空间名派生 */
@@ -23,22 +22,24 @@ public class WorkspaceManager {
 
     private WorkspaceManager(Path file) { this.file = file; }
 
-    /** jar 同目录 workspace.json；缺失生成默认，损坏备份 .bak 后重建 */
+    /** jar 同目录 workspace.json；缺失生成默认，损坏备份 .bak 后重建；空列表是合法状态不重建 */
     public static WorkspaceManager load(Path jarDir) {
         WorkspaceManager m = new WorkspaceManager(jarDir.resolve(FILE_NAME));
+        boolean loaded = false;
         if (Files.exists(m.file)) {
             try {
                 String json = new String(Files.readAllBytes(m.file), StandardCharsets.UTF_8);
                 Holder h = new Gson().fromJson(json, Holder.class);
-                if (h != null && h.workspaces != null && !h.workspaces.isEmpty()) {
+                if (h != null && h.workspaces != null) { // workspaces 键存在（含空数组）即采用
                     m.workspaces.addAll(h.workspaces);
                     if (h.currentWorkspaceName != null) m.currentName = h.currentWorkspaceName;
+                    loaded = true;
                 }
             } catch (Exception e) {
                 backupCorrupt(m.file);
             }
         }
-        if (m.workspaces.isEmpty()) {
+        if (!loaded) {
             m.workspaces.add(new WorkspaceConfig(DEFAULT_NAME, ".", "./project.md"));
             m.currentName = DEFAULT_NAME;
             m.save();
@@ -54,11 +55,14 @@ public class WorkspaceManager {
         return jarDir.resolve("session").resolve(workspaceName);
     }
 
-    /** 名称合法性：非空、无非法字符、不重名 */
+    /** 名称合法性：非空、无非法字符、不重名（大小写不敏感，Windows 目录安全） */
     public static boolean isValidName(String name, List<String> existing) {
         if (name == null || name.trim().isEmpty()) return false;
         if (name.matches(".*" + ILLEGAL_CHARS + ".*")) return false;
-        return !existing.contains(name);
+        for (String e : existing) {
+            if (e != null && e.equalsIgnoreCase(name)) return false;
+        }
+        return true;
     }
 
     public List<WorkspaceConfig> list() { return new ArrayList<WorkspaceConfig>(workspaces); }
@@ -75,6 +79,8 @@ public class WorkspaceManager {
     public String currentName() { return currentName; }
 
     public boolean add(String name, String workDir, String projectMd) {
+        if (name == null) return false;
+        name = name.trim(); // 先 trim 再校验/存储
         if (!isValidName(name, names())) return false;
         workspaces.add(new WorkspaceConfig(name, workDir, projectMd));
         save();
@@ -83,6 +89,8 @@ public class WorkspaceManager {
 
     public boolean rename(String oldName, String newName) {
         if (get(oldName) == null) return false;
+        if (newName == null) return false;
+        newName = newName.trim(); // 先 trim 再校验
         if (!isValidName(newName, namesExcept(oldName))) return false;
         WorkspaceConfig w = get(oldName);
         w.workSpaceName = newName;
@@ -142,13 +150,19 @@ public class WorkspaceManager {
     }
 
     private void save() {
+        // 原子写：先写 *.tmp 再 move 覆盖，避免半截文件；失败清理 tmp
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try {
             Holder h = new Holder();
             h.workspaces = workspaces;
             h.currentWorkspaceName = currentName;
             Files.createDirectories(file.getParent());
-            Files.write(file, new Gson().toJson(h).getBytes(StandardCharsets.UTF_8));
+            Files.write(tmp, new Gson().toJson(h).getBytes(StandardCharsets.UTF_8));
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (IOException ignored) { }
             System.err.println("[minion] 写入 workspace.json 失败: " + e.getMessage());
         }
     }
@@ -157,7 +171,10 @@ public class WorkspaceManager {
         try {
             Files.move(file, file.resolveSibling(file.getFileName() + ".bak"),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException ignored) { }
+        } catch (IOException e) {
+            // 备份失败仅告警，load 仍继续重建默认
+            System.err.println("[minion] workspace.json 损坏备份失败: " + e.getMessage());
+        }
     }
 
     private static void deleteRecursively(Path root) throws IOException {

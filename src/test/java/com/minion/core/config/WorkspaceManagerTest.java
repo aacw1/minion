@@ -116,4 +116,55 @@ public class WorkspaceManagerTest {
         WorkspaceManager m2 = WorkspaceManager.load(dir);
         assertEquals("default", m2.current().workSpaceName);
     }
+
+    /** update 后重载生效 */
+    @Test
+    public void update_persistsWorkDirAndProjectMd() throws IOException {
+        Path dir = jarDir();
+        WorkspaceManager m = WorkspaceManager.load(dir);
+        m.update("default", "d:/x", "./x.md");
+        WorkspaceManager m2 = WorkspaceManager.load(dir);
+        assertEquals("d:/x", m2.current().workDir);
+        assertEquals("./x.md", m2.current().projectMd);
+    }
+
+    /** 只剩一个工作空间时 remove 拒绝，列表不变 */
+    @Test
+    public void remove_lastWorkspaceRejected() throws IOException {
+        Path dir = jarDir();
+        WorkspaceManager m = WorkspaceManager.load(dir);
+        assertFalse(m.remove("default"));
+        assertEquals(1, m.list().size());
+        assertNotNull(m.get("default"));
+    }
+
+    /** rename 不存在的名字返回 false */
+    @Test
+    public void rename_missingNameReturnsFalse() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        assertFalse(m.rename("nope", "newname"));
+    }
+
+    /** 大小写不敏感重名拒绝（Windows 上 session 目录同路径串扰防护） */
+    @Test
+    public void add_caseInsensitiveDuplicateRejected() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        assertTrue(m.add("projA", "d:/a", ""));
+        assertFalse(m.add("ProjA", "d:/b", ""));
+        assertFalse(m.add("PROJA", "d:/c", ""));
+        assertEquals(2, m.list().size());
+    }
+
+    /** JSON 中空 workspaces 数组是合法状态，不应重建默认覆盖 */
+    @Test
+    public void load_preservesEmptyWorkspaceList() throws IOException {
+        Path dir = jarDir();
+        String json = "{\"workspaces\":[],\"currentWorkspaceName\":\"none\"}";
+        Files.write(dir.resolve("workspace.json"), json.getBytes(StandardCharsets.UTF_8));
+        WorkspaceManager m = WorkspaceManager.load(dir);
+        assertEquals(0, m.list().size());
+        assertNull(m.current());
+        assertEquals(json, new String(Files.readAllBytes(dir.resolve("workspace.json")),
+                StandardCharsets.UTF_8));
+    }
 }
