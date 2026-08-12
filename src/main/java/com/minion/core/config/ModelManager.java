@@ -30,17 +30,21 @@ public class ModelManager {
                 Holder h = new Gson().fromJson(json, Holder.class);
                 if (h != null && h.models != null && !h.models.isEmpty()) { // models 键存在且非空才采用
                     for (ModelConfig c : h.models) {
-                        if (c != null) m.models.add(c); // 畸形 null 条目跳过，保证列表无 null
+                        // 过滤 null / displayName 缺失条目，保证列表无不可用元素
+                        if (c != null && c.displayName != null && !c.displayName.trim().isEmpty()) {
+                            m.models.add(c);
+                        }
                     }
                     if (h.currentModelName != null) m.currentName = h.currentModelName;
                     loaded = true;
                 }
-                if (m.models.isEmpty()) loaded = false; // 条目全为 null 视为未加载成功
+                if (m.models.isEmpty()) loaded = false; // 无有效条目视为未加载成功
             } catch (Exception e) {
                 backupCorrupt(m.file);
             }
         }
         if (!loaded) {
+            if (Files.exists(m.file)) backupCorrupt(m.file); // 文件存在但不可用：先备份再重建，避免配置丢失
             m.models.add(createDefault());
             m.currentName = m.models.get(0).displayName;
             m.save();

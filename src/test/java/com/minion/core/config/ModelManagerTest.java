@@ -83,6 +83,30 @@ public class ModelManagerTest {
         assertTrue(Files.exists(dir.resolve("model.json.bak")));
     }
 
+    /** 合法 JSON 但结构无效（键名错误）：备份 .bak + 重建默认（区别于文件缺失不备份） */
+    @Test
+    public void load_structureInvalidJsonBacksUpAndRebuilds() throws IOException {
+        Path dir = jarDir();
+        Files.write(dir.resolve("model.json"),
+                "{\"model\":[{\"displayName\":\"x\"}]}".getBytes(StandardCharsets.UTF_8));
+        ModelManager m = ModelManager.load(dir);
+        assertEquals(1, m.list().size());
+        assertEquals("deepseek-v4-flash", m.current().displayName);
+        assertTrue(Files.exists(dir.resolve("model.json.bak")));
+    }
+
+    /** displayName 为 null 的条目被过滤，不破坏"至少一个可用模型"不变式 */
+    @Test
+    public void load_nullDisplayNameEntryFiltered() throws IOException {
+        Path dir = jarDir();
+        String json = "{\"models\":[{\"displayName\":null,\"url\":\"http://x\"}],\"currentModelName\":\"deepseek-v4-flash\"}";
+        Files.write(dir.resolve("model.json"), json.getBytes(StandardCharsets.UTF_8));
+        ModelManager m = ModelManager.load(dir);
+        assertEquals(1, m.list().size());
+        assertNotNull(m.current());
+        assertEquals("deepseek-v4-flash", m.current().displayName);
+    }
+
     /** 原子写：save 后无 .tmp 残留，文件内容可被 Gson 重新解析 */
     @Test
     public void save_atomicWriteNoTmpAndReparsable() throws IOException {
