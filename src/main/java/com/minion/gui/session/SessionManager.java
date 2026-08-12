@@ -472,6 +472,16 @@ public class SessionManager {
         }
     }
 
+    /** 是否有会话正在后台运行（窗口关闭确认用，跨工作空间） */
+    public boolean hasRunning() {
+        for (WorkspaceCtx ctx : ctxByName.values()) {
+            for (SessionHandle h : ctx.sessions) {
+                if (h.running) return true;
+            }
+        }
+        return false;
+    }
+
     /** 关闭：终止所有运行中会话（窗口关闭时调用） */
     public void shutdown() {
         for (WorkspaceCtx ctx : ctxByName.values()) {

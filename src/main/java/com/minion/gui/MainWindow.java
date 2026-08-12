@@ -185,6 +185,23 @@ public class MainWindow {
         scene.getStylesheets().add(
                 getClass().getResource("/theme/theme.css").toExternalForm());
         stage.setScene(scene);
+
+        stage.setOnCloseRequest(e -> {
+            if (!manager.hasRunning()) {
+                manager.shutdown();
+                return;
+            }
+            Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                    "仍有会话正在运行，确认退出？", ButtonType.OK, ButtonType.CANCEL);
+            a.setTitle("退出确认");
+            a.showAndWait();
+            if (a.getResult() == ButtonType.OK) {
+                manager.shutdown();
+            } else {
+                e.consume(); // 取消关闭
+            }
+        });
+
         stage.show();
     }
 
