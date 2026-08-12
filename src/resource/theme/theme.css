@@ -104,12 +104,9 @@
 .msg-error { -fx-background-color: #3d1d1d; -fx-background-radius: 6; -fx-text-fill: #f85149; }
 .msg-warning { -fx-background-color: #3d2f14; -fx-background-radius: 6; -fx-text-fill: #e3b341; }
 
-/* 状态点（呼吸动画） */
+/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
-.status-dot-running {
-    -fx-background-color: #3fb950;
-    -fx-animation: pulse 1.2s infinite;
-}
+.status-dot-running { -fx-background-color: #3fb950; }
 
 /* 滚动条 */
 .scroll-pane { -fx-background-color: transparent; }

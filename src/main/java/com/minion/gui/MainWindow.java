@@ -27,7 +27,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 
 import java.util.Optional;
@@ -274,13 +273,12 @@ public class MainWindow {
     }
 
     private Node runningIndicator(SessionHandle h) {
-        Circle dot = new Circle(4);
-        dot.getStyleClass().add("status-dot");
-        if (h.running) dot.getStyleClass().add("status-dot-running");
-        return dot;
+        // 呼吸动画由 StatusDot Timeline 驱动（CSS keyframe JavaFX 8 不支持）
+        return StatusDot.create(h.running);
     }
 
     private void rebuildTabs() {
+        for (Tab t : tabs.getTabs()) StatusDot.stopPulseIn(t.getGraphic()); // 回收呼吸动画
         tabs.getTabs().clear();
         for (SessionHandle h : manager.sessions()) {
             if (h.title != null) addTab(h);

@@ -1,6 +1,7 @@
 package com.minion.gui.sidebar;
 
 import com.minion.core.llm.Message;
+import com.minion.gui.StatusDot;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import javafx.application.Platform;
@@ -47,15 +48,15 @@ public class SessionListView extends ListView<SessionHandle> {
     private class SessionCell extends ListCell<SessionHandle> {
         @Override protected void updateItem(SessionHandle h, boolean empty) {
             super.updateItem(h, empty);
+            // 旧 graphic 若带呼吸动画先回收（Timeline 强引用节点，不回收会泄漏）
+            StatusDot.stopPulseIn(getGraphic());
             if (empty || h == null) {
                 setGraphic(null);
                 setText(null);
                 return;
             }
             String label = h.title == null ? "(新会话)" : h.title;
-            Circle dot = new Circle(4);
-            dot.getStyleClass().add("status-dot");
-            if (h.running) dot.getStyleClass().add("status-dot-running");
+            Circle dot = StatusDot.create(h.running);
             HBox box = new HBox(6);
             Label name = new Label(label);
             Region spacer = new Region();
