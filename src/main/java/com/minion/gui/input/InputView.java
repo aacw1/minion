@@ -11,17 +11,16 @@ import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-/** 底部输入区：多行 TextArea（自适应 1→6 行）+ 发送/终止按钮 */
+/** 底部输入区：多行 TextArea（自适应 1→6 行）+ 下方靠右发送/终止按钮；无会话时发送自动建会话 */
 public class InputView extends VBox {
 
     private final SessionManager manager;
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button("⤒ 发送");
     private volatile SessionHandle current;
-    /** 发送后保留草稿直至本轮结束（供终止后修改再发）；结束时若未被用户修改则清空 */
-    private String lastSent;
 
     public InputView(final SessionManager manager) {
         this.manager = manager;
@@ -45,29 +44,24 @@ public class InputView extends VBox {
         sendButton.getStyleClass().add("btn-primary");
         updateButton(false);
 
-        HBox row = new HBox(10);
-        row.getChildren().add(input);
-        HBox.setHgrow(input, Priority.ALWAYS);
-        row.getChildren().add(sendButton);
-        getChildren().add(row);
+        // 需求 4：TextArea 在上（弹性占高），按钮行在下、按钮靠右下（Region 弹性填充）
+        HBox buttonRow = new HBox(10);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        buttonRow.getChildren().addAll(spacer, sendButton);
+        VBox.setVgrow(input, Priority.ALWAYS);
+        getChildren().addAll(input, buttonRow);
     }
 
     /** MainWindow 激活会话时调用 */
     public void bindSession(SessionHandle h) {
         this.current = h;
-        this.lastSent = null;
-        Platform.runLater(() -> updateButton(h.running));
+        Platform.runLater(() -> updateButton(h == null ? false : h.running));
     }
 
     public void onRunningChanged(SessionHandle h, boolean running) {
         if (current != h) return;
-        Platform.runLater(() -> {
-            updateButton(running);
-            if (!running && lastSent != null && input.getText().equals(lastSent)) {
-                input.clear(); // 本轮结束且用户未修改 → 清空草稿，准备新输入
-                lastSent = null;
-            }
-        });
+        Platform.runLater(() -> updateButton(running));
     }
 
     private void updateButton(boolean running) {
@@ -89,8 +83,14 @@ public class InputView extends VBox {
     private void onSend() {
         String text = input.getText();
         if (text == null || text.trim().isEmpty()) return;
-        if (current == null) return;
-        lastSent = text; // 不清空：草稿保留至本轮结束，供终止后修改再发
-        manager.send(current, text); // 摘要标题 + 正式任务由 SessionManager 统一处理
+        input.clear(); // 需求 14：发送后清空输入框
+        SessionHandle target = current;
+        if (target == null) {
+            // 需求 12：无激活会话时发送自动建会话（激活回调会绑定右侧面板；send 直接传新句柄）
+            target = manager.createSession(null);
+            if (target == null) return;
+            manager.activateSession(target);
+        }
+        manager.send(target, text);
     }
 }
