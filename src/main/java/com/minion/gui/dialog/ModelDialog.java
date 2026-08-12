@@ -9,6 +9,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
@@ -31,14 +32,24 @@ public class ModelDialog {
         d.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
 
         final ListView<String> list = new ListView<String>();
+        // ● 仅作显示拼接：items 存原始 displayName（edit/del 按索引取原始名做键），cell 渲染时对当前模型追加标记
+        list.setCellFactory(lv -> new ListCell<String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null
+                        : item + (item.equals(models.currentName()) ? "  ●" : ""));
+            }
+        });
         refresh(list, models);
         list.setPrefSize(360, 220);
 
-        // 单击切换当前模型（brief 契约"单击切换"；按选中行映射列表项，避开 ● 后缀）
+        // 单击切换当前模型（brief 契约"单击切换"；按选中行索引取列表原始项，避开 ● 后缀）
         list.setOnMouseClicked(e -> {
             int idx = list.getSelectionModel().getSelectedIndex();
             if (idx < 0 || e.getClickCount() != 1) return;
-            models.setCurrent(models.list().get(idx).displayName);
+            String name = list.getItems().get(idx);
+            if (!name.equals(models.currentName())) models.setCurrent(name); // 已选中当前行时不重写
             refresh(list, models);
         });
 
@@ -58,20 +69,22 @@ public class ModelDialog {
             refresh(list, models);
         });
         edit.setOnAction(e -> {
-            String sel = list.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            ModelConfig mc = form(models.get(sel));
+            // 用选中索引取列表原始项（items 存原始 displayName），避免 ● 后缀串当作键
+            int idx = list.getSelectionModel().getSelectedIndex();
+            if (idx < 0) return;
+            ModelConfig mc = form(models.get(list.getItems().get(idx)));
             if (mc != null) models.update(mc);
             refresh(list, models);
         });
         del.setOnAction(e -> {
-            String sel = list.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
+            int idx = list.getSelectionModel().getSelectedIndex();
+            if (idx < 0) return;
+            String name = list.getItems().get(idx); // 原始 displayName，不带 ● 后缀
             Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                    "删除模型「" + sel + "」？", ButtonType.OK, ButtonType.CANCEL);
+                    "删除模型「" + name + "」？", ButtonType.OK, ButtonType.CANCEL);
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
-                if (!models.remove(sel)) error("删除失败", "至少保留一个模型");
+                if (!models.remove(name)) error("删除失败", "至少保留一个模型");
             }
             refresh(list, models);
         });
@@ -88,10 +101,11 @@ public class ModelDialog {
     private static void refresh(ListView<String> list, ModelManager models) {
         list.getItems().clear();
         for (ModelConfig m : models.list()) {
-            list.getItems().add(m.displayName + (m.displayName.equals(models.currentName())
-                    ? "  ●" : ""));
+            list.getItems().add(m.displayName); // 原始 displayName，● 由 cell 渲染拼接
         }
-        list.getSelectionModel().select(0);
+        // 选中跟随当前模型行：单击切换后 ● 已迁移到点击行，选中应落该行而非固定第 0 行
+        int idx = list.getItems().indexOf(models.currentName());
+        list.getSelectionModel().select(idx < 0 ? 0 : idx);
     }
 
     /** 新建（mc==null 带默认值）/ 修改（mc!=null 预填）表单；OK 返回配置，取消返回 null */
