@@ -93,6 +93,7 @@ com.minion
 - **事件缓冲**：工作线程只写 EventList，FX 线程读取渲染（UI 不被工具执行阻塞）
 - **确认交互**：GuiConfirmUi 用 FutureTask 把弹窗投到 FX 线程并**阻塞工具线程**等结果（不阻塞 FX 线程）；无 GUI 环境防御性 REJECT
 - 会话落盘：`loop.setSessionStore(store)` 每轮/退出兜底落盘；关闭窗口 `shutdown()` 终止全部运行中会话（有运行中会话先弹确认）
+- **资源生命周期**：每会话一个 DeepSeekClient（`LlmClient.close()` 取消 in-flight + `dispatcher().executorService().shutdown()` + `connectionPool().evictAll()`，幂等）；会话删除/工作空间删除/`shutdown()` 三处释放，退出钩子统一收口（`manager.shutdown()` + `chrome.stop()`）——否则 okhttp 连接池非 daemon 清理线程把 JVM 拖住约 5 分钟
 
 ## 4. 核心数据流
 

@@ -1,39 +1,46 @@
 # CLAUDE.md — minion 开发指引
 
-minion：类 Claude Code 的命令行代码开发助手，Java 实现，对接多供应商 LLM（deepseek/qwen，OpenAI 兼容协议）。
-JDK 8 + Maven 单模块。依赖：gson、okhttp 3.x、jline、snakeyaml（测试：junit4、mockwebserver）。
+minion：类 Claude Code 的代码开发助手（GUI），Java 实现，对接多供应商 LLM（deepseek/qwen，OpenAI 兼容协议）。
+JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）。依赖：gson、okhttp 3.14、snakeyaml、flexmark 0.62.2（测试：junit4、mockwebserver）。
 
 ## 常用命令
 
-    mvn clean package         # 构建（产物 target/minion-0.1.0.jar，含依赖）
-    mvn test                  # 运行测试
-    minion                    # 交互模式；minion -c "任务" 单次执行；minion -r 恢复会话
+    JAVA_HOME="D:/javame/jdk1.8" mvn clean package   # 构建（产物 target/minion-0.1.0.jar，含依赖；必须 JDK8 含 JavaFX）
+    JAVA_HOME="D:/javame/jdk1.8" mvn test            # 运行测试
+    minion.bat                                       # 启动 GUI（自动探测含 JavaFX 的 JDK 8；PATH 的 java 须是 JDK 8）
 
 ## 包结构（详见 docs/ARCHITECTURE.md）
 
     com.minion
-    ├── Main         入口：参数解析、工具注册（12 个，Main.java:63-109）
-    ├── cli/         REPL、Renderer、CommandDispatcher（/命令）、确认提示
+    ├── Main         入口：装配配置/技能/浏览器/确认 UI → SessionManager → MinionApp；退出钩子统一收口（manager.shutdown + chrome.stop）
+    ├── gui/         JavaFX 界面
+    │   ├── MainWindow        主窗口（页签/聊天区/状态点呼吸动画 StatusDot）
+    │   ├── MinionApp         Application 启动（静态注入 Config/WorkspaceManager/ModelManager/SessionManager）
+    │   ├── sidebar/          SessionListView（会话列表）、WorkspaceListView（工作空间列表）
+    │   ├── chat/             ChatView（消息区）、MarkdownRenderer + BlockNodeFactory（flexmark 渲染）
+    │   ├── input/            InputView（多行输入，Ctrl+Enter 发送）
+    │   ├── dialog/           ModelDialog（⚙ 模型管理）、ConfirmDialog（高危确认弹窗）
+    │   ├── confirm/          GuiConfirmUi（FutureTask 投递 FX 线程阻塞工具线程）
+    │   └── session/          SessionManager（多会话并行/工作空间 CRUD）、SessionHandle、EventList
     └── core/
-        ├── agent/   AgentLoop（主循环）、SubAgentLoop、Session、TodoList
-        ├── llm/     DeepSeekClient（SSE 流式）、Message（reasoningContent 原样回传）
+        ├── agent/   AgentLoop（主循环，构造器自动注册 TaskTool/TodoWriteTool）、SubAgentLoop、Session、TodoList
+        ├── llm/     DeepSeekClient（SSE 流式，close() 释放 okhttp）、LlmClient 接口（cancel/close 默认空实现）、Message（reasoningContent 原样回传）
         ├── tools/   Tool 接口 + 13 个工具 + ToolRegistry + browser/（CDP 浏览器）、SchemaGenerator、ConfirmGate、PathsGuard
         ├── skills/  SkillManager（skills/<名>/SKILL.md 自动发现）
         ├── context/ 上下文压缩、token 统计
-        ├── storage/ 会话落盘
-        ├── config/  Config
-        └── util/    Ansi、ConsoleIo
+        ├── storage/ 会话落盘（原子写）
+        └── config/  Config（config.properties）、WorkspaceManager（workspace.json 原子写）、ModelManager（model.json）
 
 ## 扩展点
 
-- 新增工具：实现 `Tool`（name/description/schema/execute/isHighRisk）→ Main 注册；高危加 isHighRisk
+- 新增工具：实现 `Tool`（name/description/schema/execute/isHighRisk）→ SessionManager.newRegistry 注册；高危加 isHighRisk
 - 新增技能：`skills/<名>/SKILL.md` + YAML frontmatter（name/description/metadata），无需代码
-- 新增 /命令：cli/CommandDispatcher 加 case
+- 新增 GUI 界面：gui/ 内新组件；跨线程回调一律 Platform.runLater 包装
 
 ## 核心规约（详见 docs/CONVENTIONS.md）
 
-1. JDK 8 兼容；新依赖必须 JDK8 兼容且在设计文档写明理由
-2. 新代码落位：工具→core/tools、界面→cli、模型→core/llm；core 内经接口+构造注入，不新增循环依赖
+1. JDK 8 兼容；新依赖必须 JDK8 兼容且在设计文档写明理由（flexmark 用 0.62.2，0.64.x 为 Java 11 字节码）
+2. 新代码落位：工具→core/tools、界面→gui、模型→core/llm；core 内经接口+构造注入，不新增循环依赖
 3. 错误处理：LLM 错误抛 LlmException；工具错误返回失败 ToolResult 给模型自调
 4. API 契约（防回归）：reasoning_content 原样回传；tool_call↔tool 消息完整配对，否则 400
 5. 新增配置项同步 src/resource/config.properties 默认值与外部生成逻辑
