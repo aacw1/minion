@@ -18,6 +18,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 /** 左侧会话列表：标题 + 最后消息摘要 + 运行状态点 + 右键菜单（重命名/删除）；单击切换 */
@@ -100,8 +102,10 @@ public class SessionListView extends ListView<SessionHandle> {
     /** 摘要：最后一条非 TOOL 角色且非空 content 的消息，前 40 字；无消息/全 TOOL/空 content → null（不显示行） */
     private String lastSummary(SessionHandle h) {
         if (h.session == null || h.session.messages == null) return null;
-        for (int i = h.session.messages.size() - 1; i >= 0; i--) {
-            Message m = h.session.messages.get(i);
+        // 防御性拷贝：FX 线程遍历时 agent 工作线程可能正在写 messages（普通 ArrayList 非线程安全）
+        List<Message> msgs = new ArrayList<Message>(h.session.messages);
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            Message m = msgs.get(i);
             if (m.role == Message.Role.TOOL) continue;
             if (m.content == null || m.content.trim().isEmpty()) continue;
             String text = m.content.replace('\n', ' ').replace('\r', ' ').trim();
