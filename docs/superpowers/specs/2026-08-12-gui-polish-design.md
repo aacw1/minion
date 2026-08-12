@@ -154,13 +154,15 @@ keepRecentMessages）。操作后触发模型变更 propagate（见需求 13）�
 - 输入区、页签、状态点、卡片、代码块留白微调；页签文字提亮
 - 原则：只调颜色/字号/留白，不动布局结构
 
-## 13. 需求 10：自动滚动——左键拖动滚动条时暂停
+## 13. 需求 10：自动滚动——滚动条在底部时跟随，离开底部时暂停
 
-- 现实现：`chatScroll.vmaxProperty()` 监听无条件 `setVvalue(max)` 滚到底
-- 改为：`chatScroll.skinProperty()` 就绪后 `lookupAll(".scroll-bar")` 取垂直滚动条；
-  滚动条 `setOnMousePressed`（左键）→ `dragging=true`、`setOnMouseReleased` → `false`
-- vmax 监听内 `if (dragging) return;`；释放后下一次 vmax 更新（新内容到达）自然续滚
-- 轨道点击（非拖拽）不暂停——仅物理拖动 thumb 期间暂停
+（2026-08-13 用户修订设计：从「左键拖动暂停」改为「贴底判定」，取代 Task 6 的 dragging 鼠标标记方案）
+
+- 维护 pinned 状态：`chatScroll.vvalueProperty()` 监听——
+  `pinned = vvalue >= vmax - 1.0`（贴底）时 true，用户以任意方式离开底部即 false
+- `chatScroll.vmaxProperty()` 监听：`if (pinned) setVvalue(vmax)` 跟随新内容，否则不动
+- 用户拖回底部（vvalue 回到 vmax）→ pinned 恢复 → 自动跟随自然续滚
+- 顺带消除原方案两个已知缺陷：轨道点击置位、拖拽中窗口失焦后 dragging 滞留
 
 ## 14. 需求 11/16：删除会话、切换工作空间后清空右侧
 
