@@ -3,6 +3,7 @@ package com.minion.gui.sidebar;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
 import com.minion.gui.session.SessionManager;
+import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
@@ -76,6 +77,7 @@ public class WorkspaceListView extends ListView<String> {
         TextInputDialog d = new TextInputDialog(oldName);
         d.setTitle("重命名工作空间");
         d.setHeaderText("输入新名称（会同步迁移会话目录）");
+        Theme.style(d); // 弹窗深色
         Optional<String> result = d.showAndWait();
         if (!result.isPresent()) return;
         if (!manager.renameWorkspace(oldName, result.get().trim())) {
@@ -90,6 +92,7 @@ public class WorkspaceListView extends ListView<String> {
         Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
         d.setTitle("修改工作空间");
         d.setHeaderText("工作空间「" + name + "」（修改将在重启后对新会话生效）");
+        Theme.style(d); // 弹窗深色
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
         GridPane grid = new GridPane();
@@ -120,6 +123,7 @@ public class WorkspaceListView extends ListView<String> {
                 "删除工作空间「" + name + "」？其下所有会话与 " + "session/" + name + "/ 目录将一并删除。",
                 ButtonType.OK, ButtonType.CANCEL);
         a.setTitle("删除工作空间");
+        Theme.style(a); // 弹窗深色
         Optional<ButtonType> r = a.showAndWait();
         if (r.isPresent() && r.get() == ButtonType.OK) {
             if (!manager.deleteWorkspace(name)) {
@@ -132,6 +136,7 @@ public class WorkspaceListView extends ListView<String> {
     private void error(String title, String msg) {
         Alert a = new Alert(Alert.AlertType.ERROR, msg, ButtonType.OK);
         a.setTitle(title);
+        Theme.style(a); // 弹窗深色
         a.showAndWait();
     }
 }

@@ -4,6 +4,7 @@ import com.minion.core.llm.Message;
 import com.minion.gui.StatusDot;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
+import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
@@ -79,6 +80,7 @@ public class SessionListView extends ListView<SessionHandle> {
                 TextInputDialog d = new TextInputDialog(h.title);
                 d.setTitle("重命名会话");
                 d.setHeaderText("输入新标题");
+                Theme.style(d); // 弹窗深色
                 d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
             });
             MenuItem del = new MenuItem("删除");
@@ -87,6 +89,7 @@ public class SessionListView extends ListView<SessionHandle> {
                         "删除会话「" + (h.title == null ? h.id : h.title) + "」？",
                         ButtonType.OK, ButtonType.CANCEL);
                 a.setTitle("删除会话");
+                Theme.style(a); // 弹窗深色
                 a.showAndWait().ifPresent(bt -> {
                     if (bt == ButtonType.OK) {
                         manager.deleteSession(h);
