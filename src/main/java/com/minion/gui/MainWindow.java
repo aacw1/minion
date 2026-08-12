@@ -11,6 +11,7 @@ import com.minion.gui.sidebar.WorkspaceListView;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -31,6 +32,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -58,6 +60,15 @@ public class MainWindow {
         stage.initStyle(StageStyle.UNDECORATED); // 需求 1：隐藏系统标题栏
         stage.setMinWidth(960);
         stage.setMinHeight(640);
+
+        // 初始尺寸钳制到屏幕可视范围：无边框窗口没有系统窗口管理器的「缩到屏内」钳制，
+        // 而窗口按场景首选尺寸打开（侧栏两个 ListView 各 ~400px，总高常超 900px），
+        // 小屏上会把顶部标题栏和底部输入框顶出屏幕；故首次显示前显式设尺寸
+        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
+        stage.setWidth(Math.min(1280, vb.getWidth() - 40));
+        stage.setHeight(Math.min(760, vb.getHeight() - 40));
+        stage.setMinWidth(Math.min(960, vb.getWidth() - 40));
+        stage.setMinHeight(Math.min(640, vb.getHeight() - 40));
 
         // 根容器：AnchorPane 承载内容 + 8 个缩放区域（ResizeHelper 覆盖在边缘）
         AnchorPane frame = new AnchorPane();
