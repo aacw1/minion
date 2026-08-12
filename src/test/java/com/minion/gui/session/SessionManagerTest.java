@@ -13,10 +13,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
@@ -226,5 +229,55 @@ public class SessionManagerTest {
         assertFalse(Files.exists(oldDir));
         assertTrue(Files.exists(WorkspaceManager.sessionDirFor(jar, "主空间")));
         assertEquals("主空间", m.workspaces().currentName());
+    }
+
+    /** 删除带运行中会话的工作空间：先终止等退出完成再删目录，退出落盘不复活目录（评审 I-1 回归） */
+    @Test
+    public void deleteWorkspace_runningSession_noDirResurrection() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.switchWorkspace("projA"); // 先切换再注册 listener：只捕获删除触发的通知
+        final CountDownLatch wsChanged = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { wsChanged.countDown(); }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+        });
+        final SessionHandle h = m.createSession(null);
+        final Path sessionDir = WorkspaceManager.sessionDirFor(jar, "projA");
+        final Path sessionFile = sessionDir.resolve(h.id + ".json");
+        final CountDownLatch fakePersistDone = new CountDownLatch(1);
+        assertTrue(Files.exists(sessionDir));
+        // 模拟运行中会话：AgentLoop 退出路径无条件落盘（persistSession → createDirectories+写文件），
+        // 且中断不阻断落盘——旧实现先删目录再终止，落盘必然在目录删除后复活它
+        h.running = true;
+        h.pool.submit(new Runnable() {
+            @Override public void run() {
+                try { Thread.sleep(200); } catch (InterruptedException e) { /* 落盘不因中断取消 */ }
+                try {
+                    Files.createDirectories(sessionDir);
+                    Files.write(sessionFile, "{\"resurrect\":true}".getBytes(StandardCharsets.UTF_8));
+                } catch (Exception e) {
+                    fail("模拟退出落盘失败: " + e.getMessage());
+                } finally {
+                    fakePersistDone.countDown(); // 复活尝试已发生，断言目录前必须等它
+                }
+            }
+        });
+        assertTrue(m.deleteWorkspace("projA")); // 有运行中会话：后台终止+删除，不阻塞调用线程
+        assertTrue("等待复活尝试完成超时", fakePersistDone.await(5, TimeUnit.SECONDS));
+        assertTrue("等待后台终止+删除完成超时", wsChanged.await(5, TimeUnit.SECONDS));
+        assertNull(ws.get("projA"));
+        assertFalse("会话目录被退出落盘复活", Files.exists(sessionDir));
+        assertNotEquals("projA", m.workspaces().currentName());
+        assertEquals(0, m.sessions().size());
     }
 }

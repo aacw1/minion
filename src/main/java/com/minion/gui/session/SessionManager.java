@@ -62,6 +62,9 @@ public class SessionManager {
         void onError(String message);
     }
 
+    /** 删除工作空间时等待会话退出的总超时（秒）：AgentLoop 中断后走退出落盘路径，正常远快于此 */
+    private static final long DELETE_TERMINATE_TIMEOUT_SECONDS = 5;
+
     private final ConfirmUi confirmUi;
     private final Config config;
     private final Path jarDir;
@@ -332,25 +335,58 @@ public class SessionManager {
     }
 
     /**
-     * 删除工作空间：WorkspaceManager.remove 拒绝删除最后一个并已删会话目录；
-     * 此处先终止该空间所有会话 → 关池 → 删配置（remove）→ 当前名同步。
-     * false=空间不存在或删最后一个被拒绝
+     * 删除工作空间：先终止该空间所有会话（置 deleted + 中断 + 关闭，等退出完成）
+     * → 再删配置/目录（remove 内部递归删 session/<name>/）→ 当前名同步。
+     * 顺序不可颠倒：AgentLoop 所有退出路径无条件 persistSession（createDirectories 复活目录），
+     * 必须先等会话退出完再删目录。运行中会话的等待最长 DELETE_TERMINATE_TIMEOUT_SECONDS 秒；
+     * 可能被 FX 线程调用（右键菜单 onAction），有运行中会话时整个终止+删除流程放后台
+     * daemon 线程执行，FX 线程只发起。false=空间不存在或删最后一个被拒绝
      */
-    public boolean deleteWorkspace(String name) {
+    public boolean deleteWorkspace(final String name) {
         WorkspaceCtx ctx = ctxByName.get(name);
         if (ctx == null) return false;
-        if (!workspaces.remove(name)) return false; // 删最后一个被拒，会话上下文不动
+        if (workspaces.list().size() <= 1) return false; // 删最后一个被拒（与 remove 同判据），会话上下文不动
+        boolean hasRunning = false;
         for (SessionHandle h : ctx.sessions) {
-            if (h.running) h.loop.interrupt();
+            h.deleted = true; // 先置位：send 中据此中止，防已删除会话的文件/事件复活
+            if (h.running) { h.loop.interrupt(); hasRunning = true; } // 终止运行中循环（stop 语义）
+            h.loop.shutdown();
             h.pool.shutdownNow();
+            h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         }
         ctxByName.remove(name);
+        if (hasRunning) {
+            // 运行中会话的 awaitTermination 可能阻塞（最长超时）：后台 daemon 线程执行，不阻塞 FX 线程
+            Thread t = new Thread(new Runnable() {
+                @Override public void run() { finishDeleteWorkspace(ctx, name); }
+            }, "minion-ws-delete");
+            t.setDaemon(true);
+            t.start();
+        } else {
+            finishDeleteWorkspace(ctx, name); // 无运行中会话：awaitTermination 即时返回，可同步完成
+        }
+        return true;
+    }
+
+    /** 等待该空间所有会话退出（超时按继续，AgentLoop 有 stop 语义正常不会存活）→ 删配置/目录 → 当前名同步 */
+    private void finishDeleteWorkspace(WorkspaceCtx ctx, String name) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DELETE_TERMINATE_TIMEOUT_SECONDS);
+        for (SessionHandle h : ctx.sessions) {
+            long remain = deadline - System.nanoTime();
+            if (remain <= 0) break;
+            try {
+                h.pool.awaitTermination(remain, TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (!workspaces.remove(name)) return; // 理论不可达（前面已校验），防御
         if (currentWorkspaceName.equals(name)) {
             currentWorkspaceName = workspaces.currentName(); // remove 已回落 currentName
             currentSession = null;
             notifyWorkspaceChanged();
         }
-        return true;
     }
 
     /** 发送：新会话（titlePending）先摘要生成标题，再跑正式任务 */
