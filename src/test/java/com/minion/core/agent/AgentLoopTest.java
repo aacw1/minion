@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.config.Config;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.LlmClient;
+import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.StreamHandler;
 import com.minion.core.llm.ToolCall;
@@ -203,6 +205,87 @@ public class AgentLoopTest {
             try { Thread.sleep(300); } catch (InterruptedException e) { }
             super.streamChat(messages, tools, handler);
         }
+    }
+
+    /** 需求 15：流式中断——第一轮进入后阻塞等 interrupt()，先回调部分内容再抛异常模拟取消。
+     *  直接实现 LlmClient 而非继承 FakeLlmClient：后者 streamChat 未声明 throws LlmException，
+     *  覆写无法抛受检异常；接口本身已声明，实现类可正常抛出 */
+    public static class InterruptibleStreamLlm implements LlmClient {
+        public final CountDownLatch entered = new CountDownLatch(1);
+        public final CountDownLatch cancelSignal = new CountDownLatch(1);
+        public List<Message> lastRequestMessages = new ArrayList<Message>();
+        private final List<String> turns = new ArrayList<String>();
+        private int cursor = 0;
+
+        public void addTurn(String content) { turns.add(content); }
+
+        @Override public void cancel() { cancelSignal.countDown(); }
+
+        @Override
+        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+                throws LlmException {
+            lastRequestMessages = new ArrayList<Message>(messages);
+            if (entered.getCount() > 0) { // 仅第一轮：阻塞等中断信号
+                entered.countDown();
+                try {
+                    cancelSignal.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                handler.onThinking("已经分析到一半");
+                handler.onContent("部分回复内容");
+                throw new LlmException(LlmException.Type.OTHER, "模拟中断", false);
+            }
+            // 第二轮起正常回放（与 FakeLlmClient 出牌语义一致）
+            String turn = turns.get(Math.min(cursor, turns.size() - 1));
+            cursor++;
+            Usage u = new Usage();
+            u.inputTokens = 10;
+            u.outputTokens = 5;
+            handler.onContent(turn);
+            handler.onFinish("stop", u, new ArrayList<ToolCall>());
+        }
+
+        @Override
+        public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+            return null; // 测试未启用上下文压缩，不会走到
+        }
+    }
+
+    /** 需求 15：流式中断后，中断前收到的部分回复（含思考）进入历史，且下次请求携带 */
+    @Test
+    public void interrupt_partialReplyKeptForNextTurn() throws Exception {
+        InterruptibleStreamLlm p = new InterruptibleStreamLlm();
+        AgentLoop loop = new AgentLoop(p, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        Thread t = new Thread(() -> loop.runUserTurn("长任务"));
+        t.start();
+        assertTrue("streamChat 未进入", p.entered.await(5, TimeUnit.SECONDS));
+        loop.interrupt(); // cancel → cancelSignal 打开 → 流抛异常走中断路径
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 中断前收到的部分回复与思考进入历史（不含 toolCalls——切断的 tool_calls 流不可信）
+        assertEquals(2, loop.messages().size());
+        Message a = loop.messages().get(1);
+        assertEquals(Message.Role.ASSISTANT, a.role);
+        assertEquals("部分回复内容", a.content);
+        assertEquals("已经分析到一半", a.reasoningContent);
+        assertTrue(a.toolCalls == null || a.toolCalls.isEmpty());
+        // 下一次请求携带部分回复（截断前的模型回复进入后续上下文）
+        p.addTurn("继续处理");
+        loop.runUserTurn("继续");
+        boolean found = false;
+        for (Message m : p.lastRequestMessages) {
+            if (m.role == Message.Role.ASSISTANT && "部分回复内容".equals(m.content)) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue("部分回复应出现在后续请求中", found);
     }
 
     @Test
