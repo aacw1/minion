@@ -35,6 +35,32 @@
       <artifactId>snakeyaml</artifactId>
       <version>2.2</version>
     </dependency>
+    <!-- JavaFX 8：编译期引用 JDK 自带 jfxrt.jar（运行时由 JDK ext 机制加载，不打入 fat jar） -->
+    <dependency>
+      <groupId>com.oracle</groupId>
+      <artifactId>javafx</artifactId>
+      <version>8.0</version>
+      <scope>system</scope>
+      <systemPath>${java.home}/lib/ext/jfxrt.jar</systemPath>
+    </dependency>
+    <!-- Markdown 渲染（0.64.x 为最后支持 JDK8 的版本线） -->
+    <!-- 注意坐标：0.62.2 起核心 artifact 更名回 umbrella `flexmark`（flexmark-core 止于 0.60.x）；
+         strikethrough 扩展 0.64.x 只有 gfm 变体（flexmark-ext-gfm-strikethrough） -->
+    <dependency>
+      <groupId>com.vladsch.flexmark</groupId>
+      <artifactId>flexmark</artifactId>
+      <version>0.64.8</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vladsch.flexmark</groupId>
+      <artifactId>flexmark-ext-tables</artifactId>
+      <version>0.64.8</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vladsch.flexmark</groupId>
+      <artifactId>flexmark-ext-gfm-strikethrough</artifactId>
+      <version>0.64.8</version>
+    </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
