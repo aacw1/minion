@@ -8,6 +8,7 @@ import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
+import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
@@ -18,9 +19,11 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -28,10 +31,11 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import java.util.Optional;
 
-/** 主窗口：顶部栏 / 左侧 1/5（上会话下工作空间）/ 右侧 4/5（消息区 + 输入区） */
+/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（消息区 + 输入区），SplitPane 1:3 */
 public class MainWindow {
 
     private final Stage stage;
@@ -41,6 +45,7 @@ public class MainWindow {
     private ChatView chatView;
     private ScrollPane chatScroll;
     private InputView inputView;
+    private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -49,41 +54,37 @@ public class MainWindow {
 
     public void show() {
         stage.setTitle("minion");
+        stage.initStyle(StageStyle.UNDECORATED); // 需求 1：隐藏系统标题栏
         stage.setMinWidth(960);
         stage.setMinHeight(640);
 
+        // 根容器：AnchorPane 承载内容 + 8 个缩放区域（ResizeHelper 覆盖在边缘）
+        AnchorPane frame = new AnchorPane();
         BorderPane root = new BorderPane();
         root.getStyleClass().add("root");
+        AnchorPane.setTopAnchor(root, 0.0);
+        AnchorPane.setBottomAnchor(root, 0.0);
+        AnchorPane.setLeftAnchor(root, 0.0);
+        AnchorPane.setRightAnchor(root, 0.0);
+        frame.getChildren().add(root);
 
-        // 顶部栏：标识 | 当前模型 | 会话页签区 | ⚙
-        HBox topbar = new HBox(10);
-        topbar.getStyleClass().add("topbar");
-        Label title = new Label("minion");
-        title.getStyleClass().add("topbar-title");
+        // 自绘标题栏：应用名 | 模型标签 | 页签 | ⚙ | 窗口按钮
         Label modelLabel = new Label("模型: " + manager.models().currentName());
         modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
-        HBox.setHgrow(tabs, Priority.ALWAYS);
-        Button gear = new Button("⚙");
-        gear.getStyleClass().add("btn-ghost");
-        gear.setOnAction(e -> {
-            SettingsDialog.show(stage, manager.models(), manager, MinionApp.config());
-            // 顶部模型名刷新（切换模型后显示新标识）
-            modelLabel.setText("模型: " + manager.models().currentName());
-        });
-        topbar.getChildren().addAll(title, modelLabel, tabs, gear);
+        titleBar = new TitleBar(stage, modelLabel, tabs, this::openSettings, this::confirmClose);
+        root.setTop(titleBar);
 
-        // 左侧 1/5：上会话管理 / 下工作空间管理（Task 12 填充工作空间列表）
+        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ SplitPane，默认 1:3
         VBox sidebar = new VBox(8);
         sidebar.getStyleClass().add("panel");
         sidebar.setMinWidth(200);
-        sidebar.setPrefWidth(220);
         Label sessionTitle = new Label("会话管理");
         sessionTitle.getStyleClass().add("section-title");
         sessionList = new SessionListView(manager,
                 h -> {
                     removeTabById(h.id);
-                    if (chatView != null && chatView.handle() == h) clearChatPane(); // 删除当前展示会话 → 右侧清空
+                    if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh();
                 });
         VBox.setVgrow(sessionList, Priority.ALWAYS);
@@ -96,51 +97,18 @@ public class MainWindow {
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
         Label wsTitle = new Label("工作空间");
         wsTitle.getStyleClass().add("section-title");
-        WorkspaceListView wsList = new WorkspaceListView(manager);
+        final WorkspaceListView wsList = new WorkspaceListView(manager);
         VBox.setVgrow(wsList, Priority.ALWAYS);
         Button newWs = new Button("＋ 新建工作空间");
         newWs.getStyleClass().add("btn-ghost");
         newWs.setMaxWidth(Double.MAX_VALUE);
-        newWs.setOnAction(e -> {
-            Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
-            d.setTitle("新建工作空间");
-            d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-            GridPane g = new GridPane();
-            g.setHgap(8); g.setVgap(8); g.setPadding(new Insets(10));
-            TextField n = new TextField();
-            n.setPromptText("名称");
-            TextField wd = new TextField();
-            wd.setPromptText("work.dir");
-            TextField pm = new TextField();
-            pm.setPromptText("project.md（可空）");
-            g.addRow(0, new Label("名称:"), n);
-            g.addRow(1, new Label("work.dir:"), wd);
-            g.addRow(2, new Label("project.md:"), pm);
-            d.getDialogPane().setContent(g);
-            d.setResultConverter(bt -> {
-                if (bt != ButtonType.OK) return null;
-                WorkspaceConfig out = new WorkspaceConfig();
-                out.workSpaceName = n.getText().trim();
-                out.workDir = wd.getText().trim();
-                out.projectMd = pm.getText().trim();
-                return out;
-            });
-            Optional<WorkspaceConfig> r = d.showAndWait();
-            if (r.isPresent()) {
-                if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd)) {
-                    Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
-                    a.setTitle("新建失败");
-                    a.showAndWait();
-                }
-                wsList.refresh();
-            }
-        });
+        newWs.setOnAction(e -> onNewWorkspace(wsList));
         VBox wsBox = new VBox(6);
         wsBox.getChildren().addAll(newWs, wsList);
         VBox.setVgrow(wsBox, Priority.ALWAYS);
         sidebar.getChildren().setAll(sessionTitle, sessionBox, wsTitle, wsBox);
 
-        // 右侧 4/5：消息区（ChatView）+ 输入区占位（Task 11 填充）
+        // 右侧：消息区（ChatView）+ 输入区
         VBox right = new VBox(8);
         right.getStyleClass().add("panel-dark");
         chatScroll = new ScrollPane();
@@ -151,7 +119,12 @@ public class MainWindow {
         inputView = new InputView(manager);
         right.getChildren().setAll(chatScroll, inputView);
 
-        // 注册 manager 监听（Tab 维护）
+        SplitPane split = new SplitPane();
+        split.setDividerPositions(0.25); // 需求 5：左右比例 1:3
+        split.getItems().addAll(sidebar, right);
+        root.setCenter(split);
+
+        // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）
         manager.addListener(new SessionManager.Listener() {
             @Override public void onSessionTitleChanged(SessionHandle h) {
                 Platform.runLater(() -> updateTab(h));
@@ -163,7 +136,6 @@ public class MainWindow {
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
                     selectTab(h);
-                    // 每会话一个 ChatView（绑定其 EventList）：重建 + bind(true) 清空后重放存量
                     chatView = ChatView.forSession(h);
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
@@ -172,7 +144,7 @@ public class MainWindow {
             }
             @Override public void onWorkspaceChanged() {
                 Platform.runLater(() -> {
-                    clearChatPane(); // 需求 16：切换工作空间后右侧清空（先清再刷列表/页签）
+                    clearChatPane();
                     wsList.refresh();
                     sessionList.refresh();
                     rebuildTabs();
@@ -186,32 +158,49 @@ public class MainWindow {
             }
         });
 
-        root.setTop(topbar);
-        root.setLeft(sidebar);
-        root.setCenter(right);
-
-        Scene scene = new Scene(root);
+        Scene scene = new Scene(frame);
         scene.getStylesheets().add(
                 getClass().getResource("/theme/theme.css").toExternalForm());
         stage.setScene(scene);
 
+        // 系统关闭事件（Alt+F4/任务栏关闭）与自绘 ✕ 共用 confirmClose
         stage.setOnCloseRequest(e -> {
-            if (!manager.hasRunning()) {
-                manager.shutdown();
-                return;
-            }
-            Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                    "仍有会话正在运行，确认退出？", ButtonType.OK, ButtonType.CANCEL);
-            a.setTitle("退出确认");
-            a.showAndWait();
-            if (a.getResult() == ButtonType.OK) {
-                manager.shutdown();
-            } else {
-                e.consume(); // 取消关闭
-            }
+            e.consume(); // 统一走 confirmClose（stage.close() 不触发 onCloseRequest，须自行 close）
+            confirmClose();
         });
 
+        ResizeHelper.attach(stage, frame); // 无边框窗口边缘/四角缩放
+
         stage.show();
+    }
+
+    /** 右上角 ⚙：打开设置窗，关闭后刷新顶部模型名（TitleBar.modelLabel() 持有引用） */
+    private void openSettings() {
+        SettingsDialog.show(stage, manager.models(), manager, MinionApp.config());
+        if (titleBar != null) {
+            titleBar.modelLabel().setText("模型: " + manager.models().currentName());
+        }
+    }
+
+    /**
+     * 关闭确认（自绘 ✕ 按钮与 stage.setOnCloseRequest 共用）：
+     * 无运行中会话直接退出；有则弹确认再退。stage.close() 不触发 onCloseRequest，须自行调用。
+     */
+    private void confirmClose() {
+        if (!manager.hasRunning()) {
+            manager.shutdown();
+            stage.close();
+            return;
+        }
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                "仍有会话正在运行，确认退出？", ButtonType.OK, ButtonType.CANCEL);
+        Theme.style(a);
+        a.setTitle("退出确认");
+        a.showAndWait();
+        if (a.getResult() == ButtonType.OK) {
+            manager.shutdown();
+            stage.close();
+        }
     }
 
     /** 清空右侧面板：解绑事件流、回占位提示、解绑输入区（删除会话/切换工作空间后调用） */
@@ -241,6 +230,42 @@ public class MainWindow {
         sessionList.refresh(); // createSession 无 Listener 通知，UI 层自行刷新
         manager.activateSession(h);
         // 消息区/输入区绑定由 Task 10/11 在 onSessionActivated 中接线
+    }
+
+    /** 新建工作空间弹窗（名称/work.dir/project.md 三字段；Task 10 将在此追加「浏览…」按钮） */
+    private void onNewWorkspace(WorkspaceListView wsList) {
+        Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
+        d.setTitle("新建工作空间");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        GridPane g = new GridPane();
+        g.setHgap(8); g.setVgap(8); g.setPadding(new Insets(10));
+        TextField n = new TextField();
+        n.setPromptText("名称");
+        TextField wd = new TextField();
+        wd.setPromptText("work.dir");
+        TextField pm = new TextField();
+        pm.setPromptText("project.md（可空）");
+        g.addRow(0, new Label("名称:"), n);
+        g.addRow(1, new Label("work.dir:"), wd);
+        g.addRow(2, new Label("project.md:"), pm);
+        d.getDialogPane().setContent(g);
+        d.setResultConverter(bt -> {
+            if (bt != ButtonType.OK) return null;
+            WorkspaceConfig out = new WorkspaceConfig();
+            out.workSpaceName = n.getText().trim();
+            out.workDir = wd.getText().trim();
+            out.projectMd = pm.getText().trim();
+            return out;
+        });
+        Optional<WorkspaceConfig> r = d.showAndWait();
+        if (r.isPresent()) {
+            if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd)) {
+                Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
+                a.setTitle("新建失败");
+                a.showAndWait();
+            }
+            wsList.refresh();
+        }
     }
 
     private void updateTab(SessionHandle h) {
