@@ -342,6 +342,102 @@ public class AgentLoopTest {
         assertEquals(Message.Role.USER, loop.messages().get(loop.messages().size() - 1).role);
     }
 
+    /** M3：工具阶段中断且带思考——scrub 剥离 toolCalls 后，仅思考无正文的 assistant 空壳
+     *  必须整条移除（DeepSeek 思考模式硬性要求 assistant 消息带 content 或 tool_calls，
+     *  仅 reasoning_content 回传会 400「content or tool_calls must be set」） */
+    @Test
+    public void interrupt_duringToolExecution_thinkingOnlyShellRemoved() throws Exception {
+        ToolCall tc = new ToolCall();
+        tc.id = "c1";
+        tc.name = "blocker";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null, "思考中");
+        AgentLoop loop = newLoop();
+        BlockingTool blocker = new BlockingTool();
+        registry.register(blocker);
+        Thread t = new Thread(() -> loop.runUserTurn("任务"));
+        t.start();
+        assertTrue(blocker.entered.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200); // 确保 inFlight 已注册完成再中断
+        loop.interrupt();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 仅思考的 assistant 空壳不得留在历史（否则下次发送 400）
+        assertEquals(1, loop.messages().size());
+        assertEquals(Message.Role.USER, loop.messages().get(0).role);
+    }
+
+    /** M3：流式中断时思考已到、正文未到——不得存储仅思考的 assistant 消息（下次发送 400） */
+    @Test
+    public void interrupt_thinkingOnlyPartial_notStored() throws Exception {
+        ThinkingOnlyStreamLlm p = new ThinkingOnlyStreamLlm();
+        AgentLoop loop = new AgentLoop(p, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        Thread t = new Thread(() -> loop.runUserTurn("长任务"));
+        t.start();
+        assertTrue("streamChat 未进入", p.entered.await(5, TimeUnit.SECONDS));
+        loop.interrupt();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 仅思考的部分回复不得入历史
+        assertEquals(1, loop.messages().size());
+        assertEquals(Message.Role.USER, loop.messages().get(0).role);
+    }
+
+    /** M3：恢复历史会话时，落盘文件里的仅思考 assistant 空壳（旧版本 bug 产物）一并清洗 */
+    @Test
+    public void restoreSession_removesThinkingOnlyShell() {
+        Session saved = Session.create(tmp.getRoot().getPath(), "test-model");
+        saved.messages.add(Message.user("任务"));
+        Message shell = Message.assistant(null);
+        shell.reasoningContent = "思考了一半";
+        saved.messages.add(shell);
+        AgentLoop loop = newLoop();
+        loop.restoreSession(saved);
+        assertEquals(1, loop.messages().size());
+        assertEquals(Message.Role.USER, loop.messages().get(0).role);
+    }
+
+    /** M3：正常路径空回复（无正文无工具调用）不得入历史（同样触发 400 形状） */
+    @Test
+    public void emptyAssistantReply_notStored() {
+        llm.addTurn("");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("你好");
+        assertEquals(1, loop.messages().size());
+        assertEquals(Message.Role.USER, loop.messages().get(0).role);
+    }
+
+    /** M3 测试桩：进入后阻塞等中断，仅回调思考（无正文）再抛异常模拟取消 */
+    public static class ThinkingOnlyStreamLlm implements LlmClient {
+        public final CountDownLatch entered = new CountDownLatch(1);
+        public final CountDownLatch cancelSignal = new CountDownLatch(1);
+
+        @Override public void cancel() { cancelSignal.countDown(); }
+
+        @Override
+        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+                throws LlmException {
+            entered.countDown();
+            try {
+                cancelSignal.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            handler.onThinking("已经分析到一半");
+            throw new LlmException(LlmException.Type.OTHER, "模拟中断", false);
+        }
+
+        @Override
+        public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+            return null; // 测试未启用上下文压缩，不会走到
+        }
+    }
+
     /** M2：restoreSession 对恢复历史做半轮清洗（末条 assistant 含 toolCalls 且无后续 TOOL 结果 → 剥离） */
     @Test
     public void restoreSession_scrubsHalfTurnResidue() {

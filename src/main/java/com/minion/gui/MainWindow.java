@@ -2,6 +2,7 @@ package com.minion.gui;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
+import com.minion.gui.dialog.ConfirmSheet;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.AutoScrollPolicy;
@@ -11,6 +12,7 @@ import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
+import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
@@ -31,6 +33,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
@@ -39,7 +42,7 @@ import javafx.stage.StageStyle;
 
 import java.util.Optional;
 
-/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
+/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（页签栏 + 消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
 public class MainWindow {
 
     private final Stage stage;
@@ -51,6 +54,7 @@ public class MainWindow {
     private final AutoScrollPolicy policy = new AutoScrollPolicy();
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
+    private HBox tabsBar; // 右侧顶部页签栏（无会话时整行隐藏）
     private boolean suppressingTabSelect; // rebuildTabs 期间不触发页签选中激活
 
     public MainWindow(Stage stage, SessionManager manager) {
@@ -83,7 +87,7 @@ public class MainWindow {
         AnchorPane.setRightAnchor(root, 0.0);
         frame.getChildren().add(root);
 
-        // 自绘标题栏：应用名 | 模型标签 | 页签 | ⚙ | 窗口按钮
+        // 自绘标题栏：应用名 | 模型标签 | 留白 | ⚙ | 窗口按钮
         Label modelLabel = new Label("模型: " + manager.models().currentName());
         modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
@@ -99,7 +103,7 @@ public class MainWindow {
                 }
             }
         });
-        titleBar = new TitleBar(stage, modelLabel, tabs, this::openSettings, this::confirmClose);
+        titleBar = new TitleBar(stage, modelLabel, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
 
         // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ GridPane，百分比列固定 25%/75%
@@ -135,7 +139,7 @@ public class MainWindow {
         VBox.setVgrow(wsBox, Priority.ALWAYS);
         sidebar.getChildren().setAll(sessionTitle, sessionBox, wsTitle, wsBox);
 
-        // 右侧：消息区（ChatView）+ 输入区
+        // 右侧：页签栏（会话 Tab）+ 消息区（ChatView）+ 输入区
         VBox right = new VBox(8);
         right.getStyleClass().add("panel-dark");
         chatScroll = new ScrollPane();
@@ -144,7 +148,19 @@ public class MainWindow {
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
         setupAutoScroll();
         inputView = new InputView(manager);
-        right.getChildren().setAll(chatScroll, inputView);
+        // 页签栏（右侧顶部，下带 1px 分隔线；页签为空时整行隐藏）
+        tabsBar = new HBox(tabs);
+        tabsBar.getStyleClass().add("tabs-bar");
+        tabs.getTabs().addListener((ListChangeListener<Tab>) c -> {
+            boolean empty = tabs.getTabs().isEmpty();
+            tabsBar.setVisible(!empty);
+            tabsBar.setManaged(!empty);
+        });
+        right.getChildren().setAll(tabsBar, chatScroll, inputView);
+
+        // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
+        StackPane rightStack = new StackPane(right);
+        ConfirmSheet.setHost(rightStack);
 
         // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
         GridPane center = new GridPane();
@@ -154,7 +170,7 @@ public class MainWindow {
         rightCol.setPercentWidth(75);
         center.getColumnConstraints().addAll(leftCol, rightCol);
         center.add(sidebar, 0, 0);
-        center.add(right, 1, 0);
+        center.add(rightStack, 1, 0); // 右侧为 StackPane 宿主（ConfirmSheet 遮罩挂顶层，不越分隔线）
         root.setCenter(center);
 
         // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）

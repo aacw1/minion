@@ -1,14 +1,14 @@
 package com.minion.gui;
 
-import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 /**
- * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 页签区（弹性）| ⚙ 设置 | — 最小化 | □ 最大化 | ✕ 关闭。
+ * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| ⚙ 设置 | — 最小化 | □ 最大化 | ✕ 关闭。
  * 拖动标题栏移动窗口；双击空白区切换最大化。关闭走 confirmClose（与系统关闭共用退出确认）。
  */
 public class TitleBar extends HBox {
@@ -17,7 +17,7 @@ public class TitleBar extends HBox {
     private double dragX;
     private double dragY;
 
-    public TitleBar(Stage stage, Label modelLabel, Node center,
+    public TitleBar(Stage stage, Label modelLabel,
                     Runnable openSettings, Runnable confirmClose) {
         this.stage = stage;
         this.modelLabel = modelLabel; // 设置窗关闭后 MainWindow 刷新顶部模型名用
@@ -26,7 +26,9 @@ public class TitleBar extends HBox {
 
         Label app = new Label("minion");
         app.getStyleClass().add("topbar-title");
-        if (center != null) HBox.setHgrow(center, Priority.ALWAYS);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS); // 原页签区弹性占位：模型名与右侧按钮之间留白
 
         Button gear = new Button("⚙");
         gear.getStyleClass().add("btn-ghost");
@@ -46,7 +48,7 @@ public class TitleBar extends HBox {
         close.getStyleClass().add("btn-close");
         close.setOnAction(e -> confirmClose.run());
 
-        getChildren().addAll(app, modelLabel, center, gear, min, max, close);
+        getChildren().addAll(app, modelLabel, spacer, gear, min, max, close);
 
         // 拖动移动窗口（记录按下偏移，拖拽按屏幕坐标差值移动）
         setOnMousePressed(e -> {
@@ -58,7 +60,7 @@ public class TitleBar extends HBox {
             stage.setY(e.getScreenY() - dragY);
         });
         // 双击标题栏空白处切换最大化：只认标题栏自身与其两个 Label（应用名/模型名）；
-        // 页签文本也是 Label（TabHeaderSkin 内部），用 == 收窄排除，防双击页签误触发最大化
+        // 页签已移至右侧页签栏，标题栏仅剩自身与两个 Label
         setOnMouseClicked(e -> {
             if (e.getClickCount() == 2
                     && (e.getTarget() == this || e.getTarget() == app || e.getTarget() == modelLabel)) {
