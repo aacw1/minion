@@ -109,7 +109,7 @@ public class WorkspaceListView extends ListView<String> {
                 e.consume();
             });
             setOnDragOver(e -> {
-                if (e.getGestureSource() != this) return;
+                if (e.getGestureSource() == this) return; // 仅跳过拖起源自身（原条件写反导致所有目标拒绝 drop）
                 e.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
                 e.consume();
             });
