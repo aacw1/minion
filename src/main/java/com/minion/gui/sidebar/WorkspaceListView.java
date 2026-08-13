@@ -14,7 +14,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.Node;
 import javafx.scene.layout.GridPane;
@@ -77,10 +76,6 @@ public class WorkspaceListView extends ListView<String> {
 
             // 悬停操作按钮（需求：不用右键，鼠标放上去才显示）
             HBox btns = new HBox(4);
-            Button renameBtn = new Button("✎");
-            renameBtn.getStyleClass().add("btn-cell");
-            renameBtn.setTooltip(new Tooltip("重命名"));
-            renameBtn.setOnAction(e -> doRename(name));
             Button editBtn = new Button("⚙");
             editBtn.getStyleClass().add("btn-cell");
             editBtn.setTooltip(new Tooltip("修改"));
@@ -89,7 +84,7 @@ public class WorkspaceListView extends ListView<String> {
             delBtn.getStyleClass().add("btn-cell");
             delBtn.setTooltip(new Tooltip("删除"));
             delBtn.setOnAction(e -> doDelete(name));
-            btns.getChildren().addAll(renameBtn, editBtn, delBtn);
+            btns.getChildren().addAll(editBtn, delBtn);
             btns.setVisible(false);
             btns.setManaged(false);
             setOnMouseEntered(e -> { btns.setVisible(true); btns.setManaged(true); });
@@ -125,25 +120,12 @@ public class WorkspaceListView extends ListView<String> {
         }
     }
 
-    private void doRename(String oldName) {
-        TextInputDialog d = new TextInputDialog(oldName);
-        d.setTitle("重命名工作空间");
-        d.setHeaderText("输入新名称（会同步迁移会话目录）");
-        Theme.style(d); // 弹窗深色
-        Optional<String> result = d.showAndWait();
-        if (!result.isPresent()) return;
-        if (!manager.renameWorkspace(oldName, result.get().trim())) {
-            error("重命名失败", "名称非法或已存在");
-        }
-        refresh();
-    }
-
-    /** 修改：workDir / project.md 可改；名称不动（重命名是单独操作） */
+    /** 修改：名称（可重命名，重复名被拒）/ workDir / projectMd 可改（重命名并入本弹窗，取消独立 ✎ 按钮） */
     private void doEdit(String name) {
         WorkspaceConfig w = workspaces.get(name);
         Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
         d.setTitle("修改工作空间");
-        d.setHeaderText("工作空间「" + name + "」（修改对新会话生效）");
+        d.setHeaderText("工作空间「" + name + "」（重命名会同步迁移会话目录；work.dir/project.md 修改对新会话生效）");
         Theme.style(d); // 弹窗深色
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
@@ -151,6 +133,8 @@ public class WorkspaceListView extends ListView<String> {
         grid.setHgap(8);
         grid.setVgap(8);
         grid.setPadding(new Insets(10));
+        TextField nameField = new TextField(name);
+        HBox.setHgrow(nameField, Priority.ALWAYS);
         HBox workDirBox = new HBox(6);
         TextField workDir = new TextField(w.workDir);
         HBox.setHgrow(workDir, Priority.ALWAYS);
@@ -188,21 +172,30 @@ public class WorkspaceListView extends ListView<String> {
             if (file != null) projectMd.setText(file.getAbsolutePath());
         });
         pmBox.getChildren().addAll(projectMd, pmBrowse);
-        grid.addRow(0, new Label("work.dir:"), workDirBox);
-        grid.addRow(1, new Label("project.md:"), pmBox);
+        grid.addRow(0, new Label("名称:"), nameField);
+        grid.addRow(1, new Label("work.dir:"), workDirBox);
+        grid.addRow(2, new Label("project.md:"), pmBox);
         d.getDialogPane().setContent(grid);
 
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
             WorkspaceConfig out = new WorkspaceConfig();
-            out.workSpaceName = name;
+            out.workSpaceName = nameField.getText().trim();
             out.workDir = workDir.getText().trim();
             out.projectMd = projectMd.getText().trim();
             return out;
         });
         Optional<WorkspaceConfig> result = d.showAndWait();
         if (!result.isPresent()) return;
-        manager.updateWorkspace(name, result.get().workDir, result.get().projectMd);
+        String newName = result.get().workSpaceName;
+        if (!newName.equals(name)) {
+            // 重命名：renameWorkspace 校验非法/重名，false 中止（目录迁移与列表刷新由其通知完成）
+            if (!manager.renameWorkspace(name, newName)) {
+                error("重命名失败", "名称非法或已存在");
+                return;
+            }
+        }
+        manager.updateWorkspace(newName, result.get().workDir, result.get().projectMd);
     }
 
     private void doDelete(String name) {
