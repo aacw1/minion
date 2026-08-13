@@ -39,8 +39,8 @@ public class SettingsDialog {
         Theme.style(d);
 
         TabPane tp = new TabPane();
-        tp.setSide(javafx.geometry.Side.LEFT);
-        tp.setTabMinWidth(100);
+        tp.setSide(javafx.geometry.Side.TOP); // 页签顶部横排（原 LEFT 竖排文字）
+        tp.setTabMinWidth(90);                 // 页签栏加宽
         tp.getTabs().add(modelTab(models, manager));
         tp.getTabs().add(basicTab(config));
         tp.getTabs().add(aboutTab());
@@ -200,12 +200,21 @@ public class SettingsDialog {
         grid.setHgap(8);
         grid.setVgap(10);
         grid.setPadding(new Insets(12));
+        // 列约束：标签列不收缩（完整显示，修复省略号截断）；输入列铺满剩余宽度
+        javafx.scene.layout.ColumnConstraints labelCol = new javafx.scene.layout.ColumnConstraints();
+        labelCol.setHgrow(javafx.scene.layout.Priority.NEVER);
+        javafx.scene.layout.ColumnConstraints inputCol = new javafx.scene.layout.ColumnConstraints();
+        inputCol.setHgrow(javafx.scene.layout.Priority.ALWAYS);
+        inputCol.setFillWidth(true);
+        grid.getColumnConstraints().addAll(labelCol, inputCol);
 
         TextField skillsDir = new TextField(config.skillsDir());
-        skillsDir.setPrefWidth(320);
+        skillsDir.setMaxWidth(Double.MAX_VALUE);
         TextArea toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
+        toolWhitelist.setMaxWidth(Double.MAX_VALUE);
         toolWhitelist.setPrefRowCount(2);
         TextArea cmdWhitelist = new TextArea(config.get("confirm.whitelist.commands", ""));
+        cmdWhitelist.setMaxWidth(Double.MAX_VALUE);
         cmdWhitelist.setPrefRowCount(2);
         CheckBox allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
         allowOutside.setSelected(config.readAllowOutside());
@@ -222,11 +231,15 @@ public class SettingsDialog {
         browserNote.getStyleClass().add("msg-thinking");
         grid.addRow(5, new Label(""), browserNote);
         TextField browserPath = new TextField(config.browserPath());
+        browserPath.setMaxWidth(Double.MAX_VALUE);
         TextField browserPort = new TextField(String.valueOf(config.browserPort()));
+        browserPort.setMaxWidth(Double.MAX_VALUE);
         TextField browserUserData = new TextField(config.browserUserDataDir());
+        browserUserData.setMaxWidth(Double.MAX_VALUE);
         CheckBox browserHeadless = new CheckBox("无头模式");
         browserHeadless.setSelected(config.browserHeadless());
         TextField browserTimeout = new TextField(String.valueOf(config.browserTimeoutMs()));
+        browserTimeout.setMaxWidth(Double.MAX_VALUE);
         grid.addRow(6, new Label("browser.path:"), browserPath);
         grid.addRow(7, new Label("browser.port:"), browserPort);
         grid.addRow(8, new Label("browser.userDataDir:"), browserUserData);
