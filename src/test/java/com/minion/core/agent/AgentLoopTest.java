@@ -868,4 +868,79 @@ public class AgentLoopTest {
         }
         @Override public ToolResult execute(JsonObject args) { return ToolResult.error("模拟失败"); }
     }
+
+    /** 轮询等待条件（挂起回调无 latch 可挂时用） */
+    private static void waitFor(java.util.concurrent.Callable<Boolean> cond) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            if (cond.call()) return;
+            Thread.sleep(20);
+        }
+        fail("条件等待超时");
+    }
+
+    /** ask_user 工具随 AgentLoop 构造自动注册 */
+    @Test
+    public void agentLoop_autoRegistersAskUserTool() {
+        AgentLoop loop = newLoop();
+        assertNotNull(registry.get("ask_user"));
+        assertEquals("ask_user", registry.get("ask_user").name());
+    }
+
+    /** 需求3/6：ask_user 挂起 → answerAskUser → 回答作为 TOOL 消息入历史继续本轮 */
+    @Test
+    public void askUser_suspendThenAnswer_continuesTurn() throws Exception {
+        ToolCall q = new ToolCall();
+        q.id = "q1";
+        q.name = "ask_user";
+        q.arguments = "{\"question\":\"选哪个方案？\"}";
+        llm.addTurnWithTools(Collections.singletonList(q), null);
+        llm.addTurn("按方案B执行");
+        final AgentLoop loop = newLoop();
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() { loop.runUserTurn("帮我选一下"); }
+        });
+        t.start();
+        waitFor(new java.util.concurrent.Callable<Boolean>() {
+            @Override public Boolean call() { return !ui.asksStarted.isEmpty(); }
+        });
+        assertTrue(loop.answerAskUser("方案B"));
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 0:user 1:assistant(toolCalls) 2:tool(回答) 3:assistant(最终)
+        List<Message> msgs = loop.messages();
+        assertEquals(4, msgs.size());
+        assertEquals(Message.Role.TOOL, msgs.get(2).role);
+        assertEquals("q1", msgs.get(2).toolCallId);
+        assertTrue(msgs.get(2).content.contains("方案B"));
+        assertEquals("按方案B执行", msgs.get(3).content);
+        // 第二轮请求：tool 消息前紧跟含对应 tool_call_id 的 assistant 消息（API 契约）
+        List<Message> req2 = llm.requests.get(1).messages;
+        assertEquals(Message.Role.ASSISTANT, req2.get(req2.size() - 2).role);
+        assertEquals(Message.Role.TOOL, req2.get(req2.size() - 1).role);
+    }
+
+    /** 需求6：ask_user 挂起时中断 → 退出 + 半轮 tool_call 被清洗（不留未配对残留） */
+    @Test
+    public void askUser_interruptWhileWaiting_scrubsHalfTurn() throws Exception {
+        ToolCall q = new ToolCall();
+        q.id = "q2";
+        q.name = "ask_user";
+        q.arguments = "{\"question\":\"选哪个？\"}";
+        llm.addTurnWithTools(Collections.singletonList(q), null);
+        final AgentLoop loop = newLoop();
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() { loop.runUserTurn("帮我选一下"); }
+        });
+        t.start();
+        waitFor(new java.util.concurrent.Callable<Boolean>() {
+            @Override public Boolean call() { return !ui.asksStarted.isEmpty(); }
+        });
+        loop.interrupt();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        for (Message m : loop.messages()) {
+            assertTrue("残留未配对 toolCalls", m.toolCalls == null || m.toolCalls.isEmpty());
+        }
+    }
 }

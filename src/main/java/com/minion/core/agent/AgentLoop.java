@@ -54,6 +54,8 @@ public class AgentLoop {
     private int consecutiveToolErrors = 0;
     public int threads = 4;
     private final ExecutorService pool;
+    /** ask_user 工具实例（构造注册；answerAskUser 经其送达回答） */
+    private final com.minion.core.tools.AskUserTool askUserTool;
     /** 进行中的工具 future（供 interrupt() 取消） */
     private final List<Future<ToolResult>> inFlight = new ArrayList<Future<ToolResult>>();
 
@@ -80,6 +82,8 @@ public class AgentLoop {
         // restoreSession/startNewSession 原地装载保证引用持续有效——与旧 Main 接线语义一致；
         // 每会话独立 registry 下模型可见 todo 工具，此前仅 TaskTool 自动注册导致 TodoWrite 静默丢失）
         registry.register(new com.minion.core.tools.TodoWriteTool(session.todos));
+        this.askUserTool = new com.minion.core.tools.AskUserTool(ui);
+        registry.register(askUserTool);
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             ui.onSubAgentStart(desc);
@@ -136,6 +140,11 @@ public class AgentLoop {
 
     public void setSubAgentRunner(java.util.function.Function<JsonObject, String> runner) {
         this.subAgentRunner = runner;
+    }
+
+    /** 回答 ask_user（SessionManager.sendAnswer 转发）；无挂起时忽略 */
+    public boolean answerAskUser(String answer) {
+        return askUserTool.complete(answer);
     }
 
     public void interrupt() {
