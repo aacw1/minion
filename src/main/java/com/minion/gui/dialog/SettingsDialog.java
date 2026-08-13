@@ -41,9 +41,10 @@ public class SettingsDialog {
         d.initOwner(owner);
         d.setTitle("设置");
         final BasicPane basic = new BasicPane(config, owner);
-        // 按钮栏从左到右「应用」「关闭」：ButtonBar 按平台 ButtonData 顺序重排视觉位置，
-        // OTHER(U) 在 Win/Linux/Mac 三套顺序串里均先于 CANCEL_CLOSE(C)，APPLY(A) 在 Win/Mac 反而排 C 之后（实测 8u181）
-        ButtonType applyType = new ButtonType("应用", ButtonBar.ButtonData.OTHER);
+        // 按钮栏「应用」「关闭」相邻：OTHER(U) 落左区（应用被单独放左边根因），
+        // APPLY(A) 在 Win 顺序串右区、CANCEL_CLOSE(C) 在中区末位，中右两区靠右并排 → [应用][关闭] 相邻。
+        // 注：DialogPane.getButtonBar()（8u60+）在本 jfxrt 不可用，仅靠 ButtonData 归区即可
+        ButtonType applyType = new ButtonType("应用", ButtonBar.ButtonData.APPLY);
         d.getDialogPane().getButtonTypes().addAll(applyType, ButtonType.CLOSE);
         // DialogPane 对任意按钮点击都触发关窗（impl_setResultAndClose）；应用=保存不关窗，须用捕获阶段 filter 先 consume
         ((Button) d.getDialogPane().lookupButton(applyType)).addEventFilter(ActionEvent.ACTION, e -> {
