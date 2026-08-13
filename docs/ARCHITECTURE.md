@@ -33,18 +33,18 @@ com.minion
 | MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ SplitPane 1:3（左侧会话/工作空间，右侧消息区+输入区）；关闭确认 confirmClose 由 ✕ 按钮与系统关闭共用；标题栏页签 selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy |
 | TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，⚙ 设置入口） |
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
-| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；悬停显示 ✎/⚙/✕ 操作按钮替代右键菜单，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间） |
+| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停 ✎/✕、工作空间项悬停 ⚙/✕（重命名并入修改弹窗）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
 | chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
 | input/InputView | 输入区（Ctrl+Enter 发送、Enter 换行）；绑定会话后发送走 SessionManager.send |
-| dialog/SettingsDialog、ConfirmDialog | 设置窗（模型/基础设置/关于三页签，页签横排 setSide(TOP)+tabMinWidth(90)，基础设置 GridPane 列约束防标签截断）；高危操作确认弹窗 |
+| dialog/SettingsDialog、ConfirmDialog | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；基础设置 HBox 行布局标签固定 160 宽 + ScrollPane 防裁剪）；高危操作确认弹窗 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → FutureTask 投递 FX 线程弹窗 → 阻塞等待（无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
 | session/SessionController | 会话侧事件源，输出到该会话 EventList；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、跳过 SYSTEM/TOOL/空消息），restoreSessions 恢复后调用 |
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
-| session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖）：onScroll(vvalue,vmax) 更新贴底状态，shouldFollow() 供内容增长时判断；MainWindow vvalue/vmax 双监听配合，vmax 变化后 Platform.runLater 设 setVvalue(vmax) 防 clamp 吞掉 |
+| session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖）：onScroll(vvalue,vmax) 更新贴底状态，shouldFollow() 供内容增长时判断；MainWindow vvalue/vmax 双监听配合，vmax 变化后 runLater 内重读 getVmax() 并二次确认贴底（捕获监听时旧值会卡在旧底部导致误判离开底部） |
 
 ### core/agent/
 
