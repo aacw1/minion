@@ -2,7 +2,10 @@ package com.minion.gui.session;
 
 import com.google.gson.JsonObject;
 import com.minion.core.agent.AgentUi;
+import com.minion.core.llm.Message;
 import com.minion.core.tools.ToolResult;
+
+import java.util.List;
 
 /** AgentUi → EventList 路由：会话级事件缓冲 */
 public class SessionController implements AgentUi {
@@ -10,6 +13,20 @@ public class SessionController implements AgentUi {
     private final EventList events = new EventList();
 
     public EventList eventList() { return events; }
+
+    /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT(content 非空)→CONTENT；
+     *  SYSTEM/TOOL/纯工具调用消息跳过——历史只重演对话内容，不重演工具过程 */
+    public void replayHistory(List<Message> messages) {
+        for (Message m : messages) {
+            if (m == null || m.role == null) continue;
+            if (m.role == Message.Role.USER) {
+                events.add(new EventList.Ev(EventList.Kind.USER_MESSAGE, m.content, null));
+            } else if (m.role == Message.Role.ASSISTANT
+                    && m.content != null && !m.content.trim().isEmpty()) {
+                events.add(new EventList.Ev(EventList.Kind.CONTENT, m.content, null));
+            }
+        }
+    }
 
     @Override public void onUserMessage(String text) {
         events.add(new EventList.Ev(EventList.Kind.USER_MESSAGE, text, null));

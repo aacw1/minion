@@ -158,6 +158,30 @@ public class SessionManagerTest {
         assertFalse(m.sessions().get(0).titlePending);
     }
 
+    /** 恢复会话：历史消息灌入 EventList（点击即可重放显示；TOOL 跳过） */
+    @Test
+    public void restore_replaysHistoryIntoEventList() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        Session s = Session.create(".", "deepseek");
+        s.title = "历史会话";
+        s.messages.add(Message.user("你好"));
+        s.messages.add(Message.assistant("你好，我是助手"));
+        s.messages.add(Message.toolResult("tc1", "ReadTool", "file content"));
+        Path sdir = WorkspaceManager.sessionDirFor(jar, "default");
+        Files.createDirectories(sdir);
+        new SessionStore(sdir).save(s);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
+                ModelManager.load(jar), new ArrayList<Skill>(), null);
+        assertEquals(1, m.sessions().size());
+        SessionHandle h = m.sessions().get(0);
+        List<EventList.Ev> evs = h.controller.eventList().snapshot();
+        assertEquals(2, evs.size());
+        assertEquals(EventList.Kind.USER_MESSAGE, evs.get(0).kind);
+        assertEquals(EventList.Kind.CONTENT, evs.get(1).kind);
+    }
+
     /** 删除会话：会话文件同步删除（防重启后 restore 复活） */
     @Test
     public void deleteSession_removesSessionFile() throws Exception {

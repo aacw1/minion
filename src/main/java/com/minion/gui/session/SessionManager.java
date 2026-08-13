@@ -159,6 +159,7 @@ public class SessionManager {
                         TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name))
                                 .build(allSkills, new ArrayList<Skill>())));
                 SessionController controller = new SessionController();
+                controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
                 AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
                         new SystemPromptBuilder(projectMdPath(ctx.name)),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
