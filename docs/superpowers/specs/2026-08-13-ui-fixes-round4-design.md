@@ -5,7 +5,7 @@
 
 ## 背景
 
-第三轮修复合入后，用户 GUI 验收报告 6 个问题：①设置窗"保存"按钮位置与文案；②会话列表横向滚动条；③浏览器路径需文件选择；④左右分隔白色粗线；⑤token 统计消失；⑥自动滚动失效。其中 ⑤⑥ 已定位根因（⑤ 移除 CLI 时统计输出一并删除；⑥ vmax 变化时贴底状态不同步的竞态），本文档给出设计与实施边界。
+第三轮修复合入后，用户 GUI 验收报告 6 个问题：①设置窗"保存"按钮位置与文案；②会话列表横向滚动条；③浏览器路径需文件选择；④左右分隔白色粗线；⑤token 统计消失；⑥自动滚动失效。其中 ⑤⑥ 已定位根因（⑤ 移除 CLI 时统计输出一并删除；⑥ 旧实现依赖的 vmax 监听器在 JavaFX 8 下永不触发——vmax 恒 1.0、vvalue 为归一化比例，内容增长后无机制拉回底部），本文档给出设计与实施边界。
 
 ## 需求列表
 
@@ -16,7 +16,7 @@
 | 3 | 浏览器路径增加文件选择方式 | browser.path 现为纯文本输入；无 FileChooser 浏览 |
 | 4 | 左右分隔白色粗线去掉，宽度固定（严格整体 1/4），不可拖拽调整 | SplitPane 默认 divider 样式（theme.css 无覆盖）渲染为亮线；divider 可拖拽 |
 | 5 | 每次回复后 token 统计信息加回 | `a5d57b8` 移除 CLI 时删掉 cli/StatsLine，GUI 无人调用 `ui.onStatsLine`，STATS 事件管道仍在但无来源 |
-| 6 | 滚轮在底部时正文不能随回复自动滚动 | vmax 增长时 `pinned` 只由 vvalue 监听器更新；流式增长中 vvalue 被设到旧 vmax，后续 vmax 增长后按旧值计算 → 误判"离开底部"→ 跟随永久失效（表现为"滚轮往上跳了一点"） |
+| 6 | 滚轮在底部时正文不能随回复自动滚动 | 旧实现依赖 vmax 监听器跟随内容增长，但 JavaFX 8 ScrollPane 的 vmax 恒为 1.0（vvalue 是 [0,1] 归一化比例，top = vvalue×(内容高−视口高)）——监听器永不触发；内容增长时 vvalue 从 1.0 衰减（"滚轮往上跳了一点"），无任何机制拉回底部 |
 
 ## 节 1 设置窗"应用"按钮（需求 1）
 
@@ -143,16 +143,18 @@ ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
 - GUI 端无需改动：SessionController.onStatsLine → STATS 事件 → [ChatView](src/main/java/com/minion/gui/chat/ChatView.java) 第 99-101 行已渲染为 msg-thinking 行；恢复历史会话 replayHistory 不含 STATS，天然不重放。
 - "⏱" 字形：旧 CLI 在 mintty 下渲染为 ? 的顾虑不适用于 JavaFX（系统字体渲染）；如需保险可换 "耗时" 文案，实施时以 GUI 实测为准。
 
-## 节 6 自动滚动根因修复 + 半屏容差（需求 6）
+## 节 6 自动滚动修复（归一化语义重做，2026-08-13 修订）
+
+> 初版（vmax 监听器方案）经 Task 8 审查探针证实基于错误前提：JavaFX 8 ScrollPane 的 vmax 恒为 1.0（皮肤从不修改），vvalue 是 [0,1] 归一化比例（top = vvalue×(内容高−视口高)），vmax 监听器是死路径，问题实际未修好。本节为修订后的最终设计（经用户确认）。
 
 ### 6.1 AutoScrollPolicy 修正
 
-[AutoScrollPolicy](src/main/java/com/minion/gui/session/AutoScrollPolicy.java)（纯逻辑）：
+[AutoScrollPolicy](src/main/java/com/minion/gui/session/AutoScrollPolicy.java)（纯逻辑，归一化语义）：
 
-- 容差 `EPSILON` 0.001 → **0.5**：距底半屏内视为贴底。固定容差不随内容变长（用户提议的 90% 方案容差 = 10% 内容高度，长对话阅读历史时会被拽回底部，弃用）。
-- 新增 `sync(double vvalue, double vmax)`：`pinned = vvalue >= vmax - EPSILON`。vvalue 监听器与 **vmax 监听器都调用**——修复 vmax 变化时 pinned 不重算的根因。
-- 新增 `forceFollow()`：`pinned = true`（用户发消息时调用）。
-- 内容未超一屏时 vmax=0，pinned 恒真，行为不变。
+- 贴底判定用**动态半屏容差 eps**（归一化）：`eps = 0.5 × 视口高 / 可滚动行程`（可滚动行程 = 内容高 − 视口高）。距底半屏内视为贴底——与内容长度无关，长对话阅读历史不会被拽回（用户提议的 90% 方案容差 = 10% 内容高度，弃用）。
+- `sync(double vvalue, double eps)`：`pinned = eps >= 1.0 || vvalue >= 1.0 - eps`。eps ≥ 1 即内容未超一屏（或恰好一屏），恒贴底。
+- `forceFollow()`：`pinned = true`（用户发消息时调用）。
+- 删除旧 `onVmaxChanged` 与固定 `EPSILON`（死路径/错误语义）。
 
 ### 6.2 MainWindow 接线
 
@@ -160,27 +162,41 @@ ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
 
 ```java
 chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
-        policy.sync(nv.doubleValue(), chatScroll.getVmax()));
-chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
-    policy.sync(chatScroll.getVvalue(), nv.doubleValue()); // 用新 vmax 重算贴底
-    if (policy.shouldFollow()) {
-        Platform.runLater(() -> { // 保留既有修复：执行时重读 vmax 二次确认
-            if (policy.shouldFollow()) chatScroll.setVvalue(chatScroll.getVmax());
-        });
-    }
+        policy.sync(nv.doubleValue(), eps())); // 用户滚动/内容增长致 vvalue 变化 → 重算贴底
+// vmax 恒 1.0 不可用；内容增长改监听内容节点高度（会话切换时内容节点被替换，须跟随 contentProperty 重挂）
+chatScroll.contentProperty().addListener((obs, ov, nv) -> {
+    if (ov != null) ov.layoutBoundsProperty().removeListener(contentGrew);
+    if (nv != null) nv.layoutBoundsProperty().addListener(contentGrew);
 });
+// contentGrew = (obs2, o2, n2) -> {
+//     if (policy.shouldFollow()) Platform.runLater(() -> {
+//         if (policy.shouldFollow()) chatScroll.setVvalue(1.0); // 布局完成后置底，二次确认
+//     });
+// };
 ```
 
-[ChatView](src/main/java/com/minion/gui/chat/ChatView.java) 新增可选回调 `scrollBottomRequest`（构造后注入，如 `Consumer<Object>` 或 Runnable）；`USER_MESSAGE` 分支末尾调用。MainWindow 注入：
+```java
+/** 动态半屏容差（归一化）：0.5 × 视口高 / 可滚动行程；未超一屏返回 1.0（恒贴底） */
+private double eps() {
+    double viewport = chatScroll.getViewportBounds().getHeight();
+    double content = chatScroll.getContent() != null
+            ? chatScroll.getContent().getLayoutBounds().getHeight() : 0;
+    double scrollable = content - viewport;
+    return scrollable <= 0 ? 1.0 : 0.5 * viewport / scrollable;
+}
+```
+
+[ChatView](src/main/java/com/minion/gui/chat/ChatView.java) 新增可选回调 `scrollBottomRequest`（构造后注入，Runnable）；`USER_MESSAGE` 分支末尾调用。MainWindow 注入：
 
 ```java
 chatView.setScrollBottomRequest(() -> {
     policy.forceFollow();
-    Platform.runLater(() -> chatScroll.setVvalue(chatScroll.getVmax())); // 布局完成后置底
+    Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
 });
 ```
 
-- 发送消息必然想看底部 → 强制贴底；此后流式增长的每次 vmax 变化经 sync 重算（半屏容差覆盖布局微调），跟随不再失效。
+- 发送消息必然想看底部 → 强制贴底；此后流式追加内容 → 内容高度变化 → 贴底时 runLater 置底，跟随不再失效。
+- 用户向上滚动超过半屏 → vvalue 监听器 sync 判定离开底部 → 内容增长不再拽回；拖回底半屏内 → 恢复跟随。
 - 切换会话 bind(true) 重放 USER_MESSAGE 也会触发贴底——切会话停在最新消息，符合预期。
 
 ## 测试计划
@@ -188,7 +204,7 @@ chatView.setScrollBottomRequest(() -> {
 自动化（junit4）：
 
 - 新增 `src/test/java/com/minion/core/agent/StatsLineTest.java`（移植旧 cli 测试：formatTokens 边界 999/1000/9000/100000/131072、format 前缀改为无 `*`）。
-- 新增 `src/test/java/com/minion/gui/session/AutoScrollPolicyTest.java`（贴底/半屏容差/离开底部暂停/forceFollow 恢复/vmax 增长时 sync 重算——覆盖本轮根因场景）。
+- 新增 `src/test/java/com/minion/gui/session/AutoScrollPolicyTest.java`（归一化语义：eps=0.5 与 eps=0.05 下的贴底阈值、离开底部暂停、forceFollow 恢复、eps≥1 恒贴底、shouldFollow 镜像 pinned）。
 - 现有 285 个测试继续通过（EventList/SessionController 未改动）。
 
 手工验证清单（GUI）：
