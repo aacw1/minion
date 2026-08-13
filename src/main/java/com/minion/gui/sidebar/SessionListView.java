@@ -14,6 +14,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
+import javafx.scene.Node;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -36,10 +37,22 @@ public class SessionListView extends ListView<SessionHandle> {
         this.onDeleted = onDeleted;
         setCellFactory(v -> new SessionCell());
         setOnMouseClicked(e -> {
+            // 悬停按钮（✎/✕）的点击会冒泡到此 handler：跳过切换，避免误激活会话（按钮事件已由按钮自身处理）
+            if (isHoverButton(e.getTarget())) return;
             SessionHandle h = getSelectionModel().getSelectedItem();
             if (h != null && e.getClickCount() == 1) manager.activateSession(h);
         });
         Platform.runLater(() -> refresh()); // 初始恢复列表（restoreSessions 无 Listener 通知）
+    }
+
+    /** 事件目标（或其父链）是否为悬停操作按钮（btn-cell）：按钮内部命中 LabeledText 等子节点，故沿父链逐层判断 */
+    private boolean isHoverButton(Object target) {
+        Node n = target instanceof Node ? (Node) target : null;
+        while (n != null) {
+            if (n.getStyleClass().contains("btn-cell")) return true;
+            n = n.getParent();
+        }
+        return false;
     }
 
     public void refresh() {
