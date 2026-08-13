@@ -57,6 +57,7 @@
 
 - 新建会话路径不变：发送后标题生成 → `notifyTitleChanged` → `updateTab` → `addTab`（已有逻辑）。
 - 工作空间切换路径已有 `rebuildTabs`（onWorkspaceChanged），不重复改。
+- **实际行为（用户确认接受）**：补齐页签后 TabPane 自动选中首个页签并触发选中激活（`suppressingTabSelect` 只挡显式 `select()`，JavaFX 的自动选中挡不住）——启动后右侧直接显示最近会话历史消息，直接输入会继续该会话；切换工作空间后同理自动激活新空间首个会话。原设想"右侧保持占位不自动激活"不成立。
 
 ## 节 2 消息文字颜色（需求 3）
 

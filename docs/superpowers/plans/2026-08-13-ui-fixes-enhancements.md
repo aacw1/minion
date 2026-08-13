@@ -551,7 +551,7 @@ git commit -m "feat: 工作空间排序 move/moveWorkspace（拖拽排序持久�
 
 **Interfaces:**
 - Consumes: `AutoScrollPolicy`（Task 4）、`SessionManager.activateSession/currentSession/sessions`。
-- Produces: 无新接口。行为：页签选中→激活会话；启动补齐历史页签（不自动激活）；流式贴底自动跟随。
+- Produces: 无新接口。行为：页签选中→激活会话；启动补齐历史页签并自动激活首个（JavaFX 自动选中行为，用户确认接受）；流式贴底自动跟随。
 
 - [ ] **Step 1: 页签选中激活 + 启动补齐**
 
@@ -643,7 +643,7 @@ Expected: BUILD SUCCESS。
 
 Run: `minion.bat`（或构建后运行 target/minion-0.1.0.jar）
 
-1. 启动后：标题栏出现历史会话页签（如有），右侧保持占位不自动激活。
+1. 启动后：标题栏出现历史会话页签（如有），TabPane 自动选中首个页签并激活——右侧直接显示最近会话历史消息（JavaFX 自动选中行为，用户确认接受）。
 2. 点击标题栏页签 → 右侧切换为该会话，历史消息完整显示（含 Markdown 渲染）。
 3. 点击左侧列表项 → 同样切换；再点页签 → 无闪烁（activateSession 幂等）。
 4. 新建会话发消息 → 页签自动出现并被选中。
