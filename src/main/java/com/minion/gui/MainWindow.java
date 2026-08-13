@@ -4,6 +4,7 @@ import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.input.InputView;
+import com.minion.gui.session.AutoScrollPolicy;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
@@ -49,6 +50,7 @@ public class MainWindow {
     private ScrollPane chatScroll;
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
+    private boolean suppressingTabSelect; // rebuildTabs 期间不触发页签选中激活
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -84,6 +86,18 @@ public class MainWindow {
         Label modelLabel = new Label("模型: " + manager.models().currentName());
         modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+        // 需求：标题栏页签点击激活对应会话（userData 存会话 id；删除竞态找不到则忽略）
+        tabs.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> {
+            if (nv == null) return;
+            Object id = nv.getUserData();
+            if (id == null) return;
+            for (SessionHandle h : manager.sessions()) {
+                if (h.id.equals(id)) {
+                    manager.activateSession(h);
+                    return;
+                }
+            }
+        });
         titleBar = new TitleBar(stage, modelLabel, tabs, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
 
@@ -183,6 +197,8 @@ public class MainWindow {
 
         ResizeHelper.attach(stage, frame); // 无边框窗口边缘/四角缩放
 
+        rebuildTabs(); // 启动补齐历史会话页签（需求 2：启动后历史会话即有页签）
+
         stage.show();
     }
 
@@ -225,14 +241,17 @@ public class MainWindow {
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
     }
 
-    /** 需求 10：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复 */
+    /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
+     *  内容增长后 runLater 延迟设置 vvalue，避免布局未完成时 setVvalue 被旧 vmax clamp 吞掉 */
     private void setupAutoScroll() {
-        // pinned：是否贴底——贴底时新内容到达自动跟随滚到底，离开底部即暂停
-        final boolean[] pinned = new boolean[] { true };
+        final AutoScrollPolicy policy = new AutoScrollPolicy();
         chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
-                pinned[0] = nv.doubleValue() >= chatScroll.getVmax() - 1.0);
+                policy.onScroll(nv.doubleValue(), chatScroll.getVmax()));
         chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
-            if (pinned[0]) chatScroll.setVvalue(nv.doubleValue());
+            if (policy.shouldFollow()) {
+                final double target = nv.doubleValue();
+                Platform.runLater(() -> chatScroll.setVvalue(target));
+            }
         });
     }
 
@@ -324,7 +343,7 @@ public class MainWindow {
             });
         });
         tabs.getTabs().add(t);
-        tabs.getSelectionModel().select(t);
+        if (!suppressingTabSelect) tabs.getSelectionModel().select(t);
     }
 
     /** 按会话 id 移除页签（删除联动；侧栏右键删除回调与页签关闭共用） */
@@ -354,8 +373,11 @@ public class MainWindow {
     private void rebuildTabs() {
         for (Tab t : tabs.getTabs()) StatusDot.stopPulseIn(t.getGraphic()); // 回收呼吸动画
         tabs.getTabs().clear();
+        suppressingTabSelect = true; // 启动/切空间补齐不触发激活；结束后恢复当前会话选中
         for (SessionHandle h : manager.sessions()) {
             if (h.title != null) addTab(h);
         }
+        suppressingTabSelect = false;
+        if (manager.currentSession() != null) selectTab(manager.currentSession());
     }
 }
