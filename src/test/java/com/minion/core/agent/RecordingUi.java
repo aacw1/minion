@@ -15,6 +15,9 @@ public class RecordingUi implements AgentUi {
     public final List<String> warnings = new ArrayList<String>();
     public final List<String> errors = new ArrayList<String>();
     public final List<Usage> usages = new ArrayList<Usage>();
+    public final List<String> asksStarted = new ArrayList<String>();
+    public final List<String> asksDone = new ArrayList<String>();
+    public final List<String> supplements = new ArrayList<String>();
 
     // 并行工具执行时 onToolCall 来自多个线程，需同步（ArrayList 非线程安全）
     @Override public synchronized void onThinking(String delta) { thinking.add(delta); }
@@ -23,4 +26,7 @@ public class RecordingUi implements AgentUi {
     @Override public synchronized void onToolResult(String name, ToolResult result) { toolResults.add(name); }
     @Override public synchronized void onWarning(String message) { warnings.add(message); }
     @Override public synchronized void onError(String message) { errors.add(message); }
+    @Override public synchronized void onAskUserStart(String question) { asksStarted.add(question); }
+    @Override public synchronized void onAskUserDone(String answer) { asksDone.add(answer); }
+    @Override public synchronized void onUserSupplement(String text) { supplements.add(text); }
 }
