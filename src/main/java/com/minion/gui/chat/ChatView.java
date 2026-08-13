@@ -132,6 +132,9 @@ public class ChatView extends VBox {
             case STATS:
                 getChildren().add(alert(e.text, "msg-thinking"));
                 break;
+            case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
+                getChildren().add(alert(e.text, "msg-thinking"));
+                break;
             case SUB_AGENT_START:
                 getChildren().add(alert("▶ 子任务: " + e.text, "msg-thinking"));
                 break;

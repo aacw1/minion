@@ -73,6 +73,10 @@ public class SessionController implements AgentUi {
     @Override public void onUserSupplement(String text) {
         events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, text, null));
     }
+    /** 系统行（斜杠命令结果等 GUI 本地事件；非 AgentUi 接口方法，仅命令分发路径使用） */
+    public void onSystem(String text) {
+        events.add(new EventList.Ev(EventList.Kind.SYSTEM, text, null));
+    }
     @Override public void onAskUserStart(String question) {
         if (askStateListener != null) askStateListener.accept(question);
     }

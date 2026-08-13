@@ -63,4 +63,20 @@ public class EventListTest {
         l.clear();
         assertEquals(0, l.size());
     }
+
+    /** SYSTEM（斜杠命令结果）与非激活缓冲机制兼容：不激活入缓冲，激活重放 */
+    @Test
+    public void system_buffersAndReplays() {
+        EventList l = newList();
+        l.setActive(false, null);
+        l.add(new Ev(EventList.Kind.SYSTEM, "已加载技能: x", null));
+        assertEquals(1, l.size());
+        final List<Ev> seen = new ArrayList<Ev>();
+        l.setActive(true, new EventList.Listener() {
+            @Override public void onEvent(Ev e) { seen.add(e); }
+        });
+        assertEquals(1, seen.size());
+        assertEquals(EventList.Kind.SYSTEM, seen.get(0).kind);
+        assertEquals("已加载技能: x", seen.get(0).text);
+    }
 }
