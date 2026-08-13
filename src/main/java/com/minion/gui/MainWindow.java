@@ -175,7 +175,7 @@ public class MainWindow {
                     chatView = ChatView.forSession(h);
                     chatView.setScrollBottomRequest(() -> {
                         policy.forceFollow();
-                        Platform.runLater(() -> chatScroll.setVvalue(chatScroll.getVmax()));
+                        Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
                     });
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
@@ -257,21 +257,31 @@ public class MainWindow {
     }
 
     /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
-     *  vmax 变化经 onVmaxChanged 重算贴底（增长前贴底则保持跟随，根因修复）；
-     *  内容增长后 runLater 延迟设置 vvalue，避免布局未完成时 setVvalue 被旧 vmax clamp 吞掉 */
+     *  vmax 恒 1.0 不可用（vvalue 为归一化比例），内容增长改监听内容节点高度变化；
+     *  会话切换时内容节点被替换，须随 contentProperty 重挂监听 */
     private void setupAutoScroll() {
-        chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
-                policy.sync(nv.doubleValue(), chatScroll.getVmax()));
-        chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
-            policy.onVmaxChanged(chatScroll.getVvalue(), ov.doubleValue(), nv.doubleValue());
+        javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
             if (policy.shouldFollow()) {
-                // 执行时重读当前 vmax 并二次确认贴底：捕获监听时旧值会在内容继续增长时
-                // 把 vvalue 卡在旧底部 < 新 vmax，被误判"离开底部"→ pinned 永不复原（失效根因）
-                Platform.runLater(() -> {
-                    if (policy.shouldFollow()) chatScroll.setVvalue(chatScroll.getVmax());
+                Platform.runLater(() -> { // 布局完成后置底；二次确认防监听时旧状态
+                    if (policy.shouldFollow()) chatScroll.setVvalue(1.0);
                 });
             }
+        };
+        chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
+                policy.sync(nv.doubleValue(), eps()));
+        chatScroll.contentProperty().addListener((obs, ov, nv) -> {
+            if (ov != null) ov.layoutBoundsProperty().removeListener(contentGrew);
+            if (nv != null) nv.layoutBoundsProperty().addListener(contentGrew);
         });
+    }
+
+    /** 动态半屏容差（归一化）：0.5×视口高/可滚动行程；未超一屏返回 1.0（恒贴底） */
+    private double eps() {
+        double viewport = chatScroll.getViewportBounds().getHeight();
+        double content = chatScroll.getContent() != null
+                ? chatScroll.getContent().getLayoutBounds().getHeight() : 0;
+        double scrollable = content - viewport;
+        return scrollable <= 0 ? 1.0 : 0.5 * viewport / scrollable;
     }
 
     private void onNewSession() {
