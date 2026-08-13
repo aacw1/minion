@@ -79,4 +79,25 @@ public class MessageTest {
         Message plain = new Message();
         assertEquals(0L, plain.ts);
     }
+
+    /** 运行中补充消息：supplement=true；toApiJson 不输出该字段（API 零污染）；Gson 往返保留 */
+    @Test
+    public void userSupplement_flagsAndRoundTrips() {
+        Message m = Message.userSupplement("补充内容");
+        assertTrue(m.supplement);
+        assertEquals(Message.Role.USER, m.role);
+        JsonObject api = m.toApiJson();
+        assertFalse("supplement 不得进入 API 请求体", api.has("supplement"));
+        assertEquals("补充内容", api.get("content").getAsString());
+
+        String json = gson.toJson(m);
+        Message back = gson.fromJson(json, Message.class);
+        assertTrue(back.supplement);
+    }
+
+    /** 普通 user 消息 supplement=false */
+    @Test
+    public void userMessage_supplementFalseByDefault() {
+        assertFalse(Message.user("普通").supplement);
+    }
 }

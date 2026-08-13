@@ -17,6 +17,9 @@ public class Message {
     public String toolCallId;         // 仅 tool
     public String name;               // 仅 tool（工具名）
     public boolean summary;           // true = 压缩摘要消息，不再参与压缩
+    /** true = 运行中用户补充消息（仅 user 角色使用）。标识只在本地历史与 UI 层，
+     *  toApiJson 不输出——API content 原样发送，模型输入零污染 */
+    public boolean supplement;
     /** 消息创建时间戳（毫秒；0 = 旧数据未打点） */
     public long ts;
 
@@ -33,6 +36,13 @@ public class Message {
         m.role = Role.USER;
         m.content = content;
         m.ts = System.currentTimeMillis();
+        return m;
+    }
+
+    /** 运行中用户补充：USER 角色 + supplement=true（检查点注入/下次发送合并时使用） */
+    public static Message userSupplement(String content) {
+        Message m = user(content);
+        m.supplement = true;
         return m;
     }
 
