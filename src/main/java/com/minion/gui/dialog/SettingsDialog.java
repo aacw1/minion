@@ -266,6 +266,26 @@ public class SettingsDialog {
             Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
             browserNote.getStyleClass().add("msg-thinking");
             browserPath = new TextField(config.browserPath());
+            HBox browserPathBox = new HBox(6);
+            HBox.setHgrow(browserPath, Priority.ALWAYS);
+            Button browseExe = new Button("浏览…");
+            browseExe.getStyleClass().add("btn-ghost");
+            browseExe.setOnAction(e -> {
+                javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+                fc.setTitle("选择浏览器程序");
+                fc.getExtensionFilters().addAll(
+                        new javafx.stage.FileChooser.ExtensionFilter("可执行文件", "*.exe"),
+                        new javafx.stage.FileChooser.ExtensionFilter("所有文件", "*.*"));
+                // 当前值若是存在的文件，初始定位到其父目录
+                String cur = browserPath.getText().trim();
+                java.io.File f = new java.io.File(cur);
+                if (f.isFile() && f.getParentFile() != null && f.getParentFile().isDirectory()) {
+                    fc.setInitialDirectory(f.getParentFile());
+                }
+                java.io.File file = fc.showOpenDialog(owner);
+                if (file != null) browserPath.setText(file.getAbsolutePath());
+            });
+            browserPathBox.getChildren().addAll(browserPath, browseExe);
             browserPort = new TextField(String.valueOf(config.browserPort()));
             browserUserData = new TextField(config.browserUserDataDir());
             browserHeadless = new CheckBox("无头模式");
@@ -280,7 +300,7 @@ public class SettingsDialog {
                     row("读逃逸:", allowOutside),
                     row("确认开关:", skipConfirm),
                     browserNote,
-                    row("browser.path:", browserPath),
+                    row("browser.path:", browserPathBox),
                     row("browser.port:", browserPort),
                     row("browser.userDataDir:", browserUserData),
                     row("browser.headless:", browserHeadless),
