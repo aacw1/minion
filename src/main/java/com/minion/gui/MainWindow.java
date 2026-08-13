@@ -153,7 +153,10 @@ public class MainWindow {
         // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）
         manager.addListener(new SessionManager.Listener() {
             @Override public void onSessionTitleChanged(SessionHandle h) {
-                Platform.runLater(() -> updateTab(h));
+                Platform.runLater(() -> {
+                    updateTab(h);
+                    sessionList.refresh(); // 重命名后侧栏列表同步新标题（refresh 仅重建 cell，不触发回调，无通知循环）
+                });
             }
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
                 Platform.runLater(() -> updateTab(h));
@@ -359,7 +362,7 @@ public class MainWindow {
         if (!suppressingTabSelect) tabs.getSelectionModel().select(t);
     }
 
-    /** 按会话 id 移除页签（删除联动；侧栏右键删除回调与页签关闭共用） */
+    /** 按会话 id 移除页签（删除联动；侧栏删除按钮回调与页签关闭共用） */
     private void removeTabById(String id) {
         for (Tab t : tabs.getTabs()) {
             if (id.equals(t.getUserData())) {

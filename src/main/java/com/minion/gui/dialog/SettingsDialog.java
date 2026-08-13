@@ -27,7 +27,7 @@ import javafx.stage.Window;
 
 import java.util.Optional;
 
-/** 设置窗（右上角 ⚙）：左侧页签 模型 / 基础设置 / 关于；模型操作后触发 applyModelChanged 实时生效 */
+/** 设置窗（右上角 ⚙）：顶部页签 模型 / 基础设置 / 关于；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
 
     public static void show(Window owner, final ModelManager models,
