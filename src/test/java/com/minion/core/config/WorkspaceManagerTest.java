@@ -167,4 +167,32 @@ public class WorkspaceManagerTest {
         assertEquals(json, new String(Files.readAllBytes(dir.resolve("workspace.json")),
                 StandardCharsets.UTF_8));
     }
+
+    /** 移动顺序：列表重排 + 落盘持久化 */
+    @Test
+    public void move_reordersAndPersists() throws IOException {
+        Path dir = jarDir();
+        WorkspaceManager m = WorkspaceManager.load(dir);
+        m.add("projA", "d:/a", "");
+        m.add("projB", "d:/b", "");
+        assertTrue(m.move("default", 2)); // 移到末尾
+        assertEquals("projA", m.list().get(0).workSpaceName);
+        assertEquals("projB", m.list().get(1).workSpaceName);
+        assertEquals("default", m.list().get(2).workSpaceName);
+        WorkspaceManager m2 = WorkspaceManager.load(dir);
+        assertEquals("projA", m2.list().get(0).workSpaceName);
+        assertEquals("default", m2.list().get(2).workSpaceName);
+    }
+
+    /** 越界/不存在返回 false；位置不变返回 true 且列表不变 */
+    @Test
+    public void move_rejectsInvalidIndexAndMissingName() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        m.add("projA", "d:/a", "");
+        assertFalse(m.move("nope", 0));     // 不存在
+        assertFalse(m.move("projA", -1));   // 越界
+        assertFalse(m.move("projA", 3));    // 越界
+        assertTrue(m.move("projA", 1));     // 同位置
+        assertEquals(2, m.list().size());
+    }
 }

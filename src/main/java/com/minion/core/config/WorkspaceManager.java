@@ -137,6 +137,19 @@ public class WorkspaceManager {
         save();
     }
 
+    /** 移动工作空间顺序（UI 拖拽排序）；名字不存在或索引越界返回 false；位置不变视为成功不落盘 */
+    public boolean move(String name, int newIndex) {
+        WorkspaceConfig w = get(name);
+        if (w == null) return false;
+        if (newIndex < 0 || newIndex >= workspaces.size()) return false;
+        int from = workspaces.indexOf(w);
+        if (from == newIndex) return true;
+        workspaces.remove(from);
+        workspaces.add(newIndex, w);
+        save();
+        return true;
+    }
+
     private List<String> names() {
         List<String> n = new ArrayList<String>();
         for (WorkspaceConfig w : workspaces) n.add(w.workSpaceName);

@@ -452,6 +452,25 @@ public class SessionManagerTest {
         assertEquals(0, fresh.closeCount); // 当前客户端仍在使用，不得关闭
     }
 
+    /** 工作空间排序转发：顺序变化可查；不发通知（拖拽排序不清空右侧） */
+    @Test
+    public void moveWorkspace_reordersWithoutNotify() throws Exception {
+        SessionManager m = newManager();
+        m.addWorkspace("projA", "d:/a", "");
+        final int[] notified = new int[] { 0 };
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { notified[0]++; }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+        });
+        assertTrue(m.moveWorkspace("projA", 0));
+        assertEquals("projA", m.workspaces().list().get(0).workSpaceName);
+        assertEquals(0, notified[0]); // 不触发 onWorkspaceChanged
+        assertFalse(m.moveWorkspace("nope", 0));
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();

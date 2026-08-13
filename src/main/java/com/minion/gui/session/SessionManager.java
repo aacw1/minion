@@ -351,6 +351,14 @@ public class SessionManager {
     }
 
     /**
+     * 工作空间拖拽排序：转发 WorkspaceManager（不发通知——notifyWorkspaceChanged 会触发
+     * MainWindow 的 clearChatPane 清空右侧聊天区，拖拽排序不应清内容；UI 侧 drop 后自行 refresh）。
+     */
+    public boolean moveWorkspace(String name, int newIndex) {
+        return workspaces.move(name, newIndex);
+    }
+
+    /**
      * 删除工作空间：先终止该空间所有会话（置 deleted + 中断 + 关闭，等退出完成）
      * → 再删配置/目录（remove 内部递归删 session/<name>/）→ 当前名同步。
      * 顺序不可颠倒：AgentLoop 所有退出路径无条件 persistSession（createDirectories 复活目录），
