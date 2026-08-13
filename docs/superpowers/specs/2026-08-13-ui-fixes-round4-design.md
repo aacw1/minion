@@ -26,14 +26,17 @@
 2. `show()` 中在按钮栏 CLOSE 左侧插入自定义按钮：
 
 ```java
-ButtonType apply = new ButtonType("应用", ButtonBar.ButtonData.APPLY);
+ButtonType apply = new ButtonType("应用", ButtonBar.ButtonData.OTHER);
 d.getDialogPane().getButtonTypes().addAll(apply, ButtonType.CLOSE);
-((Button) d.getDialogPane().lookupButton(apply)).setOnAction(e -> basic.apply());
+((Button) d.getDialogPane().lookupButton(apply)).addEventFilter(ActionEvent.ACTION, e -> {
+    basic.apply();
+    e.consume();
+});
 ```
 
 - 点击"应用" = 执行原保存逻辑（全部配置项写入），**窗口不关闭**；"关闭"直接关窗（未保存的修改丢弃，与原行为一致）。
 - `browser.port` / `browser.timeoutMs` 非法时弹错且该项不写（`setInt` 既有行为不变）。
-- ButtonData.APPLY 排在 CANCEL_CLOSE（关闭）之前，按钮栏从左到右为「应用」「关闭」。
+- **实施修正（2026-08-13，经用户确认）**：ButtonBar 按平台 ButtonData 顺序串重排视觉位置，`APPLY`(A) 在 Win/Mac 顺序串里排在 `CANCEL_CLOSE`(C) 之后，无法保证「应用」在「关闭」左侧；且 DialogPane 对任意按钮点击都触发关窗，`setOnAction` 无法阻止。故改用 `ButtonData.OTHER`(U，三套平台顺序串均先于 C) + `addEventFilter(ActionEvent.ACTION)` 捕获阶段先 `apply()` 再 `consume()`（JDK 8u181/Windows 探针实证：[应用][关闭]、应用保存不关窗、关闭仍关窗）。
 
 ## 节 2 会话列表横向滚动条（需求 2）
 
