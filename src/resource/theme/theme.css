@@ -133,7 +133,7 @@
 /* 侧栏分区标题 */
 .section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 12px; -fx-font-weight: bold; }
 
-/* 侧栏行内悬停小按钮（重命名/修改/删除） */
+/* 侧栏行内悬停小按钮（会话 ✎ 重命名/✕ 删除；工作空间 ⚙ 修改/✕ 删除） */
 .btn-cell {
     -fx-background-color: transparent;
     -fx-text-fill: #a8b0bb;

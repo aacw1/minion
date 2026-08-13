@@ -24,7 +24,7 @@ import javafx.stage.DirectoryChooser;
 
 import java.util.Optional;
 
-/** 左侧工作空间列表：单击切换；悬停显示操作小按钮（重命名/修改/删除）；拖拽排序；顶部"新建"按钮由 MainWindow 放置 */
+/** 左侧工作空间列表：单击切换；悬停显示操作小按钮（修改/删除，重命名并入修改弹窗）；拖拽排序；顶部"新建"按钮由 MainWindow 放置 */
 public class WorkspaceListView extends ListView<String> {
 
     private final SessionManager manager;
@@ -35,7 +35,7 @@ public class WorkspaceListView extends ListView<String> {
         this.workspaces = manager.workspaces();
         setCellFactory(v -> new WsCell());
         setOnMouseClicked(e -> {
-            // 悬停按钮（✎/⚙/✕）的点击会冒泡到此 handler：跳过切换，避免误清空聊天区（按钮事件已由按钮自身处理）
+            // 悬停按钮（⚙/✕）的点击会冒泡到此 handler：跳过切换，避免误清空聊天区（按钮事件已由按钮自身处理）
             if (isHoverButton(e.getTarget())) return;
             String name = getSelectionModel().getSelectedItem();
             if (name != null && e.getClickCount() == 1) manager.switchWorkspace(name);
