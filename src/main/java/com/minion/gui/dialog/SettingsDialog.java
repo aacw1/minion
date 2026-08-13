@@ -6,6 +6,7 @@ import com.minion.core.config.ModelManager;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
@@ -16,18 +17,18 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
 import java.util.Optional;
 
-/** 设置窗（右上角 ⚙）：顶部页签 模型 / 基础设置 / 关于；模型操作后触发 applyModelChanged 实时生效 */
+/** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
 
     public static void show(Window owner, final ModelManager models,
@@ -38,20 +39,32 @@ public class SettingsDialog {
         d.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         Theme.style(d);
 
-        TabPane tp = new TabPane();
-        tp.setSide(javafx.geometry.Side.TOP); // 页签顶部横排（原 LEFT 竖排文字）
-        tp.setTabMinWidth(90);                 // 页签栏加宽
-        tp.getTabs().add(modelTab(models, manager));
-        tp.getTabs().add(basicTab(config));
-        tp.getTabs().add(aboutTab());
-        tp.setPrefSize(560, 480);
-        d.getDialogPane().setContent(tp);
+        // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
+        final ListView<String> nav = new ListView<String>();
+        nav.getItems().addAll("基础设置", "模型", "关于");
+        nav.setPrefWidth(120);
+        final Node basic = basicPane(config);
+        final Node model = modelPane(models, manager);
+        final Node about = aboutPane();
+        final StackPane content = new StackPane();
+        nav.getSelectionModel().selectedItemProperty().addListener((obs, ov, item) -> {
+            if (item == null) return;
+            content.getChildren().setAll("基础设置".equals(item) ? basic
+                    : "模型".equals(item) ? model : about);
+        });
+        nav.getSelectionModel().select(0); // 默认选中基础设置（选中监听触发内容显示）
+
+        HBox box = new HBox(0);
+        box.getChildren().addAll(nav, content);
+        HBox.setHgrow(content, Priority.ALWAYS);
+        box.setPrefSize(620, 500);
+        d.getDialogPane().setContent(box);
         d.showAndWait();
     }
 
     // ===== 模型页（迁移自 ModelDialog + propagate） =====
 
-    private static Tab modelTab(final ModelManager models, final SessionManager manager) {
+    private static VBox modelPane(final ModelManager models, final SessionManager manager) {
         final ListView<String> list = new ListView<String>();
         list.setCellFactory(lv -> new ListCell<String>() {
             @Override protected void updateItem(String item, boolean empty) {
@@ -119,9 +132,7 @@ public class SettingsDialog {
         VBox box = new VBox(10);
         box.setPadding(new Insets(10));
         box.getChildren().addAll(list, actions);
-        Tab tab = new Tab("模型", box);
-        tab.setClosable(false);
-        return tab;
+        return box;
     }
 
     private static void refresh(ListView<String> list, ModelManager models) {
@@ -195,7 +206,7 @@ public class SettingsDialog {
 
     // ===== 基础设置页 =====
 
-    private static Tab basicTab(final Config config) {
+    private static VBox basicPane(final Config config) {
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(10);
@@ -273,14 +284,12 @@ public class SettingsDialog {
         box.getChildren().addAll(grid, bottom);
         box.setPadding(new Insets(4));
 
-        Tab tab = new Tab("基础设置", box);
-        tab.setClosable(false);
-        return tab;
+        return box;
     }
 
     // ===== 关于页 =====
 
-    private static Tab aboutTab() {
+    private static VBox aboutPane() {
         VBox box = new VBox(10);
         box.setPadding(new Insets(16));
         box.getChildren().addAll(
@@ -289,9 +298,7 @@ public class SettingsDialog {
                 new Label("作者：尹承"),
                 new Label("联系方式：258915527@qq.com"),
                 new Label("开发语言：Java 8 + JavaFX"));
-        Tab tab = new Tab("关于", box);
-        tab.setClosable(false);
-        return tab;
+        return box;
     }
 
     private static int parseInt(String s, int def) {
