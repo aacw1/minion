@@ -3,6 +3,7 @@ package com.minion.core.agent;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.context.ContextManager;
+import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
@@ -234,6 +235,7 @@ public class AgentLoop {
 
     public void runUserTurn(String input) {
         interrupted = false;
+        long start = System.currentTimeMillis(); // 统计行：轮次耗时
         ui.onUserMessage(input);
         session.messages.add(Message.user(input));
         int rounds = 0;
@@ -385,6 +387,13 @@ public class AgentLoop {
         }
         // 所有退出路径的兜底落盘：正常结束 / 轮数上限 / 错误 / 中断 / 异常
         persistSession();
+        // 每轮结束统计行（置于 scrubHalfTurn/persistSession 之后：中断路径的 ctx 估算是清洗半轮后的准确值）
+        long elapsed = System.currentTimeMillis() - start;
+        int currentCtx = contextManager != null
+                ? contextManager.estimate(session.messages)
+                : TokenCounter.estimateMessages(session.messages);
+        int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
+        ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
     }
 
     /** 中断时把已收到的流式内容补进历史；不含 toolCalls（切断的 tool_calls 流不可信） */
