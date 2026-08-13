@@ -309,7 +309,7 @@ public class SettingsDialog {
         VBox box = new VBox(10);
         box.setPadding(new Insets(16));
         box.getChildren().addAll(
-                new Label("minion——类 Claude Code 的代码开发助手"),
+                new Label("兼容win7的代码开发助手"),
                 new Separator(),
                 new Label("作者：尹承"),
                 new Label("联系方式：258915527@qq.com"),
