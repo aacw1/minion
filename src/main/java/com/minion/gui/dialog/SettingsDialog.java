@@ -5,10 +5,12 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -38,7 +40,16 @@ public class SettingsDialog {
         Dialog<Void> d = new Dialog<Void>();
         d.initOwner(owner);
         d.setTitle("设置");
-        d.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        final BasicPane basic = new BasicPane(config, owner);
+        // 按钮栏从左到右「应用」「关闭」：ButtonBar 按平台 ButtonData 顺序重排视觉位置，
+        // OTHER(U) 在 Win/Linux/Mac 三套顺序串里均先于 CANCEL_CLOSE(C)，APPLY(A) 在 Win/Mac 反而排 C 之后（实测 8u181）
+        ButtonType applyType = new ButtonType("应用", ButtonBar.ButtonData.OTHER);
+        d.getDialogPane().getButtonTypes().addAll(applyType, ButtonType.CLOSE);
+        // DialogPane 对任意按钮点击都触发关窗（impl_setResultAndClose）；应用=保存不关窗，须用捕获阶段 filter 先 consume
+        ((Button) d.getDialogPane().lookupButton(applyType)).addEventFilter(ActionEvent.ACTION, e -> {
+            basic.apply();
+            e.consume();
+        });
         Theme.style(d);
 
         // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
@@ -46,13 +57,12 @@ public class SettingsDialog {
         nav.getItems().addAll("基础设置", "模型", "关于");
         nav.setPrefWidth(120);
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
-        final Node basic = basicPane(config, owner);
         final Node model = modelPane(models, manager);
         final Node about = aboutPane();
         final StackPane content = new StackPane();
         nav.getSelectionModel().selectedItemProperty().addListener((obs, ov, item) -> {
             if (item == null) return;
-            content.getChildren().setAll("基础设置".equals(item) ? basic
+            content.getChildren().setAll("基础设置".equals(item) ? basic.root
                     : "模型".equals(item) ? model : about);
         });
         nav.getSelectionModel().select(0); // 默认选中基础设置（选中监听触发内容显示）
@@ -209,59 +219,102 @@ public class SettingsDialog {
 
     // ===== 基础设置页 =====
 
-    private static Node basicPane(final Config config, final Window owner) {
-        HBox skillsBox = new HBox(6);
-        TextField skillsDir = new TextField(config.skillsDir());
-        HBox.setHgrow(skillsDir, Priority.ALWAYS);
-        Button browse = new Button("浏览…");
-        browse.getStyleClass().add("btn-ghost");
-        browse.setOnAction(e -> {
-            DirectoryChooser dc = new DirectoryChooser();
-            String cur = skillsDir.getText().trim();
-            if (!cur.isEmpty()) {
+    /** 基础设置页：控件 + 保存逻辑（按钮栏「应用」接线用） */
+    private static class BasicPane {
+        final Node root;
+        private final Config config;
+        private final TextField skillsDir;
+        private final TextArea toolWhitelist;
+        private final TextArea cmdWhitelist;
+        private final CheckBox allowOutside;
+        private final CheckBox skipConfirm;
+        private final TextField browserPath;
+        private final TextField browserPort;
+        private final TextField browserUserData;
+        private final CheckBox browserHeadless;
+        private final TextField browserTimeout;
+
+        BasicPane(final Config config, final Window owner) {
+            this.config = config;
+            HBox skillsBox = new HBox(6);
+            skillsDir = new TextField(config.skillsDir());
+            HBox.setHgrow(skillsDir, Priority.ALWAYS);
+            Button browse = new Button("浏览…");
+            browse.getStyleClass().add("btn-ghost");
+            browse.setOnAction(e -> {
+                DirectoryChooser dc = new DirectoryChooser();
+                String cur = skillsDir.getText().trim();
+                if (!cur.isEmpty()) {
+                    java.io.File f = new java.io.File(cur);
+                    if (f.isDirectory()) dc.setInitialDirectory(f);
+                }
+                java.io.File dir = dc.showDialog(owner);
+                if (dir != null) skillsDir.setText(dir.getAbsolutePath());
+            });
+            skillsBox.getChildren().addAll(skillsDir, browse);
+            toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
+            toolWhitelist.setPrefRowCount(2);
+            toolWhitelist.setPrefColumnCount(20); // 默认 40 列偏好宽 ≈624px 把基础页撑到 794，触发 HBox 压缩导航列；20 列后偏好宽 ~500 与内容区匹配
+            cmdWhitelist = new TextArea(config.get("confirm.whitelist.commands", ""));
+            cmdWhitelist.setPrefRowCount(2);
+            cmdWhitelist.setPrefColumnCount(20);
+            allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
+            allowOutside.setSelected(config.readAllowOutside());
+            skipConfirm = new CheckBox("跳过高危操作确认");
+            skipConfirm.setSelected(config.confirmSkip());
+            Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
+            browserNote.getStyleClass().add("msg-thinking");
+            browserPath = new TextField(config.browserPath());
+            HBox browserPathBox = new HBox(6);
+            HBox.setHgrow(browserPath, Priority.ALWAYS);
+            Button browseExe = new Button("浏览…");
+            browseExe.getStyleClass().add("btn-ghost");
+            browseExe.setOnAction(e -> {
+                javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+                fc.setTitle("选择浏览器程序");
+                fc.getExtensionFilters().addAll(
+                        new javafx.stage.FileChooser.ExtensionFilter("可执行文件", "*.exe"),
+                        new javafx.stage.FileChooser.ExtensionFilter("所有文件", "*.*"));
+                // 当前值若是存在的文件，初始定位到其父目录
+                String cur = browserPath.getText().trim();
                 java.io.File f = new java.io.File(cur);
-                if (f.isDirectory()) dc.setInitialDirectory(f);
-            }
-            java.io.File dir = dc.showDialog(owner);
-            if (dir != null) skillsDir.setText(dir.getAbsolutePath());
-        });
-        skillsBox.getChildren().addAll(skillsDir, browse);
-        TextArea toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
-        toolWhitelist.setPrefRowCount(2);
-        toolWhitelist.setPrefColumnCount(20); // 默认 40 列偏好宽 ≈624px 把基础页撑到 794，触发 HBox 压缩导航列；20 列后偏好宽 ~500 与内容区匹配
-        TextArea cmdWhitelist = new TextArea(config.get("confirm.whitelist.commands", ""));
-        cmdWhitelist.setPrefRowCount(2);
-        cmdWhitelist.setPrefColumnCount(20);
-        CheckBox allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
-        allowOutside.setSelected(config.readAllowOutside());
-        CheckBox skipConfirm = new CheckBox("跳过高危操作确认");
-        skipConfirm.setSelected(config.confirmSkip());
-        Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
-        browserNote.getStyleClass().add("msg-thinking");
-        TextField browserPath = new TextField(config.browserPath());
-        TextField browserPort = new TextField(String.valueOf(config.browserPort()));
-        TextField browserUserData = new TextField(config.browserUserDataDir());
-        CheckBox browserHeadless = new CheckBox("无头模式");
-        browserHeadless.setSelected(config.browserHeadless());
-        TextField browserTimeout = new TextField(String.valueOf(config.browserTimeoutMs()));
+                if (f.isFile() && f.getParentFile() != null && f.getParentFile().isDirectory()) {
+                    fc.setInitialDirectory(f.getParentFile());
+                }
+                java.io.File file = fc.showOpenDialog(owner);
+                if (file != null) browserPath.setText(file.getAbsolutePath());
+            });
+            browserPathBox.getChildren().addAll(browserPath, browseExe);
+            browserPort = new TextField(String.valueOf(config.browserPort()));
+            browserUserData = new TextField(config.browserUserDataDir());
+            browserHeadless = new CheckBox("无头模式");
+            browserHeadless.setSelected(config.browserHeadless());
+            browserTimeout = new TextField(String.valueOf(config.browserTimeoutMs()));
 
-        VBox rows = new VBox(10);
-        rows.getChildren().addAll(
-                row("技能目录 skills.dir:", skillsBox),
-                row("确认白名单\n(工具, 逗号分隔):", toolWhitelist),
-                row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
-                row("读逃逸:", allowOutside),
-                row("确认开关:", skipConfirm),
-                browserNote,
-                row("browser.path:", browserPath),
-                row("browser.port:", browserPort),
-                row("browser.userDataDir:", browserUserData),
-                row("browser.headless:", browserHeadless),
-                row("browser.timeoutMs:", browserTimeout));
+            VBox rows = new VBox(10);
+            rows.getChildren().addAll(
+                    row("技能目录 skills.dir:", skillsBox),
+                    row("确认白名单\n(工具, 逗号分隔):", toolWhitelist),
+                    row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
+                    row("读逃逸:", allowOutside),
+                    row("确认开关:", skipConfirm),
+                    browserNote,
+                    row("browser.path:", browserPathBox),
+                    row("browser.port:", browserPort),
+                    row("browser.userDataDir:", browserUserData),
+                    row("browser.headless:", browserHeadless),
+                    row("browser.timeoutMs:", browserTimeout));
 
-        Button save = new Button("保存");
-        save.getStyleClass().add("btn-primary");
-        save.setOnAction(e -> {
+            VBox contentBox = new VBox(10);
+            contentBox.getChildren().addAll(rows);
+            contentBox.setPadding(new Insets(12));
+            // 去 ScrollPane：JavaFX 8 裁剪内文字回退灰阶 AA 是整页发虚根因；
+            // 内容高约 453px，620x500 固定窗放得下，无需滚动
+            this.root = contentBox;
+        }
+
+        /** 「应用」按钮：全部配置项写入，窗口不关闭；port/timeoutMs 非法弹错且该项不写 */
+        void apply() {
             config.set("skills.dir", skillsDir.getText().trim());
             // 白名单是逗号分隔的单行配置：多行粘贴的换行替换为空格，否则落盘后重载会静默丢内容
             config.set("confirm.whitelist.tools",
@@ -279,14 +332,7 @@ public class SettingsDialog {
             if (!setInt("browser.timeoutMs", browserTimeout.getText(), config)) {
                 error("保存失败", "browser.timeoutMs 必须是整数，未保存");
             }
-        });
-
-        VBox contentBox = new VBox(10);
-        contentBox.getChildren().addAll(rows, save);
-        contentBox.setPadding(new Insets(12));
-        // 去 ScrollPane：JavaFX 8 裁剪内文字回退灰阶 AA 是整页发虚根因；
-        // 内容高约 453px，620x500 固定窗放得下，无需滚动
-        return contentBox;
+        }
     }
 
     /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */

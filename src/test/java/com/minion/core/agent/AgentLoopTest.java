@@ -760,4 +760,40 @@ public class AgentLoopTest {
         }
         @Override public ToolResult execute(JsonObject args) { return ToolResult.error("模拟失败"); }
     }
+
+    /** 需求 5：每轮结束发射统计行（正常路径） */
+    @Test
+    public void statsLine_emittedAfterTurn() {
+        llm.addTurn("好的");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("你好");
+        assertEquals(1, ui.statsLines.size());
+        String line = ui.statsLines.get(0);
+        assertTrue(line.startsWith("⏱ "));
+        assertTrue(line.contains("in 10"));   // FakeLlmClient: input 10
+        assertTrue(line.contains("out 5"));   // FakeLlmClient: output 5
+        assertTrue(line.contains("thinking 0"));
+        assertTrue(line.contains("ctx "));
+    }
+
+    /** 需求 5：中断路径也发射统计行 */
+    @Test
+    public void statsLine_emittedOnInterrupt() throws Exception {
+        BlockingLlmClient blocking = new BlockingLlmClient();
+        blocking.addTurn("长回复");
+        AgentLoop loop = new AgentLoop(blocking, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        Thread t = new Thread(() -> loop.runUserTurn("长任务"));
+        t.start();
+        assertTrue(blocking.entered.await(5, TimeUnit.SECONDS));
+        loop.interrupt();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        assertEquals(1, ui.statsLines.size());
+        assertTrue(ui.statsLines.get(0).startsWith("⏱ "));
+    }
 }

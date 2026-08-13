@@ -23,12 +23,12 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -42,7 +42,7 @@ import javafx.stage.StageStyle;
 
 import java.util.Optional;
 
-/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（页签栏 + 消息区 + 输入区），SplitPane 1:3 */
+/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（页签栏 + 消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
 public class MainWindow {
 
     private final Stage stage;
@@ -51,6 +51,7 @@ public class MainWindow {
     private SessionListView sessionList;
     private ChatView chatView;
     private ScrollPane chatScroll;
+    private final AutoScrollPolicy policy = new AutoScrollPolicy();
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
     private HBox tabsBar; // 右侧顶部页签栏（无会话时整行隐藏）
@@ -105,7 +106,7 @@ public class MainWindow {
         titleBar = new TitleBar(stage, modelLabel, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
 
-        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ SplitPane，默认 1:3
+        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ GridPane，百分比列固定 25%/75%
         VBox sidebar = new VBox(8);
         sidebar.getStyleClass().add("panel");
         sidebar.setMinWidth(200);
@@ -161,10 +162,16 @@ public class MainWindow {
         StackPane rightStack = new StackPane(right);
         ConfirmSheet.setHost(rightStack);
 
-        SplitPane split = new SplitPane();
-        split.setDividerPositions(0.25); // 需求 5：左右比例 1:3
-        split.getItems().addAll(sidebar, rightStack);
-        root.setCenter(split);
+        // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
+        GridPane center = new GridPane();
+        ColumnConstraints leftCol = new ColumnConstraints();
+        leftCol.setPercentWidth(25);
+        ColumnConstraints rightCol = new ColumnConstraints();
+        rightCol.setPercentWidth(75);
+        center.getColumnConstraints().addAll(leftCol, rightCol);
+        center.add(sidebar, 0, 0);
+        center.add(rightStack, 1, 0); // 右侧为 StackPane 宿主（ConfirmSheet 遮罩挂顶层，不越分隔线）
+        root.setCenter(center);
 
         // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）
         manager.addListener(new SessionManager.Listener() {
@@ -182,6 +189,10 @@ public class MainWindow {
                 Platform.runLater(() -> {
                     selectTab(h);
                     chatView = ChatView.forSession(h);
+                    chatView.setScrollBottomRequest(() -> {
+                        policy.forceFollow();
+                        Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
+                    });
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
@@ -262,20 +273,31 @@ public class MainWindow {
     }
 
     /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
-     *  内容增长后 runLater 延迟设置 vvalue，避免布局未完成时 setVvalue 被旧 vmax clamp 吞掉 */
+     *  vmax 恒 1.0 不可用（vvalue 为归一化比例），内容增长改监听内容节点高度变化；
+     *  会话切换时内容节点被替换，须随 contentProperty 重挂监听 */
     private void setupAutoScroll() {
-        final AutoScrollPolicy policy = new AutoScrollPolicy();
-        chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
-                policy.onScroll(nv.doubleValue(), chatScroll.getVmax()));
-        chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
+        javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
             if (policy.shouldFollow()) {
-                // 执行时重读当前 vmax 并二次确认贴底：捕获监听时旧值会在内容继续增长时
-                // 把 vvalue 卡在旧底部 < 新 vmax，被误判"离开底部"→ pinned 永不复原（失效根因）
-                Platform.runLater(() -> {
-                    if (policy.shouldFollow()) chatScroll.setVvalue(chatScroll.getVmax());
+                Platform.runLater(() -> { // 布局完成后置底；二次确认防监听时旧状态
+                    if (policy.shouldFollow()) chatScroll.setVvalue(1.0);
                 });
             }
+        };
+        chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
+                policy.sync(nv.doubleValue(), eps()));
+        chatScroll.contentProperty().addListener((obs, ov, nv) -> {
+            if (ov != null) ov.layoutBoundsProperty().removeListener(contentGrew);
+            if (nv != null) nv.layoutBoundsProperty().addListener(contentGrew);
         });
+    }
+
+    /** 动态半屏容差（归一化）：0.5×视口高/可滚动行程；未超一屏返回 1.0（恒贴底） */
+    private double eps() {
+        double viewport = chatScroll.getViewportBounds().getHeight();
+        double content = chatScroll.getContent() != null
+                ? chatScroll.getContent().getLayoutBounds().getHeight() : 0;
+        double scrollable = content - viewport;
+        return scrollable <= 0 ? 1.0 : 0.5 * viewport / scrollable;
     }
 
     private void onNewSession() {
