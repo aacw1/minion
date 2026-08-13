@@ -16,6 +16,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -206,56 +207,38 @@ public class SettingsDialog {
 
     // ===== 基础设置页 =====
 
-    private static VBox basicPane(final Config config) {
-        GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(12));
-        // 列约束：标签列不收缩（完整显示，修复省略号截断）；输入列铺满剩余宽度
-        javafx.scene.layout.ColumnConstraints labelCol = new javafx.scene.layout.ColumnConstraints();
-        labelCol.setHgrow(javafx.scene.layout.Priority.NEVER);
-        javafx.scene.layout.ColumnConstraints inputCol = new javafx.scene.layout.ColumnConstraints();
-        inputCol.setHgrow(javafx.scene.layout.Priority.ALWAYS);
-        inputCol.setFillWidth(true);
-        grid.getColumnConstraints().addAll(labelCol, inputCol);
-
+    private static Node basicPane(final Config config) {
         TextField skillsDir = new TextField(config.skillsDir());
-        skillsDir.setMaxWidth(Double.MAX_VALUE);
         TextArea toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
-        toolWhitelist.setMaxWidth(Double.MAX_VALUE);
         toolWhitelist.setPrefRowCount(2);
         TextArea cmdWhitelist = new TextArea(config.get("confirm.whitelist.commands", ""));
-        cmdWhitelist.setMaxWidth(Double.MAX_VALUE);
         cmdWhitelist.setPrefRowCount(2);
         CheckBox allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
         allowOutside.setSelected(config.readAllowOutside());
         CheckBox skipConfirm = new CheckBox("跳过高危操作确认");
         skipConfirm.setSelected(config.confirmSkip());
-
-        grid.addRow(0, new Label("技能目录 skills.dir:"), skillsDir);
-        grid.addRow(1, new Label("确认白名单\n(工具, 逗号分隔):"), toolWhitelist);
-        grid.addRow(2, new Label("确认白名单\n(命令, 逗号分隔):"), cmdWhitelist);
-        grid.addRow(3, new Label("读逃逸:"), allowOutside);
-        grid.addRow(4, new Label("确认开关:"), skipConfirm);
-
         Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
         browserNote.getStyleClass().add("msg-thinking");
-        grid.addRow(5, new Label(""), browserNote);
         TextField browserPath = new TextField(config.browserPath());
-        browserPath.setMaxWidth(Double.MAX_VALUE);
         TextField browserPort = new TextField(String.valueOf(config.browserPort()));
-        browserPort.setMaxWidth(Double.MAX_VALUE);
         TextField browserUserData = new TextField(config.browserUserDataDir());
-        browserUserData.setMaxWidth(Double.MAX_VALUE);
         CheckBox browserHeadless = new CheckBox("无头模式");
         browserHeadless.setSelected(config.browserHeadless());
         TextField browserTimeout = new TextField(String.valueOf(config.browserTimeoutMs()));
-        browserTimeout.setMaxWidth(Double.MAX_VALUE);
-        grid.addRow(6, new Label("browser.path:"), browserPath);
-        grid.addRow(7, new Label("browser.port:"), browserPort);
-        grid.addRow(8, new Label("browser.userDataDir:"), browserUserData);
-        grid.addRow(9, new Label("browser.headless:"), browserHeadless);
-        grid.addRow(10, new Label("browser.timeoutMs:"), browserTimeout);
+
+        VBox rows = new VBox(10);
+        rows.getChildren().addAll(
+                row("技能目录 skills.dir:", skillsDir),
+                row("确认白名单\n(工具, 逗号分隔):", toolWhitelist),
+                row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
+                row("读逃逸:", allowOutside),
+                row("确认开关:", skipConfirm),
+                browserNote,
+                row("browser.path:", browserPath),
+                row("browser.port:", browserPort),
+                row("browser.userDataDir:", browserUserData),
+                row("browser.headless:", browserHeadless),
+                row("browser.timeoutMs:", browserTimeout));
 
         Button save = new Button("保存");
         save.getStyleClass().add("btn-primary");
@@ -278,12 +261,25 @@ public class SettingsDialog {
                 error("保存失败", "browser.timeoutMs 必须是整数，未保存");
             }
         });
-        HBox bottom = new HBox(10);
-        bottom.getChildren().addAll(save);
-        VBox box = new VBox(10);
-        box.getChildren().addAll(grid, bottom);
-        box.setPadding(new Insets(4));
 
+        VBox contentBox = new VBox(10);
+        contentBox.getChildren().addAll(rows, save);
+        contentBox.setPadding(new Insets(12));
+        ScrollPane sp = new ScrollPane(contentBox); // 窗口小时可滚动，选项不再被裁剪
+        sp.setFitToWidth(true);
+        return sp;
+    }
+
+    /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */
+    private static HBox row(String labelText, javafx.scene.control.Control control) {
+        Label l = new Label(labelText);
+        l.setMinWidth(160);
+        l.setPrefWidth(160);
+        l.setWrapText(true);
+        control.setMaxWidth(Double.MAX_VALUE);
+        HBox box = new HBox(8);
+        HBox.setHgrow(control, Priority.ALWAYS);
+        box.getChildren().addAll(l, control);
         return box;
     }
 
