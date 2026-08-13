@@ -651,6 +651,114 @@ public class AgentLoopTest {
         }
     }
 
+    /** 闸门工具：execute 阻塞直到 release 后成功返回（供「运行中补充」时序测试） */
+    public static class GateTool implements Tool {
+        public final CountDownLatch entered = new CountDownLatch(1);
+        public final CountDownLatch release = new CountDownLatch(1);
+        @Override public String name() { return "gate"; }
+        @Override public String description() { return "闸门测试工具"; }
+        @Override public JsonObject schema() {
+            return com.minion.core.tools.SchemaGenerator.objectSchema("闸门", new String[0], new String[0]);
+        }
+        @Override public ToolResult execute(JsonObject args) throws Exception {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return ToolResult.success("gate-opened");
+        }
+    }
+
+    /** 需求1/2：运行中补充在工具结果后注入（supplement=true），第二轮请求可见 */
+    @Test
+    public void supplement_injectedAfterToolResults() throws Exception {
+        GateTool gate = new GateTool();
+        registry.register(gate);
+        ToolCall tc = new ToolCall();
+        tc.id = "g1";
+        tc.name = "gate";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("收到补充");
+        final AgentLoop loop = newLoop();
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() { loop.runUserTurn("开始干活"); }
+        });
+        t.start();
+        assertTrue("工具未进入执行", gate.entered.await(5, TimeUnit.SECONDS));
+        loop.offerSupplement("注意边界条件");
+        gate.release.countDown();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 0:user 1:assistant(toolCalls) 2:tool 3:user(补充) 4:assistant(最终)
+        List<Message> msgs = loop.messages();
+        assertEquals(5, msgs.size());
+        assertEquals(Message.Role.TOOL, msgs.get(2).role);
+        assertEquals(Message.Role.USER, msgs.get(3).role);
+        assertTrue(msgs.get(3).supplement);
+        assertEquals("注意边界条件", msgs.get(3).content);
+        assertEquals("收到补充", msgs.get(4).content);
+        // 第二轮请求：补充是最后一条（检查点注入后、请求构建前；请求首条为 system）
+        List<Message> req2 = llm.requests.get(1).messages;
+        assertEquals("注意边界条件", req2.get(req2.size() - 1).content);
+        assertTrue(req2.get(req2.size() - 1).supplement);
+    }
+
+    /** 需求4：回合自然结束时未注入的补充挂起，下次发送开头合并（顺序：补充→用户输入） */
+    @Test
+    public void supplement_pendingMergesAtNextSend() {
+        llm.addTurn("好的");
+        AgentLoop loop = newLoop();
+        loop.offerSupplement("补充A");
+        loop.offerSupplement("补充B");
+        loop.runUserTurn("真实回答");
+        List<Message> msgs = loop.messages();
+        assertEquals(4, msgs.size());
+        assertEquals(Message.Role.USER, msgs.get(0).role);
+        assertTrue(msgs.get(0).supplement);
+        assertEquals("补充A", msgs.get(0).content);
+        assertTrue(msgs.get(1).supplement);
+        assertEquals("补充B", msgs.get(1).content);
+        assertEquals(Message.Role.USER, msgs.get(2).role);
+        assertFalse(msgs.get(2).supplement);
+        assertEquals("真实回答", msgs.get(2).content);
+        assertEquals("好的", msgs.get(3).content);
+    }
+
+    /** 中断不注入（防半轮 tool_call 未配对时插入 user 消息导致 400），挂起保留到下次发送合并 */
+    @Test
+    public void supplement_interruptKeepsPending() throws Exception {
+        GateTool gate = new GateTool();
+        registry.register(gate);
+        ToolCall tc = new ToolCall();
+        tc.id = "g1";
+        tc.name = "gate";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("接着来");
+        final AgentLoop loop = newLoop();
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() { loop.runUserTurn("开始干活"); }
+        });
+        t.start();
+        assertTrue(gate.entered.await(5, TimeUnit.SECONDS));
+        loop.offerSupplement("补充A");
+        loop.interrupt();
+        gate.release.countDown();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        // 中断路径：补充未注入（留在挂起队列）
+        for (Message m : loop.messages()) {
+            assertFalse("中断轮不应注入补充", m.supplement);
+        }
+        loop.runUserTurn("接着来");
+        List<Message> msgs = loop.messages();
+        // 0:user(开始干活) 1:补充A 2:接着来 3:assistant
+        assertEquals(4, msgs.size());
+        assertTrue(msgs.get(1).supplement);
+        assertEquals("补充A", msgs.get(1).content);
+        assertEquals("接着来", msgs.get(2).content);
+        assertFalse(msgs.get(2).supplement);
+    }
+
     /** 带思考的测试客户端：onThinking + onContent + onFinish */
     public static class ThinkingLlmClient extends FakeLlmClient {
         @Override
