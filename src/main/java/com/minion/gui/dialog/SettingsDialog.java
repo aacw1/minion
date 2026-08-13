@@ -16,7 +16,6 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -285,9 +284,9 @@ public class SettingsDialog {
         VBox contentBox = new VBox(10);
         contentBox.getChildren().addAll(rows, save);
         contentBox.setPadding(new Insets(12));
-        ScrollPane sp = new ScrollPane(contentBox); // 窗口小时可滚动，选项不再被裁剪
-        sp.setFitToWidth(true);
-        return sp;
+        // 去 ScrollPane：JavaFX 8 裁剪内文字回退灰阶 AA 是整页发虚根因；
+        // 内容高约 453px，620x500 固定窗放得下，无需滚动
+        return contentBox;
     }
 
     /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */
