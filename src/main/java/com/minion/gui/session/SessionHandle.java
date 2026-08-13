@@ -51,6 +51,10 @@ public class SessionHandle {
     public volatile boolean running;
     /** 会话已删除（send 中据此中止，防已删除会话的文件/事件复活） */
     public volatile boolean deleted;
+    /** ask_user 挂起中（输入框进入回答模式；回答/中断/回合结束复位） */
+    public volatile boolean askPending;
+    /** ask_user 问题文本（回答模式占位提示用） */
+    public volatile String askQuestion;
 
     public SessionHandle(String id, String workspaceName, Session session,
                          AgentLoop loop, SessionController controller, String title,

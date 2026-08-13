@@ -54,6 +54,8 @@ public class SessionManager {
         void onSessionActivated(SessionHandle h);
         void onWorkspaceChanged();
         void onError(String message);
+        /** ask_user 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
+        default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
     }
 
     /** 删除工作空间时等待会话退出的总超时（秒）：AgentLoop 中断后走退出落盘路径，正常远快于此 */
@@ -127,6 +129,9 @@ public class SessionManager {
     private void notifyError(String msg) {
         for (Listener l : listeners) l.onError(msg);
     }
+    private void notifyAskChanged(SessionHandle h, boolean asking) {
+        for (Listener l : listeners) l.onSessionAskChanged(h, asking, asking ? h.askQuestion : null);
+    }
 
     /** 装配所有工作空间上下文（对照 Main 现有注册代码），并恢复历史会话 */
     private void loadWorkspaceContexts() {
@@ -165,8 +170,16 @@ public class SessionManager {
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
-                ctx.sessions.add(new SessionHandle(s.id, ctx.name, s, loop, controller,
-                        s.title, false, llm));
+                SessionHandle h = new SessionHandle(s.id, ctx.name, s, loop, controller,
+                        s.title, false, llm);
+                controller.setAskStateListener(new java.util.function.Consumer<String>() {
+                    @Override public void accept(String question) {
+                        h.askQuestion = question;
+                        h.askPending = question != null;
+                        notifyAskChanged(h, question != null);
+                    }
+                });
+                ctx.sessions.add(h);
             } catch (Exception e) {
                 notifyError("会话恢复失败（跳过）: " + e.getMessage());
             }
@@ -228,6 +241,13 @@ public class SessionManager {
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
                 title, title == null, llm);
+        controller.setAskStateListener(new java.util.function.Consumer<String>() {
+            @Override public void accept(String question) {
+                h.askQuestion = question;
+                h.askPending = question != null;
+                notifyAskChanged(h, question != null);
+            }
+        });
         ctx.sessions.add(h);
         try {
             ctx.store.save(s); // 立即落盘（含空会话）
@@ -444,10 +464,20 @@ public class SessionManager {
                             catch (Exception e) { notifyError("删除会话文件失败: " + e.getMessage()); }
                         }
                         h.running = false;
+                        if (h.askPending) { // 中断路径 onAskUserDone 不回调，此处兜底复位
+                            h.askPending = false;
+                            h.askQuestion = null;
+                            notifyAskChanged(h, false);
+                        }
                         notifyRunningChanged(h, false);
                     }
                 } catch (Exception e) {
                     h.running = false;
+                    if (h.askPending) { // 中断路径 onAskUserDone 不回调，此处兜底复位
+                        h.askPending = false;
+                        h.askQuestion = null;
+                        notifyAskChanged(h, false);
+                    }
                     notifyRunningChanged(h, false);
                     notifyError("任务执行异常: " + e.getMessage());
                 }
@@ -460,6 +490,19 @@ public class SessionManager {
             h.loop.interrupt(); // 只取消当前客户端；换模型后 in-flight 请求在旧（已退役）客户端上
             h.closeRetired();   // 一并取消旧客户端的流式请求，防「终止」失效等旧流自然结束（数分钟）
         }
+    }
+
+    /** 运行中补充：入 AgentLoop 挂起队列 + 发聊天标识事件（UI 事件仅在点击时发一次，注入不重发） */
+    public void sendSupplement(final SessionHandle h, final String text) {
+        if (h == null || text == null || text.trim().isEmpty()) return;
+        h.loop.offerSupplement(text);
+        h.controller.onUserSupplement(text);
+    }
+
+    /** 回答 ask_user：完成挂起的等待（未挂起时忽略）；回答作为工具结果回传继续本轮 */
+    public void sendAnswer(final SessionHandle h, final String text) {
+        if (h == null || !h.running) return;
+        h.loop.answerAskUser(text);
     }
 
     private void persist(SessionHandle h) {
