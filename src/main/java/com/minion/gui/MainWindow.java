@@ -2,6 +2,7 @@ package com.minion.gui;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
+import com.minion.gui.dialog.ConfirmSheet;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.AutoScrollPolicy;
@@ -31,6 +32,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
@@ -145,9 +147,13 @@ public class MainWindow {
         inputView = new InputView(manager);
         right.getChildren().setAll(chatScroll, inputView);
 
+        // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
+        StackPane rightStack = new StackPane(right);
+        ConfirmSheet.setHost(rightStack);
+
         SplitPane split = new SplitPane();
         split.setDividerPositions(0.25); // 需求 5：左右比例 1:3
-        split.getItems().addAll(sidebar, right);
+        split.getItems().addAll(sidebar, rightStack);
         root.setCenter(split);
 
         // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）
