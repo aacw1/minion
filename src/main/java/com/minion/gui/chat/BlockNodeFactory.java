@@ -17,6 +17,11 @@ import javafx.scene.text.TextFlow;
 /** Block 结构 → JavaFX 节点（样式类与 theme.css 对应） */
 public class BlockNodeFactory {
 
+    /** 正文/表格文字颜色：Text 节点响应 -fx-fill（-fx-text-fill 仅对 Label 生效，根因在此） */
+    private static final String TEXT_FILL = "#f0f2f6";
+    private static final String TABLE_FILL = "#c9d1d9";
+    private static final String CODE_FILL = "#79c0ff";
+
     public static javafx.scene.Node create(Block b) {
         switch (b.type) {
             case HEADING: {
@@ -70,6 +75,7 @@ public class BlockNodeFactory {
                         if (r.header) {
                             t.setFont(Font.font(t.getFont().getFamily(), FontWeight.BOLD, t.getFont().getSize()));
                         }
+                        t.setFill(javafx.scene.paint.Color.web(TABLE_FILL));
                         grid.add(t, c, rowIdx);
                     }
                     rowIdx++;
@@ -90,7 +96,12 @@ public class BlockNodeFactory {
             t.setFont(Font.font(t.getFont().getFamily(), FontPosture.ITALIC, t.getFont().getSize()));
         }
         if (s.style.contains("strike")) t.setStrikethrough(true);
-        if (s.style.contains("code")) t.setStyle("-fx-font-family: Consolas; -fx-fill: #79c0ff;");
+        if (s.style.contains("code")) {
+            t.setStyle("-fx-font-family: Consolas;");
+            t.setFill(javafx.scene.paint.Color.web(CODE_FILL));
+        } else {
+            t.setFill(javafx.scene.paint.Color.web(TEXT_FILL));
+        }
         return t;
     }
 }
