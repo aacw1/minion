@@ -19,7 +19,7 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     │   ├── sidebar/          SessionListView（会话列表）、WorkspaceListView（工作空间列表）
     │   ├── chat/             ChatView（消息区）、MarkdownRenderer + BlockNodeFactory（flexmark 渲染）
     │   ├── input/            InputView（多行输入，Ctrl+Enter 发送）
-    │   ├── dialog/           SettingsDialog（设置窗三页签）、ConfirmDialog（高危确认弹窗）
+    │   ├── dialog/           SettingsDialog（设置窗三页签）、ConfirmSheet（高危确认底部卡片）
     │   ├── theme/            Theme（弹窗深色挂载）
     │   ├── confirm/          GuiConfirmUi（FutureTask 投递 FX 线程阻塞工具线程）
     │   └── session/          SessionManager（多会话并行/工作空间 CRUD）、SessionHandle、EventList
