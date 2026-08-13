@@ -14,14 +14,14 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     com.minion
     ├── Main         入口：装配配置/技能/浏览器/确认 UI → SessionManager → MinionApp；退出钩子统一收口（manager.shutdown + chrome.stop）
     ├── gui/         JavaFX 界面
-    │   ├── MainWindow        主窗口（无边框自绘标题栏 TitleBar、SplitPane 1:3、ResizeHelper 缩放、状态点呼吸动画 StatusDot）
+    │   ├── MainWindow        主窗口（无边框自绘标题栏 TitleBar、GridPane 25%/75% 不可拖拽、ResizeHelper 缩放、状态点呼吸动画 StatusDot）
     │   ├── MinionApp         Application 启动（静态注入 Config/WorkspaceManager/ModelManager/SessionManager）
     │   ├── sidebar/          SessionListView（会话列表）、WorkspaceListView（工作空间列表）
     │   ├── chat/             ChatView（消息区）、MarkdownRenderer + BlockNodeFactory（flexmark 渲染）
     │   ├── input/            InputView（多行输入，Ctrl+Enter 发送）
     │   ├── dialog/           SettingsDialog（设置窗三页签）、ConfirmSheet（高危确认底部卡片）
     │   ├── theme/            Theme（弹窗深色挂载）
-    │   ├── confirm/          GuiConfirmUi（FutureTask 投递 FX 线程阻塞工具线程）
+    │   ├── confirm/          GuiConfirmUi（Platform.runLater 投递 ConfirmSheet，poll 等待）
     │   └── session/          SessionManager（多会话并行/工作空间 CRUD）、SessionHandle、EventList
     └── core/
         ├── agent/   AgentLoop（主循环，构造器自动注册 TaskTool/TodoWriteTool）、SubAgentLoop、Session、TodoList

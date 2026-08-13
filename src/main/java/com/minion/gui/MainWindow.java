@@ -156,6 +156,9 @@ public class MainWindow {
             tabsBar.setVisible(!empty);
             tabsBar.setManaged(!empty);
         });
+        // 首启 rebuildTabs 空列表不触发变更事件，注册后立即同步一次初始可见性
+        tabsBar.setVisible(!tabs.getTabs().isEmpty());
+        tabsBar.setManaged(!tabs.getTabs().isEmpty());
         right.getChildren().setAll(tabsBar, chatScroll, inputView);
 
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
