@@ -16,6 +16,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
+import javafx.scene.Node;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -35,10 +36,22 @@ public class WorkspaceListView extends ListView<String> {
         this.workspaces = manager.workspaces();
         setCellFactory(v -> new WsCell());
         setOnMouseClicked(e -> {
+            // 悬停按钮（✎/⚙/✕）的点击会冒泡到此 handler：跳过切换，避免误清空聊天区（按钮事件已由按钮自身处理）
+            if (isHoverButton(e.getTarget())) return;
             String name = getSelectionModel().getSelectedItem();
             if (name != null && e.getClickCount() == 1) manager.switchWorkspace(name);
         });
         Platform.runLater(() -> refresh()); // 初始列表（loadWorkspaceContexts 无 Listener 通知）
+    }
+
+    /** 事件目标（或其父链）是否为悬停操作按钮（btn-cell）：按钮内部命中 LabeledText 等子节点，故沿父链逐层判断 */
+    private boolean isHoverButton(Object target) {
+        Node n = target instanceof Node ? (Node) target : null;
+        while (n != null) {
+            if (n.getStyleClass().contains("btn-cell")) return true;
+            n = n.getParent();
+        }
+        return false;
     }
 
     public void refresh() {
