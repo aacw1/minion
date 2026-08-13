@@ -37,7 +37,7 @@ com.minion
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
 | chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
 | input/InputView | 输入区（Ctrl+Enter 发送、Enter 换行）；绑定会话后发送走 SessionManager.send |
-| dialog/SettingsDialog、ConfirmDialog | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；基础设置 HBox 行布局标签固定 160 宽 + ScrollPane 防裁剪）；高危操作确认弹窗 |
+| dialog/SettingsDialog、ConfirmDialog | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽 + ScrollPane 防裁剪，skills.dir 可浏览选取）；高危操作确认弹窗 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → FutureTask 投递 FX 线程弹窗 → 阻塞等待（无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |

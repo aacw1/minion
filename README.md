@@ -17,7 +17,7 @@
 |---|---|
 | `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建（work.dir 用系统文件夹选择框选，project.md 可文件选择器选取；新建/修改弹窗同样支持） |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；⚙ 设置窗「模型」页管理 |
-| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）；⚙ 设置窗「基础设置」页可改（浏览器项重启生效） |
+| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）；⚙ 设置窗「基础设置」页可改，skills.dir 可用目录选择器浏览选取（浏览器项重启生效） |
 
 ## 快捷操作
 
