@@ -81,7 +81,8 @@
 .list-view .list-cell:selected { -fx-background-color: #2a3344; -fx-text-fill: #f0f2f6; }
 
 /* 页签 */
-.tab-pane .tab-header-area .tab-header-background { -fx-background-color: #12141a; }
+.tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
+.tab-pane > .tab-content-area { -fx-min-height: 0; -fx-pref-height: 0; -fx-max-height: 0; }
 .tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 8 8 0 0; -fx-padding: 4 12; }
 .tab-pane .tab:selected { -fx-background-color: #232a38; }
 .tab-pane .tab-label { -fx-text-fill: #a8b0bb; }
@@ -221,3 +222,10 @@
     -fx-cursor: hand;
 }
 .btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #4cc95e, #3fb950); }
+
+/* ===== 右侧顶部页签栏（tabs-bar，正文上方分隔线） ===== */
+.tabs-bar {
+    -fx-padding: 4 8 0 8;
+    -fx-border-color: transparent transparent #232733 transparent;
+    -fx-border-width: 0 0 1 0;
+}
