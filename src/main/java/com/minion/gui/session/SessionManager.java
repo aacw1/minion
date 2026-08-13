@@ -31,6 +31,7 @@ import com.minion.core.tools.browser.BrowserSession;
 import com.minion.core.tools.browser.BrowserTool;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
+import com.minion.gui.command.CommandDispatcher;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -68,6 +69,7 @@ public class SessionManager {
     private final ModelManager models;
     private final List<Skill> allSkills;
     private final BrowserSession browserSession; // 可为 null（测试）
+    private final CommandDispatcher dispatcher; // 斜杠命令本地分发（GUI 输入路径）
     private final List<Listener> listeners = new ArrayList<Listener>();
 
     private final Map<String, WorkspaceCtx> ctxByName = new HashMap<String, WorkspaceCtx>();
@@ -103,6 +105,7 @@ public class SessionManager {
         this.models = models;
         this.allSkills = allSkills;
         this.browserSession = browserSession;
+        this.dispatcher = new CommandDispatcher(allSkills);
         loadWorkspaceContexts();
         this.currentWorkspaceName = workspaces.currentName();
     }
@@ -503,6 +506,23 @@ public class SessionManager {
     public void sendAnswer(final SessionHandle h, final String text) {
         if (h == null || !h.running) return;
         h.loop.answerAskUser(text);
+    }
+
+    /** 全部技能（补全弹层/命令分发共用；启动时扫描） */
+    public List<Skill> skills() { return allSkills; }
+
+    /** 当前工作空间 workDir（文件补全遍历根；无当前空间返回 null） */
+    public String currentWorkspaceDir() {
+        WorkspaceCtx ctx = ctxByName.get(currentWorkspaceName);
+        return ctx == null ? null : ctx.workspace.workDir();
+    }
+
+    /** 斜杠命令本地分发：命中 → 聊天区回显命令 + 系统行结果（不入 LLM 历史）；未命中 → 按普通消息发送 */
+    public void dispatchCommand(SessionHandle h, String text) {
+        String result = dispatcher.dispatch(h, text);
+        if (result == null) { send(h, text); return; }
+        h.controller.onUserMessage(text); // 仅展示回显，不注入 LLM 历史
+        h.controller.onSystem(result);
     }
 
     private void persist(SessionHandle h) {

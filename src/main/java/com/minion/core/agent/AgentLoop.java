@@ -105,8 +105,9 @@ public class AgentLoop {
     public List<Skill> allSkills() { return allSkills; }
     public void setAllSkills(List<Skill> skills) { this.allSkills = skills; }
     public List<Skill> loadedSkills() { return loadedSkills; }
-    public void loadSkill(Skill skill) {
-        // 按 name 判重：重复加载同一技能会重复注入系统提示词（token 浪费 + 指令歧义）
+    /** 按 name 判重：重复加载同一技能会重复注入系统提示词（token 浪费 + 指令歧义）。
+     *  synchronized：FX 线程 /skill 加载与会话线程读 loadedSkills 并发（ArrayList 非线程安全） */
+    public synchronized void loadSkill(Skill skill) {
         for (Skill loaded : loadedSkills) {
             if (loaded.name.equals(skill.name)) return;
         }

@@ -188,6 +188,6 @@ public class InputView extends VBox {
             if (target == null) return;
             manager.activateSession(target);
         }
-        manager.send(target, text);
+        manager.dispatchCommand(target, text); // 斜杠命令本地分发；普通消息走 send
     }
 }
