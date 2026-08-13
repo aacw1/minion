@@ -1,7 +1,7 @@
 # 输入区大框 + 斜杠命令恢复 + 补全弹层设计
 
 日期：2026-08-14
-状态：已确认（用户全量通过），实施中
+状态：已实施（2026-08-14）
 
 ## 1. 背景与问题
 
@@ -93,10 +93,11 @@ running    → hasContent ? SUPPLEMENT : STOP
 
 ### 3.6 设置窗按钮归位
 
-- applyType 由 ButtonData.OTHER 改 **APPLY**（Windows 8u181 下 OTHER 落在左区、APPLY 落在右区与关闭相邻），
-  并 `dialogPane.getButtonBar().setButtonOrder("A C")` 固定顺序为 [应用][关闭]。
-- 兜底：若实测 8u181 布局仍不符，则自绘按钮行（隐藏 ButtonBar，把两个按钮放进内容区底部右对齐 HBox）——
-  实施时用 run 技能启动验证。
+- applyType 由 ButtonData.OTHER 改 **APPLY**（Windows 8u181 下 OTHER 落在左区、APPLY 落在右区与关闭相邻）。
+- 实施修正：本机 jfxrt 无 `DialogPane.getButtonBar()`（8u60+ 才有），`setButtonOrder("A C")` 一行省略——
+  ButtonData 归区本身已达成 [应用][关闭] 相邻（A 在右区、C 在中区末位，中右两区靠右并排）。
+- 兜底：若实测布局仍不符，则自绘按钮行（隐藏 ButtonBar，把两个按钮放进内容区底部右对齐 HBox）——
+  用户下次启动时目验。
 
 ### 3.7 SessionManager 增补
 
@@ -144,3 +145,18 @@ public void dispatchCommand(SessionHandle h, String input)
 - `/compact` 在会话运行中需等当前回合结束（单线程池排队）。
 - 文件补全首次打开有遍历延迟（大目录 ≤1s 量级，10 秒缓存兜底），上限 200 条。
 - 补全弹层不支持多选（一次选中一个词；多个 `@` 可依次输入）。
+
+## 8. 实施记录
+
+- 实施计划：docs/superpowers/plans/2026-08-14-input-command-suggest.md，9 任务全部完成并提交（见 git log 2026-08-14，共 9 个提交：设计 7a3871d → 计划 8c6f1fb → 任务 6df4309/4f365d0/df6edc1/a80ef5c/5826690/727555a/f89c60d/3d4575f/ffdbfe0）。
+- 测试：全量 `mvn test` 360/360 通过（含既有 InputViewButtonTest 对齐新语义、移除重复 InputViewTest）。
+- 与设计的偏差：
+  1. `setButtonOrder("A C")` 省略（本机 jfxrt 无 DialogPane.getButtonBar()，8u60+ 才有；ButtonData.APPLY 归区已达成目标）——见 §3.6 修正；
+  2. CSS 类名由 `suggest-popup`/`suggest-cell` 落为 `suggest-list`/`suggest-label`/`suggest-desc`（ListView 类名直贴 ListView，cell 内容用标签类，避免 CSS 选择器歧义）；
+  3. CompletionParser 提为独立类（非 InputView 内部 static helper），便于纯静态单测。
+- 待用户目验（实施时用户的 GUI 实例正在运行旧 jar，`mvn clean package` 因 jar 被锁未执行、新 jar 未启动目验）：
+  1. `mvn clean package`（关闭运行中的 minion 后）
+  2. 输入大框 4/9 居中、竖分割线、文字清晰
+  3. `/` 与 `@` 补全弹层交互（↑↓/鼠标/Enter/Tab/Esc/滚轮）
+  4. `/skills` 系统行显示
+  5. 设置窗 [应用][关闭] 相邻（Windows 8u181 ButtonBar 归区行为）

@@ -36,7 +36,9 @@ com.minion
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停 ✎/✕、工作空间项悬停 ⚙/✕（重命名并入修改弹窗）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
 | chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
-| input/InputView | 输入区（Ctrl+Enter 发送、Enter 换行）；绑定会话后发送走 SessionManager.send |
+| input/InputView | 输入区 4/9 宽居中大框（左 TextArea 右按钮+竖分割线，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层/终止运行；按钮状态机（提问挂起空输入=变淡回答箭头）；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
+| input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
+| command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
 | dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；高危操作确认底部卡片（右侧底部滑入，遮罩仅右侧，Esc 拒绝/Enter 批准，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → poll(3s) 阻塞等待（不阻塞 FX 线程；无 GUI 环境/超时防御性 REJECT） |
@@ -87,8 +89,9 @@ com.minion
 ## 3. 会话管理与线程模型（gui/session/SessionManager）
 
 ```
-用户输入 → InputView → SessionManager.send(handle, text)
-  → 该会话专属工作线程（SessionHandle.pool）执行：
+用户输入 → InputView → SessionManager.dispatchCommand(handle, text)
+  → 斜杠命令命中 → 本地执行 + USER_MESSAGE 回显 + SYSTEM 结果事件（不入 LLM 历史）
+  → 非命令 → send：该会话专属工作线程（SessionHandle.pool）执行：
       titlePending 时先摘要生成标题 → AgentLoop.runUserTurn(text)
   → AgentLoop 每步（thinking/正文/工具调用/完成）写到 SessionController → 会话 EventList
   → FX 线程 ChatView.bind(true) 重放渲染；onSessionRunningChanged 刷新页签/输入区
@@ -105,7 +108,7 @@ com.minion
 ## 4. 核心数据流
 
 ```
-用户输入 → InputView → SessionManager.send → 会话工作线程 → AgentLoop
+用户输入 → InputView → SessionManager.dispatchCommand（命令本地/消息 send）→ 会话工作线程 → AgentLoop
   1. 追加 user 消息；TokenCounter 估算达阈值 → 自动压缩
   2. 流式请求（thinking / 正文 / tool_calls 增量 → EventList → UI 渲染）
   3. finish_reason==tool_calls → 执行工具（同回合并行；Bash 超时 120s；高危经 ConfirmGate→GuiConfirmUi 弹窗）→ tool 消息回传 → 下一轮
