@@ -74,15 +74,26 @@ public class AskUserTool implements Tool {
         String question = args.has("question") && !args.get("question").isJsonNull()
                 ? args.get("question").getAsString()
                 : "请提供完成任务所需的信息";
-        CompletableFuture<String> fut = new CompletableFuture<String>();
-        this.pending = fut;
-        ui.onAskUserStart(question);
+        CompletableFuture<String> fut;
+        final boolean owner;
+        synchronized (this) {
+            fut = this.pending; // 同轮多次调用共享同一 future：重入链到已有挂起而非新建
+            if (fut == null) {
+                fut = new CompletableFuture<String>();
+                this.pending = fut;
+                owner = true;
+            } else {
+                owner = false;
+            }
+        }
+        if (owner) ui.onAskUserStart(question);
         try {
             String answer = fut.get(); // 阻塞到 answerAskUser 或线程中断（终止）
-            ui.onAskUserDone(answer);
+            if (owner) ui.onAskUserDone(answer);
             return ToolResult.success(answer);
         } finally {
-            this.pending = null;
+            // 仅清自己占据的槽位：跟随者先结束时不得误清新一轮的 pending
+            if (this.pending == fut) this.pending = null;
         }
     }
 
