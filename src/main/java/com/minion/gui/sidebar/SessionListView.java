@@ -7,13 +7,13 @@ import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** 左侧会话列表：标题 + 最后消息摘要 + 运行状态点 + 右键菜单（重命名/删除）；单击切换 */
+/** 左侧会话列表：标题 + 最后消息摘要 + 运行状态点 + 悬停操作按钮（重命名/删除）/ 最近消息时间；单击切换 */
 public class SessionListView extends ListView<SessionHandle> {
 
     private final SessionManager manager;
@@ -58,11 +58,46 @@ public class SessionListView extends ListView<SessionHandle> {
             }
             String label = h.title == null ? "(新会话)" : h.title;
             Circle dot = StatusDot.create(h.running);
-            HBox box = new HBox(6);
             Label name = new Label(label);
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            box.getChildren().addAll(dot, name, spacer);
+
+            // 右区双态：非悬停显示最近消息时间（5m/3h/2d）；悬停切换为操作按钮
+            Label timeLabel = new Label();
+            timeLabel.getStyleClass().add("cell-time");
+            String t = TimeFormatter.format(lastMessageTs(h), System.currentTimeMillis());
+            if (t != null) timeLabel.setText(t);
+            Button renameBtn = new Button("✎");
+            renameBtn.getStyleClass().add("btn-cell");
+            renameBtn.setTooltip(new Tooltip("重命名"));
+            renameBtn.setOnAction(e -> doRename(h));
+            Button delBtn = new Button("✕");
+            delBtn.getStyleClass().add("btn-cell");
+            delBtn.setTooltip(new Tooltip("删除"));
+            delBtn.setOnAction(e -> doDelete(h));
+            renameBtn.setVisible(false);
+            renameBtn.setManaged(false);
+            delBtn.setVisible(false);
+            delBtn.setManaged(false);
+            setOnMouseEntered(e -> {
+                timeLabel.setVisible(false);
+                timeLabel.setManaged(false);
+                renameBtn.setVisible(true);
+                renameBtn.setManaged(true);
+                delBtn.setVisible(true);
+                delBtn.setManaged(true);
+            });
+            setOnMouseExited(e -> {
+                timeLabel.setVisible(true);
+                timeLabel.setManaged(true);
+                renameBtn.setVisible(false);
+                renameBtn.setManaged(false);
+                delBtn.setVisible(false);
+                delBtn.setManaged(false);
+            });
+
+            HBox box = new HBox(6);
+            box.getChildren().addAll(dot, name, spacer, timeLabel, renameBtn, delBtn);
 
             VBox cellBox = new VBox(2);
             cellBox.getChildren().add(box);
@@ -73,34 +108,44 @@ public class SessionListView extends ListView<SessionHandle> {
                 cellBox.getChildren().add(sum);
             }
             setGraphic(cellBox);
-
-            ContextMenu menu = new ContextMenu();
-            MenuItem rename = new MenuItem("重命名");
-            rename.setOnAction(e -> {
-                TextInputDialog d = new TextInputDialog(h.title);
-                d.setTitle("重命名会话");
-                d.setHeaderText("输入新标题");
-                Theme.style(d); // 弹窗深色
-                d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
-            });
-            MenuItem del = new MenuItem("删除");
-            del.setOnAction(e -> {
-                Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                        "删除会话「" + (h.title == null ? h.id : h.title) + "」？",
-                        ButtonType.OK, ButtonType.CANCEL);
-                a.setTitle("删除会话");
-                Theme.style(a); // 弹窗深色
-                a.showAndWait().ifPresent(bt -> {
-                    if (bt == ButtonType.OK) {
-                        manager.deleteSession(h);
-                        onDeleted.accept(h); // 页签联动清理（MainWindow.removeTabById）
-                        refresh();
-                    }
-                });
-            });
-            menu.getItems().addAll(rename, del);
-            setContextMenu(menu);
         }
+    }
+
+    /** 重命名弹窗（复用原右键菜单逻辑） */
+    private void doRename(SessionHandle h) {
+        TextInputDialog d = new TextInputDialog(h.title);
+        d.setTitle("重命名会话");
+        d.setHeaderText("输入新标题");
+        Theme.style(d); // 弹窗深色
+        d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
+    }
+
+    /** 删除确认弹窗（复用原右键菜单逻辑） */
+    private void doDelete(SessionHandle h) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                "删除会话「" + (h.title == null ? h.id : h.title) + "」？",
+                ButtonType.OK, ButtonType.CANCEL);
+        a.setTitle("删除会话");
+        Theme.style(a); // 弹窗深色
+        a.showAndWait().ifPresent(bt -> {
+            if (bt == ButtonType.OK) {
+                manager.deleteSession(h);
+                onDeleted.accept(h); // 页签联动清理（MainWindow.removeTabById）
+                refresh();
+            }
+        });
+    }
+
+    /** 最后一条非 TOOL 消息的创建时间戳（毫秒；无消息/全 TOOL/旧数据 → 0） */
+    private long lastMessageTs(SessionHandle h) {
+        if (h.session == null || h.session.messages == null) return 0L;
+        List<Message> msgs = new ArrayList<Message>(h.session.messages); // 防御性拷贝（同 lastSummary）
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            Message m = msgs.get(i);
+            if (m.role == Message.Role.TOOL) continue;
+            return m.ts;
+        }
+        return 0L;
     }
 
     /** 摘要：最后一条非 TOOL 角色且非空 content 的消息，前 40 字；无消息/全 TOOL/空 content → null（不显示行） */
