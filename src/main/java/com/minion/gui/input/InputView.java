@@ -19,8 +19,8 @@ import javafx.scene.shape.SVGPath;
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
 public class InputView extends VBox {
 
-    /** 按钮模式：图标/透明度/背景类/动作的判定依据 */
-    enum BtnMode { SEND, SEND_DIM, SUPPLEMENT, ANSWER, STOP }
+    /** 按钮模式：图标/透明度/背景类/动作的判定依据（ANSWER_DIM=提问挂起且空输入，变淡箭头等待输入回答） */
+    enum BtnMode { SEND, SEND_DIM, SUPPLEMENT, ANSWER, ANSWER_DIM, STOP }
 
     private final SessionManager manager;
     private final TextArea input = new TextArea();
@@ -61,6 +61,12 @@ public class InputView extends VBox {
             if (new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN).match(e)) {
                 e.consume();
                 onAction();
+                return;
+            }
+            // Esc：终止当前运行（提问挂起时亦可终止；补全弹层接线在 Task 7 前置拦截）
+            if (e.getCode() == KeyCode.ESCAPE && current != null && running) {
+                e.consume();
+                manager.stop(current);
             }
         });
 
@@ -72,10 +78,11 @@ public class InputView extends VBox {
         getChildren().addAll(input, buttonRow);
     }
 
-    /** 纯静态判定（可脱离 JavaFX 单测）：运行/提问挂起/有内容 → 按钮模式 */
+    /** 纯静态判定（可脱离 JavaFX 单测）：运行/提问挂起/有内容 → 按钮模式。
+     *  提问挂起时模型在等待回答而非忙碌，空输入显示变淡箭头而非终止方块 */
     static BtnMode buttonMode(boolean running, boolean askPending, boolean hasContent) {
         if (!running) return hasContent ? BtnMode.SEND : BtnMode.SEND_DIM;
-        if (askPending) return hasContent ? BtnMode.ANSWER : BtnMode.STOP;
+        if (askPending) return hasContent ? BtnMode.ANSWER : BtnMode.ANSWER_DIM;
         return hasContent ? BtnMode.SUPPLEMENT : BtnMode.STOP;
     }
 
@@ -129,7 +136,8 @@ public class InputView extends VBox {
             case SEND_DIM:   applyStyle(arrowIcon, "btn-primary", 0.35, "输入消息后发送 (Ctrl+Enter)"); break;
             case SUPPLEMENT: applyStyle(arrowIcon, "btn-primary", 1.0, "补充信息给正在运行的模型 (Ctrl+Enter)"); break;
             case ANSWER:     applyStyle(arrowIcon, "btn-primary", 1.0, "回答模型的提问 (Ctrl+Enter)"); break;
-            case STOP:       applyStyle(stopIcon, "btn-danger", 1.0, "终止当前运行"); break;
+            case ANSWER_DIM: applyStyle(arrowIcon, "btn-primary", 0.35, "输入回答后发送 (Ctrl+Enter)"); break;
+            case STOP:       applyStyle(stopIcon, "btn-danger", 1.0, "终止当前运行 (Esc)"); break;
         }
     }
 
@@ -165,6 +173,7 @@ public class InputView extends VBox {
                 if (current != null) manager.stop(current);
                 break;
             case SEND_DIM:
+            case ANSWER_DIM:
                 break;
         }
     }
