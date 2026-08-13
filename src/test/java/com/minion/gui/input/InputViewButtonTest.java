@@ -28,8 +28,9 @@ public class InputViewButtonTest {
     }
 
     @Test
-    public void asking_empty_stop() {
-        assertEquals(InputView.BtnMode.STOP, InputView.buttonMode(true, true, false));
+    public void asking_empty_answerDim() {
+        // 提问挂起 + 空输入：变淡回答箭头（模型在等回答而非忙碌，不显示终止方块；终止入口为 Esc）
+        assertEquals(InputView.BtnMode.ANSWER_DIM, InputView.buttonMode(true, true, false));
     }
 
     @Test
