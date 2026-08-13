@@ -80,7 +80,7 @@ CODE 块（Label）与 HEADING（内联样式）已正确，不动。
 ### 4.1 工作空间拖拽排序（需求 6）
 
 - [WorkspaceManager](src/main/java/com/minion/core/config/WorkspaceManager.java) 新增 `boolean move(String name, int newIndex)`：List 内移除+插入（越界返回 false）+ `save()` 持久化。workspace.json 数组顺序即显示顺序。
-- [SessionManager](src/main/java/com/minion/gui/session/SessionManager.java) 新增 `moveWorkspace(name, newIndex)` 转发并 `notifyWorkspaceChanged()`（UI 刷新列表与页签）。
+- [SessionManager](src/main/java/com/minion/gui/session/SessionManager.java) 新增 `moveWorkspace(name, newIndex)` 转发（**不发通知**——`notifyWorkspaceChanged` 会触发 MainWindow 的 `clearChatPane` 清空右侧聊天区，拖拽排序不应清内容）；[WorkspaceListView](src/main/java/com/minion/gui/sidebar/WorkspaceListView.java) drop 后自行 `refresh()`。
 - [WorkspaceListView](src/main/java/com/minion/gui/sidebar/WorkspaceListView.java) 用 JavaFX 原生 DragAndDrop：
   - cell `setOnDragDetected`：`startDragAndDrop(MOVE)` + ClipboardContent（携带工作空间名）。
   - `setOnDragOver`：accept 拖放；目标索引 = 当前 cell 索引，作为插入位置。
