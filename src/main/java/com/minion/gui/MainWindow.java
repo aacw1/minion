@@ -48,6 +48,7 @@ public class MainWindow {
     private SessionListView sessionList;
     private ChatView chatView;
     private ScrollPane chatScroll;
+    private final AutoScrollPolicy policy = new AutoScrollPolicy();
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
     private boolean suppressingTabSelect; // rebuildTabs 期间不触发页签选中激活
@@ -166,6 +167,10 @@ public class MainWindow {
                 Platform.runLater(() -> {
                     selectTab(h);
                     chatView = ChatView.forSession(h);
+                    chatView.setScrollBottomRequest(() -> {
+                        policy.forceFollow();
+                        Platform.runLater(() -> chatScroll.setVvalue(chatScroll.getVmax()));
+                    });
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
@@ -246,12 +251,13 @@ public class MainWindow {
     }
 
     /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
+     *  vmax 变化经 onVmaxChanged 重算贴底（增长前贴底则保持跟随，根因修复）；
      *  内容增长后 runLater 延迟设置 vvalue，避免布局未完成时 setVvalue 被旧 vmax clamp 吞掉 */
     private void setupAutoScroll() {
-        final AutoScrollPolicy policy = new AutoScrollPolicy();
         chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
-                policy.onScroll(nv.doubleValue(), chatScroll.getVmax()));
+                policy.sync(nv.doubleValue(), chatScroll.getVmax()));
         chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
+            policy.onVmaxChanged(chatScroll.getVvalue(), ov.doubleValue(), nv.doubleValue());
             if (policy.shouldFollow()) {
                 // 执行时重读当前 vmax 并二次确认贴底：捕获监听时旧值会在内容继续增长时
                 // 把 vvalue 卡在旧底部 < 新 vmax，被误判"离开底部"→ pinned 永不复原（失效根因）

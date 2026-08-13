@@ -19,6 +19,12 @@ public class ChatView extends VBox {
     private final StringBuilder pendingContent = new StringBuilder();
     private final StringBuilder pendingThinking = new StringBuilder();
 
+    /** 用户消息到达时的"滚动到底"回调（MainWindow 注入：强制贴底 + 布局完成后置底） */
+    private Runnable scrollBottomRequest;
+
+    /** MainWindow 注入：USER_MESSAGE 事件时请求滚动到底 */
+    public void setScrollBottomRequest(Runnable r) { this.scrollBottomRequest = r; }
+
     public ChatView(EventList events, SessionHandle handle) {
         this.events = events;
         this.handle = handle;
@@ -62,6 +68,7 @@ public class ChatView extends VBox {
                 // 新轮次开始：重置上一轮流式缓冲，防止与下一轮内容拼接（评审 I-1）
                 pendingContent.setLength(0);
                 pendingThinking.setLength(0);
+                if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             }
             case THINKING:
