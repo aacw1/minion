@@ -38,7 +38,11 @@ public class BlockNodeFactory {
             }
             case PARAGRAPH: {
                 TextFlow flow = new TextFlow();
-                if (b.spans.isEmpty()) flow.getChildren().add(new Text(b.text == null ? "" : b.text));
+                if (b.spans.isEmpty()) {
+                    Text t = new Text(b.text == null ? "" : b.text);
+                    t.setFill(javafx.scene.paint.Color.web(TEXT_FILL));
+                    flow.getChildren().add(t);
+                }
                 for (Span s : b.spans) flow.getChildren().add(spanText(s));
                 flow.setPadding(new Insets(2, 0, 2, 0));
                 return flow;
