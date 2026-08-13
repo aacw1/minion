@@ -88,7 +88,7 @@
 .tab-pane .tab:selected .tab-label { -fx-text-fill: #f0f2f6; }
 
 /* 页签溢出：隐藏控制按钮（下拉箭头/滚动），超出宽度由 header 裁剪，不显示滚动条 */
-.tab-pane > .tab-header-area > .control-buttons-tab { -fx-visibility: hidden; }
+.tab-pane > .tab-header-area > .control-buttons-tab { visibility: hidden; }
 .tab-pane .tab { -fx-min-width: 0; }
 
 /* 消息 */
