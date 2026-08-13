@@ -36,6 +36,11 @@ public class SessionListView extends ListView<SessionHandle> {
         this.manager = manager;
         this.onDeleted = onDeleted;
         setCellFactory(v -> new SessionCell());
+        // 相对时间周期刷新（60 秒）：5m/3h/2d 不停留初始值；Timeline 运行于 FX 线程，随应用退出自然停止
+        javafx.animation.Timeline clock = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.minutes(1), e -> refresh()));
+        clock.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        clock.play();
         setOnMouseClicked(e -> {
             // 悬停按钮（✎/✕）的点击会冒泡到此 handler：跳过切换，避免误激活会话（按钮事件已由按钮自身处理）
             if (isHoverButton(e.getTarget())) return;

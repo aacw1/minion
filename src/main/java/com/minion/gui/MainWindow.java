@@ -169,6 +169,7 @@ public class MainWindow {
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
+                    sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
                 });
             }
             @Override public void onWorkspaceChanged() {

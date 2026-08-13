@@ -144,7 +144,7 @@
 .btn-cell:hover { -fx-text-fill: #f0f2f6; -fx-background-color: #2a2f3a; }
 
 /* 侧栏消息时间（5m/3h/2d） */
-.cell-time { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
+.cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 11px; } /* 原 #7a828e 过暗看不清 */
 
 /* 侧栏列表项名称文字：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill（继承默认黑色），须显式上色 */
 .cell-text { -fx-text-fill: #d3d7de; }
