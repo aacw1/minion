@@ -34,7 +34,9 @@
 
 - DeepSeek 思考模式：历史 assistant 消息的 `reasoning_content` 必须原样回传，否则 400
 - tool_call ↔ tool 结果消息必须完整配对回传，拆散会 400
-- 修改 Message 序列化格式时保持这两条不变
+- assistant 消息必须带 `content` 或 `tool_calls` 之一（实测 400：`Invalid assistant message: content or tool_calls must be set`）；
+  仅 `reasoning_content` 无正文的「空壳」不得入历史——中断路径（scrubHalfTurn/appendPartialAssistant）与恢复路径必须清洗
+- 修改 Message 序列化格式时保持以上三条不变
 
 ### 其他
 

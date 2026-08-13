@@ -208,6 +208,8 @@ public class AgentLoop {
      * 半轮残留清洗：最近一条 assistant 消息带 toolCalls 但后续 TOOL 结果不完整（工具阶段中断/损坏历史），
      * 剥离其 toolCalls；残缺的 tool 结果一并移除；纯工具调用空壳消息整条移除。
      * 否则下轮请求发出「assistant 含 tool_calls 无对应 tool 结果」→ API 400 且非重试。
+     * 空壳判定只看 content：仅思考无正文的 assistant 同样必须移除（DeepSeek 思考模式硬性要求
+     * assistant 消息带 content 或 tool_calls，仅 reasoning_content 回传会 400）。
      */
     private void scrubHalfTurn() {
         for (int i = session.messages.size() - 1; i >= 0; i--) {
@@ -224,9 +226,10 @@ public class AgentLoop {
                 while (session.messages.size() > i + 1) {
                     session.messages.remove(session.messages.size() - 1);
                 }
-                if (m.content == null && m.reasoningContent == null) {
-                    session.messages.remove(i); // 空壳 assistant 整条移除，避免空消息进请求
-                }
+            }
+            // 空壳 assistant 整条移除（无正文且无工具调用——含仅思考消息与旧格式残留），避免空消息进请求
+            if (m.content == null && (m.toolCalls == null || m.toolCalls.isEmpty())) {
+                session.messages.remove(i);
             }
             break; // 只需检查最近一条 assistant
         }
@@ -308,12 +311,16 @@ public class AgentLoop {
                 if (usage[0] != null) session.usage.record(usage[0]);
                 if ("error".equals(finish[0])) break;
 
-                // assistant 回复（含思考与工具调用）入会话历史——reasoningContent 回传硬性要求
-                Message assistantMsg = Message.assistant(
-                        content.length() == 0 ? null : content.toString());
-                assistantMsg.reasoningContent = thinking.length() == 0 ? null : thinking.toString();
-                assistantMsg.toolCalls = toolCalls[0];
-                session.messages.add(assistantMsg);
+                // assistant 回复（含思考与工具调用）入会话历史——reasoningContent 回传硬性要求；
+                // 无正文且无工具调用的空回复不入历史（仅思考消息回传会 400）
+                if (content.length() > 0
+                        || (toolCalls[0] != null && !toolCalls[0].isEmpty())) {
+                    Message assistantMsg = Message.assistant(
+                            content.length() == 0 ? null : content.toString());
+                    assistantMsg.reasoningContent = thinking.length() == 0 ? null : thinking.toString();
+                    assistantMsg.toolCalls = toolCalls[0];
+                    session.messages.add(assistantMsg);
+                }
 
                 if (interrupted) break;
 
@@ -387,11 +394,12 @@ public class AgentLoop {
         persistSession();
     }
 
-    /** 中断时把已收到的流式内容补进历史；不含 toolCalls（切断的 tool_calls 流不可信） */
+    /** 中断时把已收到的流式内容补进历史；不含 toolCalls（切断的 tool_calls 流不可信）。
+     *  正文未到达时（仅思考）不入历史：仅 reasoning_content 无 content/tool_calls 的
+     *  assistant 消息回传会 400（DeepSeek 思考模式硬性要求）。 */
     private void appendPartialAssistant(StringBuilder content, StringBuilder thinking) {
-        if (content.length() == 0 && thinking.length() == 0) return;
-        Message assistantMsg = Message.assistant(
-                content.length() == 0 ? null : content.toString());
+        if (content.length() == 0) return;
+        Message assistantMsg = Message.assistant(content.toString());
         assistantMsg.reasoningContent = thinking.length() == 0 ? null : thinking.toString();
         session.messages.add(assistantMsg);
     }
