@@ -21,12 +21,12 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -39,7 +39,7 @@ import javafx.stage.StageStyle;
 
 import java.util.Optional;
 
-/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（消息区 + 输入区），SplitPane 1:3 */
+/** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
 public class MainWindow {
 
     private final Stage stage;
@@ -102,7 +102,7 @@ public class MainWindow {
         titleBar = new TitleBar(stage, modelLabel, tabs, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
 
-        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ SplitPane，默认 1:3
+        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ GridPane，百分比列固定 25%/75%
         VBox sidebar = new VBox(8);
         sidebar.getStyleClass().add("panel");
         sidebar.setMinWidth(200);
@@ -146,10 +146,16 @@ public class MainWindow {
         inputView = new InputView(manager);
         right.getChildren().setAll(chatScroll, inputView);
 
-        SplitPane split = new SplitPane();
-        split.setDividerPositions(0.25); // 需求 5：左右比例 1:3
-        split.getItems().addAll(sidebar, right);
-        root.setCenter(split);
+        // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
+        GridPane center = new GridPane();
+        ColumnConstraints leftCol = new ColumnConstraints();
+        leftCol.setPercentWidth(25);
+        ColumnConstraints rightCol = new ColumnConstraints();
+        rightCol.setPercentWidth(75);
+        center.getColumnConstraints().addAll(leftCol, rightCol);
+        center.add(sidebar, 0, 0);
+        center.add(right, 1, 0);
+        root.setCenter(center);
 
         // 注册 manager 监听（Tab 维护；内容与 Task 5 一致，含 clearChatPane）
         manager.addListener(new SessionManager.Listener() {
