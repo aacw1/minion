@@ -69,4 +69,13 @@ public class SystemPromptBuilderTest {
         assertTrue(iClarify > 0);
         assertTrue(iOldRule1 > iClarify);
     }
+
+    /** 规则指引模型用 ask_user 工具提问（替代纯文本提问等待） */
+    @Test
+    public void build_mentionsAskUserTool() throws Exception {
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList());
+        assertTrue(prompt.contains("ask_user"));
+    }
 }
