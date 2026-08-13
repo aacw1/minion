@@ -68,4 +68,15 @@ public class MessageTest {
         ToolCall fromApi = ToolCall.fromApi(api);
         assertEquals("Bash", fromApi.name);
     }
+
+    /** 消息创建时间戳：工厂打点 ts>0；默认 0（旧数据兼容） */
+    @Test
+    public void factory_stampsCreationTimestamp() {
+        assertTrue(Message.user("u").ts > 0);
+        assertTrue(Message.assistant("a").ts > 0);
+        assertTrue(Message.toolResult("tc", "ReadTool", "ok").ts > 0);
+        assertTrue(Message.system("s").ts > 0);
+        Message plain = new Message();
+        assertEquals(0L, plain.ts);
+    }
 }

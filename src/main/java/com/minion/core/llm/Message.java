@@ -17,11 +17,14 @@ public class Message {
     public String toolCallId;         // 仅 tool
     public String name;               // 仅 tool（工具名）
     public boolean summary;           // true = 压缩摘要消息，不再参与压缩
+    /** 消息创建时间戳（毫秒；0 = 旧数据未打点） */
+    public long ts;
 
     public static Message system(String content) {
         Message m = new Message();
         m.role = Role.SYSTEM;
         m.content = content;
+        m.ts = System.currentTimeMillis();
         return m;
     }
 
@@ -29,6 +32,7 @@ public class Message {
         Message m = new Message();
         m.role = Role.USER;
         m.content = content;
+        m.ts = System.currentTimeMillis();
         return m;
     }
 
@@ -36,6 +40,7 @@ public class Message {
         Message m = new Message();
         m.role = Role.ASSISTANT;
         m.content = content;
+        m.ts = System.currentTimeMillis();
         return m;
     }
 
@@ -45,6 +50,7 @@ public class Message {
         m.toolCallId = toolCallId;
         m.name = name;
         m.content = content;
+        m.ts = System.currentTimeMillis();
         return m;
     }
 
