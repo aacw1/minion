@@ -29,6 +29,7 @@ public class ChatView extends VBox {
         this.events = events;
         this.handle = handle;
         getStyleClass().add("panel-dark");
+        getStyleClass().add("chat-content"); // 显式 LCD 用（ScrollPane 裁剪下 JavaFX 8 默认回退灰阶 AA → 发虚）
         setSpacing(8);
         setStyle("-fx-padding: 16;");
         clear();

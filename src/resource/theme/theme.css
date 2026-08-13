@@ -229,3 +229,6 @@
     -fx-border-color: transparent transparent #232733 transparent;
     -fx-border-width: 0 0 1 0;
 }
+
+/* ===== 聊天正文显式 LCD：ScrollPane 裁剪下 JavaFX 8 默认回退灰阶 AA（正文发虚根因），显式指定优先 ===== */
+.chat-content { -fx-font-smoothing-type: lcd; }
