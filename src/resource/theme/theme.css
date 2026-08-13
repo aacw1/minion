@@ -87,6 +87,10 @@
 .tab-pane .tab-label { -fx-text-fill: #a8b0bb; }
 .tab-pane .tab:selected .tab-label { -fx-text-fill: #f0f2f6; }
 
+/* 页签溢出：隐藏控制按钮（下拉箭头/滚动），超出宽度由 header 裁剪，不显示滚动条 */
+.tab-pane > .tab-header-area > .control-buttons-tab { -fx-visibility: hidden; }
+.tab-pane .tab { -fx-min-width: 0; }
+
 /* 消息 */
 .msg-user {
     -fx-background-color: #23408f;
@@ -128,6 +132,19 @@
 
 /* 侧栏分区标题 */
 .section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 12px; -fx-font-weight: bold; }
+
+/* 侧栏行内悬停小按钮（重命名/修改/删除） */
+.btn-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #a8b0bb;
+    -fx-background-radius: 4;
+    -fx-padding: 2 6 2 6;
+    -fx-cursor: hand;
+}
+.btn-cell:hover { -fx-text-fill: #f0f2f6; -fx-background-color: #2a2f3a; }
+
+/* 侧栏消息时间（5m/3h/2d） */
+.cell-time { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
 
 /* 无边框窗口边缘（Task 9 拖拽用） */
 .resize-edge { -fx-background-color: transparent; }
