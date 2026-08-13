@@ -9,14 +9,13 @@ import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -25,7 +24,7 @@ import javafx.stage.DirectoryChooser;
 
 import java.util.Optional;
 
-/** 左侧工作空间列表：单击切换；右键菜单（重命名/修改/删除）；顶部"新建"按钮由 MainWindow 放置 */
+/** 左侧工作空间列表：单击切换；悬停显示操作小按钮（重命名/修改/删除）；拖拽排序；顶部"新建"按钮由 MainWindow 放置 */
 public class WorkspaceListView extends ListView<String> {
 
     private final SessionManager manager;
@@ -58,20 +57,57 @@ public class WorkspaceListView extends ListView<String> {
                 setText(null);
                 return;
             }
-            setText(name);
-            if (name.equals(workspaces.currentName())) {
-                setText(name + "  ●"); // 当前工作空间标记
-            }
+            Label nameLabel = new Label(name + (name.equals(workspaces.currentName()) ? "  ●" : ""));
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
 
-            ContextMenu menu = new ContextMenu();
-            MenuItem rename = new MenuItem("重命名");
-            rename.setOnAction(e -> doRename(name));
-            MenuItem edit = new MenuItem("修改");
-            edit.setOnAction(e -> doEdit(name));
-            MenuItem del = new MenuItem("删除");
-            del.setOnAction(e -> doDelete(name));
-            menu.getItems().addAll(rename, edit, del);
-            setContextMenu(menu);
+            // 悬停操作按钮（需求：不用右键，鼠标放上去才显示）
+            HBox btns = new HBox(4);
+            Button renameBtn = new Button("✎");
+            renameBtn.getStyleClass().add("btn-cell");
+            renameBtn.setTooltip(new Tooltip("重命名"));
+            renameBtn.setOnAction(e -> doRename(name));
+            Button editBtn = new Button("⚙");
+            editBtn.getStyleClass().add("btn-cell");
+            editBtn.setTooltip(new Tooltip("修改"));
+            editBtn.setOnAction(e -> doEdit(name));
+            Button delBtn = new Button("✕");
+            delBtn.getStyleClass().add("btn-cell");
+            delBtn.setTooltip(new Tooltip("删除"));
+            delBtn.setOnAction(e -> doDelete(name));
+            btns.getChildren().addAll(renameBtn, editBtn, delBtn);
+            btns.setVisible(false);
+            btns.setManaged(false);
+            setOnMouseEntered(e -> { btns.setVisible(true); btns.setManaged(true); });
+            setOnMouseExited(e -> { btns.setVisible(false); btns.setManaged(false); });
+
+            HBox row = new HBox(6);
+            row.getChildren().addAll(nameLabel, spacer, btns);
+            setGraphic(row);
+
+            // 拖拽排序：拖起携带工作空间名，drop 到目标 cell 位置
+            setOnDragDetected(e -> {
+                if (isEmpty()) return;
+                javafx.scene.input.Dragboard db = startDragAndDrop(javafx.scene.input.TransferMode.MOVE);
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(name);
+                db.setContent(cc);
+                e.consume();
+            });
+            setOnDragOver(e -> {
+                if (e.getGestureSource() != this) return;
+                e.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+                e.consume();
+            });
+            setOnDragDropped(e -> {
+                String dragged = e.getDragboard().getString();
+                if (dragged != null && !dragged.equals(name)) {
+                    manager.moveWorkspace(dragged, getIndex()); // 排序持久化；不触发内容切换通知
+                    refresh();
+                }
+                e.setDropCompleted(true); // JavaFX 8 DragEvent API：通知拖起源 drop 已处理（简报中的 setDropHandled 不存在）
+                e.consume();
+            });
         }
     }
 
@@ -117,9 +153,29 @@ public class WorkspaceListView extends ListView<String> {
             if (dir != null) workDir.setText(dir.getAbsolutePath());
         });
         workDirBox.getChildren().addAll(workDir, browse);
+        HBox pmBox = new HBox(6);
         TextField projectMd = new TextField(w.projectMd == null ? "" : w.projectMd);
+        HBox.setHgrow(projectMd, Priority.ALWAYS);
+        Button pmBrowse = new Button("浏览…");
+        pmBrowse.getStyleClass().add("btn-ghost");
+        pmBrowse.setOnAction(e -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle("选择 project.md");
+            fc.getExtensionFilters().add(
+                    new javafx.stage.FileChooser.ExtensionFilter("Markdown", "*.md", "*.markdown"));
+            String cur = projectMd.getText().trim();
+            if (!cur.isEmpty()) {
+                java.io.File f = new java.io.File(cur);
+                if (f.getParentFile() != null && f.getParentFile().isDirectory()) {
+                    fc.setInitialDirectory(f.getParentFile());
+                }
+            }
+            java.io.File file = fc.showOpenDialog(d.getOwner());
+            if (file != null) projectMd.setText(file.getAbsolutePath());
+        });
+        pmBox.getChildren().addAll(projectMd, pmBrowse);
         grid.addRow(0, new Label("work.dir:"), workDirBox);
-        grid.addRow(1, new Label("project.md:"), projectMd);
+        grid.addRow(1, new Label("project.md:"), pmBox);
         d.getDialogPane().setContent(grid);
 
         d.setResultConverter(bt -> {

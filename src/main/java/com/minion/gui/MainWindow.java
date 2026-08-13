@@ -285,11 +285,24 @@ public class MainWindow {
             if (dir != null) wd.setText(dir.getAbsolutePath());
         });
         wdBox.getChildren().addAll(wd, browse);
+        HBox pmBox = new HBox(6);
         TextField pm = new TextField();
         pm.setPromptText("project.md（可空）");
+        HBox.setHgrow(pm, Priority.ALWAYS);
+        Button pmBrowse = new Button("浏览…");
+        pmBrowse.getStyleClass().add("btn-ghost");
+        pmBrowse.setOnAction(e -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle("选择 project.md");
+            fc.getExtensionFilters().add(
+                    new javafx.stage.FileChooser.ExtensionFilter("Markdown", "*.md", "*.markdown"));
+            java.io.File file = fc.showOpenDialog(d.getOwner());
+            if (file != null) pm.setText(file.getAbsolutePath());
+        });
+        pmBox.getChildren().addAll(pm, pmBrowse);
         g.addRow(0, new Label("名称:"), n);
         g.addRow(1, new Label("work.dir:"), wdBox);
-        g.addRow(2, new Label("project.md:"), pm);
+        g.addRow(2, new Label("project.md:"), pmBox);
         d.getDialogPane().setContent(g);
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
