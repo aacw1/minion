@@ -44,6 +44,7 @@ public class SettingsDialog {
         final ListView<String> nav = new ListView<String>();
         nav.getItems().addAll("基础设置", "模型", "关于");
         nav.setPrefWidth(120);
+        nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
         final Node basic = basicPane(config);
         final Node model = modelPane(models, manager);
         final Node about = aboutPane();
@@ -211,8 +212,10 @@ public class SettingsDialog {
         TextField skillsDir = new TextField(config.skillsDir());
         TextArea toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
         toolWhitelist.setPrefRowCount(2);
+        toolWhitelist.setPrefColumnCount(20); // 默认 40 列偏好宽 ≈624px 把基础页撑到 794，触发 HBox 压缩导航列；20 列后偏好宽 ~500 与内容区匹配
         TextArea cmdWhitelist = new TextArea(config.get("confirm.whitelist.commands", ""));
         cmdWhitelist.setPrefRowCount(2);
+        cmdWhitelist.setPrefColumnCount(20);
         CheckBox allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
         allowOutside.setSelected(config.readAllowOutside());
         CheckBox skipConfirm = new CheckBox("跳过高危操作确认");
