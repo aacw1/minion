@@ -46,7 +46,9 @@ d.getDialogPane().getButtonTypes().addAll(apply, ButtonType.CLOSE);
 - 修复：cell 图形（cellBox）宽度绑定 cell 宽度，标题/摘要/时间 Label 设 `OverrunStyle.ELLIPSIS`：
 
 ```java
-cellBox.maxWidthProperty().bind(widthProperty().subtract(4)); // 绑定 cell 宽，超出即截断
+cellBox.maxWidthProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
+        () -> getWidth() - getInsets().getLeft() - getInsets().getRight() - 4,
+        widthProperty(), insetsProperty()));
 name.setTextOverrun(OverrunStyle.ELLIPSIS);
 sum.setTextOverrun(OverrunStyle.ELLIPSIS);
 ```
@@ -54,6 +56,7 @@ sum.setTextOverrun(OverrunStyle.ELLIPSIS);
 - 标题 Label 配合 HBox Hgrow 占满剩余宽度，长标题截断为省略号；摘要行同理。右侧时间/悬停按钮固定宽不被截断。
 - JavaFX 8 ListView 无公开 API 设置横向滚动条策略，靠"内容永不超出视口"根除横向滚动条；纵向滚动（ListView 默认）不受影响。
 - 范围仅会话列表；工作空间列表未报告问题，不动。
+- **实施修正（2026-08-13，经用户确认）**：初版 `subtract(4)` 未抵消 cell padding（theme.css `.list-cell` 左右 24px），探针实测 hbar 仍可见且首选宽持续增长；改 `getInsets` 动态抵消后仍失败——CSS 异步应用，updateItem 绑定时刻 getInsets 恒为 0，且 subtract 为快照语义不重算。最终用 `Bindings.createDoubleBinding` 依赖 `widthProperty + insetsProperty` 随 CSS 应用重算（探针实证 237/241、hbar 隐藏）。
 
 ## 节 3 浏览器路径文件选择（需求 3）
 
