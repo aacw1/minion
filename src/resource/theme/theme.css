@@ -49,6 +49,10 @@
 }
 .btn-ghost:hover { -fx-text-fill: #f0f2f6; -fx-border-color: #4f8cff; }
 
+/* 图标按钮（输入区发送/终止；SVGPath 填充不继承 -fx-text-fill，须显式指定） */
+.icon-send { -fx-fill: white; }
+.icon-stop { -fx-fill: white; }
+
 /* 窗口关闭按钮（无边框窗口） */
 .btn-close {
     -fx-background-color: transparent;
@@ -118,6 +122,9 @@
 }
 .msg-error { -fx-background-color: #3d1d1d; -fx-background-radius: 6; -fx-text-fill: #f85149; }
 .msg-warning { -fx-background-color: #3d2f14; -fx-background-radius: 6; -fx-text-fill: #e3b341; }
+
+/* 运行中补充气泡的小徽标 */
+.supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 11px; -fx-font-weight: bold; }
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }

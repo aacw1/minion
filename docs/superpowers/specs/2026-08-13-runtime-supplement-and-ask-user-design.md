@@ -1,7 +1,7 @@
 # 运行中补充信息 + ask_user 工具 设计
 
 日期：2026-08-13
-状态：已确认待实施
+状态：已实施（分支 feat/runtime-supplement；实施偏差见文末「实施记录」）
 
 ## 背景
 
@@ -36,6 +36,7 @@
 
 - 参数（参照 Claude Code AskUserQuestion 简化）：`question`（必填 string）、`header`（选填）、`options`（选填，`{label, description}` 数组 2-4 个）、`multiSelect`（选填 boolean）。schema 手写 JsonObject——[SchemaGenerator](src/main/java/com/minion/core/tools/SchemaGenerator.java) 只支持全 string，不扩它。
 - `execute()` 阻塞在内部 `CompletableFuture<String>` 上等待回答（**无超时**，等待直到回答或终止）；回答经 `AgentLoop.answerAskUser(text)` → future.complete → `ToolResult.success(answer)` 返回，走现有工具结果路径入历史。无挂起时 complete 忽略。
+- 同轮多次调用（并行）共享同一 pending future：后续 execute 链到已有 future，一次回答唤醒全部调用并返回相同回答；跟随者只在完成时清理自己占据的槽位（身份守卫），避免旧跟随者误清新一轮 pending。
 - 挂起/结束回调：`AgentUi` 新增 `onAskUserStart(String question)` / `onAskUserDone(String answer)`（默认空实现）。[SessionController](src/main/java/com/minion/gui/session/SessionController.java) 转发给 SessionManager 注入的状态监听器（置 `SessionHandle.askPending/askQuestion` + 通知 UI）。
 - 中断：挂起时终止 → `interrupt()` 取消 in-flight future（现有机制）→ execute 抛中断 → 工具结果丢弃 → 现有 [scrubHalfTurn](src/main/java/com/minion/core/agent/AgentLoop.java) 清洗 tool_call 残留（已有路径，零新增）；`askPending` 随 running→false 复位。
 - 系统提示词 [SystemPromptBuilder](src/main/java/com/minion/core/agent/SystemPromptBuilder.java)：规则 2、7 改为「信息不足/需用户选择时**调用 ask_user 工具**向用户提问」。

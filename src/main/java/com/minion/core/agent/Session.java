@@ -24,6 +24,10 @@ public class Session {
     public TodoList todos = new TodoList();
     public UsageTracker usage = new UsageTracker();
 
+    /** 运行中用户补充的挂起队列（尚未入 messages 历史；检查点/下次发送时批量注入后清空）。
+     *  随会话落盘：应用退出时未注入的补充不丢。初始化器保证旧文件反序列化后非 null */
+    public List<String> pendingSupplements = new ArrayList<String>();
+
     private static final AtomicLong SEQ = new AtomicLong();
 
     /** 会话 id 生成：毫秒 + 自增序号。同毫秒内多次生成也唯一且递增（SessionStore 按字符串排序，

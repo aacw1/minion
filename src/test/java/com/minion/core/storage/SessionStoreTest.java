@@ -142,4 +142,23 @@ public class SessionStoreTest {
         SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions"));
         store.delete("不存在的会话id");
     }
+
+    /** 挂起补充队列 + supplement 标识消息随会话落盘往返（重启不丢） */
+    @Test
+    public void saveLoad_pendingSupplementsRoundTrip() throws Exception {
+        SessionStore store = new SessionStore(tmp.getRoot().toPath().resolve("sessions2"));
+        Session s = makeSession();
+        s.messages.add(Message.userSupplement("已注入的补充"));
+        s.pendingSupplements.add("补充A");
+        s.pendingSupplements.add("补充B");
+        store.save(s);
+
+        Session loaded = store.load(s.id);
+        assertEquals(2, loaded.pendingSupplements.size());
+        assertEquals("补充A", loaded.pendingSupplements.get(0));
+        assertEquals("补充B", loaded.pendingSupplements.get(1));
+        Message last = loaded.messages.get(loaded.messages.size() - 1);
+        assertTrue("supplement 标识随消息落盘", last.supplement);
+        assertEquals("已注入的补充", last.content);
+    }
 }

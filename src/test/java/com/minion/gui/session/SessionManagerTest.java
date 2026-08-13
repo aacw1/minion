@@ -471,6 +471,64 @@ public class SessionManagerTest {
         assertFalse(m.moveWorkspace("nope", 0));
     }
 
+    /** 补充：入挂起队列 + 发 USER_SUPPLEMENT 事件（不触网，真实 SessionManager 即可） */
+    @Test
+    public void sendSupplement_queuesAndEmitsEvent() throws Exception {
+        SessionManager m = newManager();
+        SessionHandle h = m.createSession(null);
+        m.sendSupplement(h, "补充内容");
+        assertEquals(1, h.session.pendingSupplements.size());
+        assertEquals("补充内容", h.session.pendingSupplements.get(0));
+        List<EventList.Ev> evs = h.controller.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+    }
+
+    /** ask_user 挂起 → sendAnswer → 回答入历史继续本轮；ask 状态通知与复位 */
+    @Test
+    public void sendAnswer_resumesAskUserAndResetsState() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        final List<Boolean> askStates = new ArrayList<Boolean>();
+        final CountDownLatch askStarted = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { }
+            @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
+                if (asking) { askStates.add(true); askStarted.countDown(); }
+                else askStates.add(false);
+            }
+        });
+        SessionHandle h = m.createSession(null);
+        FakeLlmClient llm = m.created.get(0);
+        com.minion.core.llm.ToolCall q = new com.minion.core.llm.ToolCall();
+        q.id = "q1";
+        q.name = "ask_user";
+        q.arguments = "{\"question\":\"选哪个？\"}";
+        llm.addTurnWithTools(java.util.Collections.singletonList(q), null);
+        llm.addTurn("按你的选择执行");
+        m.send(h, "帮我选一下");
+        assertTrue("ask_user 未挂起", askStarted.await(5, TimeUnit.SECONDS));
+        assertTrue(h.askPending);
+        assertEquals("选哪个？", h.askQuestion);
+        m.sendAnswer(h, "方案B");
+        long deadline = System.currentTimeMillis() + 5000;
+        while (h.running && System.currentTimeMillis() < deadline) Thread.sleep(20);
+        assertFalse(h.running);
+        assertFalse(h.askPending);
+        // 回答作为 TOOL 消息入历史并继续本轮
+        Message answer = h.session.messages.get(2);
+        assertEquals(Message.Role.TOOL, answer.role);
+        assertTrue(answer.content.contains("方案B"));
+        assertEquals("按你的选择执行", h.session.messages.get(3).content);
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();

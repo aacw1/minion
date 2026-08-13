@@ -1,5 +1,7 @@
 package com.minion.gui.chat;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.minion.gui.session.EventList;
 import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
@@ -72,6 +74,17 @@ public class ChatView extends VBox {
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             }
+            case USER_SUPPLEMENT: {
+                VBox box = new VBox(2);
+                Label tag = new Label("⤒ 运行中补充");
+                tag.getStyleClass().add("supplement-tag");
+                Label l = new Label(e.text);
+                l.setWrapText(true);
+                l.getStyleClass().add("msg-user");
+                box.getChildren().addAll(tag, l);
+                getChildren().add(box);
+                break;
+            }
             case THINKING:
                 pendingThinking.append(e.text);
                 replaceLast(thinkingBlock());
@@ -81,14 +94,26 @@ public class ChatView extends VBox {
                 replaceLast(assistantBlock(pendingContent.toString()));
                 break;
             case TOOL_CALL: {
-                VBox card = new VBox(4);
-                card.getStyleClass().add("card");
-                Label name = new Label("🔧 " + e.text);
-                name.getStyleClass().add("msg-thinking");
-                Label detail = new Label(shorten(e.data == null ? "{}" : e.data.toString(), 120));
-                detail.getStyleClass().add("msg-thinking");
-                card.getChildren().addAll(name, detail);
-                getChildren().add(card);
+                if ("ask_user".equals(e.text)) {
+                    VBox card = new VBox(4);
+                    card.getStyleClass().add("card");
+                    Label name = new Label("❓ 模型向你提问");
+                    name.getStyleClass().add("msg-thinking");
+                    Label q = new Label(askQuestionOf(e.data));
+                    q.setWrapText(true);
+                    q.getStyleClass().add("msg-thinking");
+                    card.getChildren().addAll(name, q);
+                    getChildren().add(card);
+                } else {
+                    VBox card = new VBox(4);
+                    card.getStyleClass().add("card");
+                    Label name = new Label("🔧 " + e.text);
+                    name.getStyleClass().add("msg-thinking");
+                    Label detail = new Label(shorten(e.data == null ? "{}" : e.data.toString(), 120));
+                    detail.getStyleClass().add("msg-thinking");
+                    card.getChildren().addAll(name, detail);
+                    getChildren().add(card);
+                }
                 break;
             }
             case TOOL_RESULT: {
@@ -179,5 +204,16 @@ public class ChatView extends VBox {
     private static String shorten(String s, int max) {
         if (s == null) return "";
         return s.length() > max ? s.substring(0, max) + "…" : s;
+    }
+
+    /** ask_user 工具调用的 question 参数（解析失败回空串） */
+    private static String askQuestionOf(Object data) {
+        try {
+            JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString())
+                    .getAsJsonObject();
+            return o.has("question") ? o.get("question").getAsString() : "";
+        } catch (Exception e) {
+            return "";
+        }
     }
 }

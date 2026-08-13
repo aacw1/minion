@@ -185,6 +185,9 @@ public class MainWindow {
                 Platform.runLater(() -> updateTab(h));
                 if (inputView != null) inputView.onRunningChanged(h, running);
             }
+            @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
+                if (inputView != null) inputView.onAskChanged(h, asking, question);
+            }
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
                     selectTab(h);

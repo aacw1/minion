@@ -12,6 +12,11 @@ public class SessionController implements AgentUi {
 
     private final EventList events = new EventList();
 
+    /** ask_user 挂起状态回调（非 null=开始挂起并携带问题；null=回答完成），SessionManager 注入 */
+    private volatile java.util.function.Consumer<String> askStateListener;
+
+    public void setAskStateListener(java.util.function.Consumer<String> l) { this.askStateListener = l; }
+
     public EventList eventList() { return events; }
 
     /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT(content 非空)→CONTENT；
@@ -20,7 +25,9 @@ public class SessionController implements AgentUi {
         for (Message m : messages) {
             if (m == null || m.role == null) continue;
             if (m.role == Message.Role.USER) {
-                events.add(new EventList.Ev(EventList.Kind.USER_MESSAGE, m.content, null));
+                events.add(new EventList.Ev(m.supplement
+                        ? EventList.Kind.USER_SUPPLEMENT : EventList.Kind.USER_MESSAGE,
+                        m.content, null));
             } else if (m.role == Message.Role.ASSISTANT
                     && m.content != null && !m.content.trim().isEmpty()) {
                 events.add(new EventList.Ev(EventList.Kind.CONTENT, m.content, null));
@@ -62,5 +69,14 @@ public class SessionController implements AgentUi {
     }
     @Override public void onWarning(String message) {
         events.add(new EventList.Ev(EventList.Kind.WARNING, message, null));
+    }
+    @Override public void onUserSupplement(String text) {
+        events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, text, null));
+    }
+    @Override public void onAskUserStart(String question) {
+        if (askStateListener != null) askStateListener.accept(question);
+    }
+    @Override public void onAskUserDone(String answer) {
+        if (askStateListener != null) askStateListener.accept(null);
     }
 }

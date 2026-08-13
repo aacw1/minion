@@ -42,4 +42,44 @@ public class SessionControllerTest {
         c.replayHistory(msgs);
         assertEquals(0, c.eventList().size());
     }
+
+    @Test
+    public void onUserSupplement_emitsSupplementEvent() {
+        SessionController c = new SessionController();
+        c.onUserSupplement("补充内容");
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("补充内容", evs.get(0).text);
+    }
+
+    /** 历史回放：supplement=true 的 USER 消息 → USER_SUPPLEMENT 事件 */
+    @Test
+    public void replayHistory_userSupplement_emitsSupplementEvent() {
+        SessionController c = new SessionController();
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.userSupplement("历史补充"));
+        msgs.add(Message.user("普通消息"));
+        c.replayHistory(msgs);
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(2, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("历史补充", evs.get(0).text);
+        assertEquals(EventList.Kind.USER_MESSAGE, evs.get(1).kind);
+    }
+
+    /** ask_user 状态转发：开始（带问题）→ 完成（null） */
+    @Test
+    public void askStateListener_startAndDone() {
+        SessionController c = new SessionController();
+        final List<String> states = new ArrayList<String>();
+        c.setAskStateListener(new java.util.function.Consumer<String>() {
+            @Override public void accept(String question) { states.add(question); }
+        });
+        c.onAskUserStart("选哪个？");
+        c.onAskUserDone("方案B");
+        assertEquals(2, states.size());
+        assertEquals("选哪个？", states.get(0));
+        assertNull(states.get(1));
+    }
 }
