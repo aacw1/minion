@@ -12,6 +12,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.Node;
@@ -78,6 +79,8 @@ public class SessionListView extends ListView<SessionHandle> {
             Circle dot = StatusDot.create(h.running);
             Label name = new Label(label);
             name.getStyleClass().add("cell-text"); // 显式上色：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill
+            name.setTextOverrun(OverrunStyle.ELLIPSIS);
+            name.setMinWidth(0); // 允许收缩至省略号：长标题不再撑出横向滚动条
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
@@ -119,11 +122,14 @@ public class SessionListView extends ListView<SessionHandle> {
             box.getChildren().addAll(dot, name, spacer, timeLabel, renameBtn, delBtn);
 
             VBox cellBox = new VBox(2);
+            cellBox.maxWidthProperty().bind(widthProperty().subtract(4)); // 绑定 cell 宽：内容超出即截断，根除横向滚动条
             cellBox.getChildren().add(box);
             String summary = lastSummary(h);
             if (summary != null) {
                 Label sum = new Label(summary);
                 sum.getStyleClass().add("section-title");
+                sum.setTextOverrun(OverrunStyle.ELLIPSIS);
+                sum.setMinWidth(0);
                 cellBox.getChildren().add(sum);
             }
             setGraphic(cellBox);
