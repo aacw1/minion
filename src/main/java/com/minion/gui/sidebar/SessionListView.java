@@ -122,7 +122,9 @@ public class SessionListView extends ListView<SessionHandle> {
             box.getChildren().addAll(dot, name, spacer, timeLabel, renameBtn, delBtn);
 
             VBox cellBox = new VBox(2);
-            cellBox.maxWidthProperty().bind(widthProperty().subtract(getInsets().getLeft() + getInsets().getRight() + 4)); // 绑定 cell 宽并抵消 cell 自身 padding（theme.css 左右 24px）：padding 未抵消时 cellPref 超视口，横向滚动条仍会出现
+            cellBox.maxWidthProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
+                    () -> getWidth() - getInsets().getLeft() - getInsets().getRight() - 4,
+                    widthProperty(), insetsProperty())); // 须依赖 insetsProperty 重算：CSS 异步应用，updateItem 绑定时刻 getInsets 恒为 0，快照（subtract 双精度）会永久漏抵消 padding、横向滚动条仍出现
             cellBox.getChildren().add(box);
             String summary = lastSummary(h);
             if (summary != null) {
