@@ -71,6 +71,7 @@ public class WorkspaceListView extends ListView<String> {
                 return;
             }
             Label nameLabel = new Label(name + (name.equals(workspaces.currentName()) ? "  ●" : ""));
+            nameLabel.getStyleClass().add("cell-text");
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 

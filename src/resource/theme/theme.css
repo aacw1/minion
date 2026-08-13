@@ -146,6 +146,10 @@
 /* 侧栏消息时间（5m/3h/2d） */
 .cell-time { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
 
+/* 侧栏列表项名称文字：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill（继承默认黑色），须显式上色 */
+.cell-text { -fx-text-fill: #d3d7de; }
+.list-view .list-cell:selected .cell-text { -fx-text-fill: #f0f2f6; }
+
 /* 无边框窗口边缘（Task 9 拖拽用） */
 .resize-edge { -fx-background-color: transparent; }
 

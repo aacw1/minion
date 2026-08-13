@@ -72,6 +72,7 @@ public class SessionListView extends ListView<SessionHandle> {
             String label = h.title == null ? "(新会话)" : h.title;
             Circle dot = StatusDot.create(h.running);
             Label name = new Label(label);
+            name.getStyleClass().add("cell-text"); // 显式上色：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
