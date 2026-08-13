@@ -3,19 +3,24 @@ package com.minion.gui.input;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 
-/** 底部输入区：多行 TextArea + 单图标按钮（上箭头=发送/补充/回答、方块=终止、变淡箭头=空输入）。
+/** 底部输入区：4/9 宽居中大框（左 TextArea 右按钮、中间竖分割线）+ /命令与 @文件补全弹层。
+ *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
 public class InputView extends VBox {
 
@@ -27,6 +32,10 @@ public class InputView extends VBox {
     private final Button sendButton = new Button();
     private final SVGPath arrowIcon = new SVGPath();
     private final SVGPath stopIcon = new SVGPath();
+    private final SuggestionPopup popup = new SuggestionPopup();
+    private final FileSuggester fileSuggester = new FileSuggester();
+    private HBox frame; // 大框（弹层锚点）
+    private CompletionParser.Token lastToken; // 弹层可见时待替换的词
     private volatile SessionHandle current;
     // FX 线程缓存的状态（bindSession/onRunningChanged/onAskChanged 维护）
     private boolean running;
@@ -36,15 +45,15 @@ public class InputView extends VBox {
     public InputView(final SessionManager manager) {
         this.manager = manager;
         getStyleClass().add("panel-dark");
-        setSpacing(8);
-        setStyle("-fx-padding: 12 16 12 16;");
+        setPadding(new Insets(12, 16, 12, 16));
 
-        input.getStyleClass().add("input-area");
+        input.getStyleClass().add("input-textarea");
         input.setWrapText(true);
-        input.setPromptText("输入消息…  (Ctrl+Enter 发送)");
+        input.setPromptText("输入消息…  (@ 引用文件  / 命令  Ctrl+Enter 发送)");
         input.setPrefRowCount(2);
         input.setMaxHeight(6 * 24);
-        input.textProperty().addListener((obs, ov, nv) -> updateButton());
+        input.textProperty().addListener((obs, ov, nv) -> { updateButton(); onTextChanged(); });
+        input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
 
         // 上箭头（Claude Code 同款语义：可发送）；方块 = 终止
         arrowIcon.setContent("M12 4 L20 13 L15 13 L15 21 L9 21 L9 13 L4 13 Z");
@@ -63,19 +72,47 @@ public class InputView extends VBox {
                 onAction();
                 return;
             }
-            // Esc：终止当前运行（提问挂起时亦可终止；补全弹层接线在 Task 7 前置拦截）
+            // 补全弹层优先：↑↓ 移动、Enter/Tab 确认、Esc 仅关弹层
+            if (popup.isShowing()) {
+                switch (e.getCode()) {
+                    case UP:    popup.move(-1); e.consume(); break;
+                    case DOWN:  popup.move(1);  e.consume(); break;
+                    case TAB:
+                    case ENTER: confirmPopup(); e.consume(); break;
+                    case ESCAPE: popup.hide(); lastToken = null; e.consume(); break;
+                }
+                return;
+            }
+            // Esc：终止当前运行（提问挂起时亦可终止）
             if (e.getCode() == KeyCode.ESCAPE && current != null && running) {
                 e.consume();
                 manager.stop(current);
             }
         });
 
-        HBox buttonRow = new HBox(10);
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        buttonRow.getChildren().addAll(spacer, sendButton);
-        VBox.setVgrow(input, Priority.ALWAYS);
-        getChildren().addAll(input, buttonRow);
+        // 大框：TextArea | 竖分割线 | 按钮（按钮经 VBox 垂直居中，分割线随框高拉伸）
+        frame = new HBox(8);
+        frame.getStyleClass().add("input-frame");
+        HBox.setHgrow(input, Priority.ALWAYS);
+        Region divider = new Region();
+        divider.getStyleClass().add("input-divider");
+        VBox buttonBox = new VBox();
+        buttonBox.setAlignment(Pos.CENTER);
+        VBox.setVgrow(buttonBox, Priority.ALWAYS);
+        buttonBox.getChildren().add(sendButton);
+        frame.getChildren().addAll(input, divider, buttonBox);
+
+        // 4/9 宽居中：3 列百分比（27.8% / 44.4% / 27.8%）
+        GridPane root = new GridPane();
+        ColumnConstraints left = new ColumnConstraints();
+        left.setPercentWidth(27.8);
+        ColumnConstraints center = new ColumnConstraints();
+        center.setPercentWidth(44.4);
+        ColumnConstraints right = new ColumnConstraints();
+        right.setPercentWidth(27.8);
+        root.getColumnConstraints().addAll(left, center, right);
+        root.add(frame, 1, 0);
+        getChildren().add(root);
     }
 
     /** 纯静态判定（可脱离 JavaFX 单测）：运行/提问挂起/有内容 → 按钮模式。
@@ -84,6 +121,46 @@ public class InputView extends VBox {
         if (!running) return hasContent ? BtnMode.SEND : BtnMode.SEND_DIM;
         if (askPending) return hasContent ? BtnMode.ANSWER : BtnMode.ANSWER_DIM;
         return hasContent ? BtnMode.SUPPLEMENT : BtnMode.STOP;
+    }
+
+    /** 文本/光标变化 → 重新解析补全模式并刷新弹层（弹层异常不得打断输入，兜底隐藏） */
+    private void onTextChanged() {
+        try {
+            CompletionParser.Token t = CompletionParser.parse(input.getText(), input.getCaretPosition());
+            switch (t.mode) {
+                case SLASH:
+                    popup.show(frame, SlashSuggester.all(manager.skills()), t.query);
+                    lastToken = t;
+                    break;
+                case SLASH_SKILL:
+                    popup.show(frame, SlashSuggester.skillEntries(manager.skills()), t.query);
+                    lastToken = t;
+                    break;
+                case FILE: {
+                    String dir = manager.currentWorkspaceDir();
+                    if (dir == null) { popup.hide(); lastToken = null; break; }
+                    popup.show(frame, fileSuggester.list(dir), t.query);
+                    lastToken = t;
+                    break;
+                }
+                default:
+                    popup.hide();
+                    lastToken = null;
+            }
+        } catch (Exception ex) {
+            popup.hide(); // 弹层为增强体验，任何异常不打断输入
+            lastToken = null;
+        }
+    }
+
+    /** 确认弹层选中：替换当前词为插入文本并移动光标 */
+    private void confirmPopup() {
+        if (lastToken == null) return;
+        String insert = popup.confirmSelected();
+        if (insert == null) return;
+        input.replaceText(lastToken.start, lastToken.end, insert);
+        input.positionCaret(lastToken.start + insert.length());
+        lastToken = null;
     }
 
     /** MainWindow 激活会话时调用 */
@@ -126,7 +203,7 @@ public class InputView extends VBox {
             String q = askQuestion == null ? "" : askQuestion;
             input.setPromptText("回答: " + (q.length() > 40 ? q.substring(0, 40) + "…" : q));
         } else {
-            input.setPromptText("输入消息…  (Ctrl+Enter 发送)");
+            input.setPromptText("输入消息…  (@ 引用文件  / 命令  Ctrl+Enter 发送)");
         }
     }
 
@@ -182,6 +259,7 @@ public class InputView extends VBox {
         String text = input.getText();
         if (text == null || text.trim().isEmpty()) return;
         input.clear();
+        popup.hide();
         SessionHandle target = current;
         if (target == null) {
             target = manager.createSession(null);

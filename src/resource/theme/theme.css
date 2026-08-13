@@ -62,17 +62,40 @@
 }
 .btn-close:hover { -fx-background-color: #c93a39; -fx-text-fill: white; }
 
-/* 输入区 */
-.input-area {
+/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
+.input-frame {
     -fx-background-color: #1a1d24;
     -fx-background-radius: 8;
     -fx-border-color: #232733;
     -fx-border-radius: 8;
+    -fx-padding: 8 10 8 14;
+    -fx-font-smoothing-type: lcd;
+}
+.input-frame .input-textarea {
+    -fx-background-color: transparent;
+    -fx-control-inner-background: transparent;
     -fx-text-fill: #f0f2f6;
     -fx-prompt-text-fill: #7a828e;
-    -fx-control-inner-background: #1a1d24;
     -fx-highlight-fill: #3b6fe0;
 }
+.input-frame .input-textarea .content { -fx-background-color: transparent; }
+.input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
+.input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
+
+/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
+.suggest-list {
+    -fx-background-color: #1a1d24;
+    -fx-background-radius: 8;
+    -fx-border-color: #2a2f3a;
+    -fx-border-radius: 8;
+    -fx-font-smoothing-type: lcd;
+}
+.suggest-list .list-cell { -fx-background-color: transparent; -fx-padding: 6 10 6 10; }
+.suggest-list .list-cell:hover { -fx-background-color: #20242e; }
+.suggest-list .list-cell:selected { -fx-background-color: #2a3344; }
+.suggest-label { -fx-text-fill: #d3d7de; }
+.suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #f0f2f6; }
+.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 12px; }
 
 /* 列表 */
 .list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
