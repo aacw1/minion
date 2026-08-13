@@ -253,8 +253,11 @@ public class MainWindow {
                 policy.onScroll(nv.doubleValue(), chatScroll.getVmax()));
         chatScroll.vmaxProperty().addListener((obs, ov, nv) -> {
             if (policy.shouldFollow()) {
-                final double target = nv.doubleValue();
-                Platform.runLater(() -> chatScroll.setVvalue(target));
+                // 执行时重读当前 vmax 并二次确认贴底：捕获监听时旧值会在内容继续增长时
+                // 把 vvalue 卡在旧底部 < 新 vmax，被误判"离开底部"→ pinned 永不复原（失效根因）
+                Platform.runLater(() -> {
+                    if (policy.shouldFollow()) chatScroll.setVvalue(chatScroll.getVmax());
+                });
             }
         });
     }
