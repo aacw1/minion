@@ -1,7 +1,7 @@
 # minion UI 修复与增强设计
 
 日期：2026-08-13
-状态：待实施
+状态：已实施（2026-08-13 完成）
 
 ## 背景
 
@@ -89,7 +89,7 @@ CODE 块（Label）与 HEADING（内联样式）已正确，不动。
 
 ### 4.2 工作空间悬停按钮（需求 9）
 
-`WsCell` 改为 graphic：`HBox(名称 Label（含 ● 当前标记）, Region 弹性, 按钮组)`；按钮组含重命名/修改/删除（`btn-ghost` 小按钮），初始 `visible=false` + `managed=false`；cell `setOnMouseEntered` 显示、`setOnMouseExited` 隐藏。**移除 ContextMenu**（用户明确不用右键）。
+`WsCell` 改为 graphic：`HBox(名称 Label（含 ● 当前标记）, Region 弹性, 按钮组)`；按钮组含重命名/修改/删除（样式类 `btn-cell`，theme.css 定义，非设计稿的 btn-ghost），初始 `visible=false` + `managed=false`；cell `setOnMouseEntered` 显示、`setOnMouseExited` 隐藏。**移除 ContextMenu**（用户明确不用右键）。
 
 ### 4.3 会话悬停按钮 + 消息创建时间（需求 11）
 

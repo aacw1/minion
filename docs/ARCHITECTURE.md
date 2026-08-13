@@ -30,19 +30,21 @@ com.minion
 | 类 | 职责 |
 |---|---|
 | MinionApp | JavaFX 启动（Application），静态注入 Config/WorkspaceManager/ModelManager/SessionManager |
-| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ SplitPane 1:3（左侧会话/工作空间，右侧消息区+输入区）；关闭确认 confirmClose 由 ✕ 按钮与系统关闭共用 |
+| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ SplitPane 1:3（左侧会话/工作空间，右侧消息区+输入区）；关闭确认 confirmClose 由 ✕ 按钮与系统关闭共用；标题栏页签 selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy |
 | TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，⚙ 设置入口） |
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
-| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换、右键删除） |
-| chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染 |
+| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；悬停显示 ✎/⚙/✕ 操作按钮替代右键菜单，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间） |
+| sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
+| chat/ChatView、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
 | input/InputView | 输入区（Ctrl+Enter 发送、Enter 换行）；绑定会话后发送走 SessionManager.send |
-| dialog/SettingsDialog、ConfirmDialog | 设置窗（模型/基础设置/关于三页签）；高危操作确认弹窗 |
+| dialog/SettingsDialog、ConfirmDialog | 设置窗（模型/基础设置/关于三页签，页签横排 setSide(TOP)+tabMinWidth(90)，基础设置 GridPane 列约束防标签截断）；高危操作确认弹窗 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → FutureTask 投递 FX 线程弹窗 → 阻塞等待（无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
-| session/SessionController | 会话侧事件源，输出到该会话 EventList |
+| session/SessionController | 会话侧事件源，输出到该会话 EventList；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、跳过 SYSTEM/TOOL/空消息），restoreSessions 恢复后调用 |
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
+| session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖）：onScroll(vvalue,vmax) 更新贴底状态，shouldFollow() 供内容增长时判断；MainWindow vvalue/vmax 双监听配合，vmax 变化后 Platform.runLater 设 setVvalue(vmax) 防 clamp 吞掉 |
 
 ### core/agent/
 
@@ -59,7 +61,7 @@ com.minion
 | 类 | 职责 |
 |---|---|
 | LlmClient / DeepSeekClient | SSE 流式请求（内置 deepseek/qwen 思考参数适配）；HTTP 连接 30s / 读取 300s（写死常量） |
-| Message | 消息模型（role/content/reasoningContent/toolCalls/toolCallId/name/summary）；assistant 的 reasoningContent 必须原样回传（DeepSeek 硬性要求） |
+| Message | 消息模型（role/content/reasoningContent/toolCalls/toolCallId/name/summary/ts）；ts 为创建时间戳（毫秒，四个工厂方法打点，随会话 JSON 落盘，旧数据 ts==0 向后兼容）；assistant 的 reasoningContent 必须原样回传（DeepSeek 硬性要求） |
 | ToolCall / Usage / UsageTracker | 工具调用增量解析；按轮+会话累计 input/output/thinking |
 
 ### core/tools/
@@ -79,7 +81,7 @@ com.minion
 - `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×compressThreshold 触发，按完整回合链压缩，保留最近 keepRecentMessages 条）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `Config`：config.properties（classpath 默认值 + jar 同目录外部覆盖，首次运行自动生成）
-- `WorkspaceManager` / `ModelManager`：workspace.json / model.json（jar 同目录，单文件多条目；缺失自动生成，损坏备份后重建）
+- `WorkspaceManager` / `ModelManager`：workspace.json / model.json（jar 同目录，单文件多条目；缺失自动生成，损坏备份后重建）；workspace.json 数组顺序即侧栏显示顺序，`WorkspaceManager.move(name, newIndex)` 拖拽排序持久化（越界返回 false 不改列表；SessionManager.moveWorkspace 转发但不发通知，避免拖拽时清空聊天区）
 
 ## 3. 会话管理与线程模型（gui/session/SessionManager）
 
