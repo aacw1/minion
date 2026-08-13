@@ -23,8 +23,10 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.Window;
 
 import java.util.Optional;
@@ -45,7 +47,7 @@ public class SettingsDialog {
         nav.getItems().addAll("基础设置", "模型", "关于");
         nav.setPrefWidth(120);
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
-        final Node basic = basicPane(config);
+        final Node basic = basicPane(config, owner);
         final Node model = modelPane(models, manager);
         final Node about = aboutPane();
         final StackPane content = new StackPane();
@@ -208,8 +210,23 @@ public class SettingsDialog {
 
     // ===== 基础设置页 =====
 
-    private static Node basicPane(final Config config) {
+    private static Node basicPane(final Config config, final Window owner) {
+        HBox skillsBox = new HBox(6);
         TextField skillsDir = new TextField(config.skillsDir());
+        HBox.setHgrow(skillsDir, Priority.ALWAYS);
+        Button browse = new Button("浏览…");
+        browse.getStyleClass().add("btn-ghost");
+        browse.setOnAction(e -> {
+            DirectoryChooser dc = new DirectoryChooser();
+            String cur = skillsDir.getText().trim();
+            if (!cur.isEmpty()) {
+                java.io.File f = new java.io.File(cur);
+                if (f.isDirectory()) dc.setInitialDirectory(f);
+            }
+            java.io.File dir = dc.showDialog(owner);
+            if (dir != null) skillsDir.setText(dir.getAbsolutePath());
+        });
+        skillsBox.getChildren().addAll(skillsDir, browse);
         TextArea toolWhitelist = new TextArea(config.get("confirm.whitelist.tools", ""));
         toolWhitelist.setPrefRowCount(2);
         toolWhitelist.setPrefColumnCount(20); // 默认 40 列偏好宽 ≈624px 把基础页撑到 794，触发 HBox 压缩导航列；20 列后偏好宽 ~500 与内容区匹配
@@ -231,7 +248,7 @@ public class SettingsDialog {
 
         VBox rows = new VBox(10);
         rows.getChildren().addAll(
-                row("技能目录 skills.dir:", skillsDir),
+                row("技能目录 skills.dir:", skillsBox),
                 row("确认白名单\n(工具, 逗号分隔):", toolWhitelist),
                 row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
                 row("读逃逸:", allowOutside),
@@ -274,7 +291,7 @@ public class SettingsDialog {
     }
 
     /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */
-    private static HBox row(String labelText, javafx.scene.control.Control control) {
+    private static HBox row(String labelText, Region control) {
         Label l = new Label(labelText);
         l.setMinWidth(160);
         l.setPrefWidth(160);
