@@ -126,7 +126,11 @@ public class ChatView extends VBox {
             case CONTENT:
                 pendingContent.append(e.text);
                 // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
-                stream("【回复】", "log-reply", MarkdownRenderer.toPlainText(pendingContent.toString()), StreamKind.REPLY);
+                String plain = MarkdownRenderer.toPlainText(pendingContent.toString());
+                // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
+                // 不打印【回复】标签——空标签+空白正文的"幽灵段"；pendingContent 只追加不会中途变空
+                if (plain.trim().isEmpty()) break;
+                stream("【回复】", "log-reply", plain, StreamKind.REPLY);
                 break;
             case TOOL_CALL: {
                 String body = "ask_user".equals(e.text)
