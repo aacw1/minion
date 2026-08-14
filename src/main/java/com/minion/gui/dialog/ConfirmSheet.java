@@ -69,7 +69,7 @@ public class ConfirmSheet {
         }
     };
 
-    /** Esc=拒绝；Enter 放行触发焦点按钮（默认焦点=批准）；其余按键一律拦截（Tab 圈定焦点防逃逸到侧栏） */
+    /** Esc=拒绝；Enter 放行触发焦点按钮（默认焦点=同意）；其余按键一律拦截（Tab 圈定焦点防逃逸到侧栏） */
     private static final EventHandler<KeyEvent> keyFilter = new EventHandler<KeyEvent>() {
         @Override public void handle(KeyEvent e) {
             if (e.getCode() == KeyCode.ESCAPE) {
@@ -119,7 +119,7 @@ public class ConfirmSheet {
         });
     }
 
-    /** 卡片：顶部琥珀危险饰条 | ⚠ 标题 | 消息内嵌面板 | 按钮行 | 快捷键提示 */
+    /** 卡片：顶部琥珀危险饰条 | 消息 | 按钮行 | 快捷键提示（压缩为 3 行，去掉标题行） */
     private static VBox buildCard(String message) {
         VBox card = new VBox();
         card.getStyleClass().add("sheet-card");
@@ -127,14 +127,6 @@ public class ConfirmSheet {
 
         Region accent = new Region();
         accent.getStyleClass().add("sheet-accent");
-
-        Label warn = new Label("⚠");
-        warn.getStyleClass().add("sheet-warn");
-        Label title = new Label("高危操作确认");
-        title.getStyleClass().add("sheet-title");
-        HBox head = new HBox(8);
-        head.setAlignment(Pos.CENTER_LEFT);
-        head.getChildren().addAll(warn, title);
 
         Label body = new Label(message);
         body.setWrapText(true);
@@ -149,20 +141,20 @@ public class ConfirmSheet {
         Button whitelist = new Button("批准并记住");
         whitelist.getStyleClass().add("btn-ghost");
         whitelist.setOnAction(e -> finish(ConfirmUi.Decision.APPROVE_WHITELIST));
-        Button approve = new Button("批准");
+        Button approve = new Button("同意");
         approve.getStyleClass().add("btn-approve");
-        approve.setDefaultButton(true); // Enter 即批准（默认焦点落批准）
+        approve.setDefaultButton(true); // Enter 即同意（默认焦点落同意）
         approve.setOnAction(e -> finish(ConfirmUi.Decision.APPROVE));
         HBox buttons = new HBox(8);
         buttons.setAlignment(Pos.CENTER_RIGHT);
         buttons.getChildren().addAll(reject, session, whitelist, approve);
 
-        Label hint = new Label("Enter 批准 · Esc 拒绝");
+        Label hint = new Label("Enter 同意 · Esc 拒绝");
         hint.getStyleClass().add("sheet-hint");
 
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(12, 14, 12, 14));
-        content.getChildren().addAll(head, body, buttons, hint);
+        VBox content = new VBox(6);
+        content.setPadding(new Insets(10, 14, 10, 14));
+        content.getChildren().addAll(body, buttons, hint);
         card.getChildren().addAll(accent, content);
         return card;
     }

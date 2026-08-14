@@ -7,7 +7,13 @@ import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
 import javafx.scene.Node;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.VBox;
 
 /**
@@ -67,6 +73,7 @@ public class ChatView extends VBox {
                 Label l = new Label(e.text);
                 l.setWrapText(true);
                 l.getStyleClass().add("msg-user");
+                makeCopyable(l, e.text);
                 getChildren().add(l);
                 // 新轮次开始：重置上一轮流式缓冲，防止与下一轮内容拼接（评审 I-1）
                 pendingContent.setLength(0);
@@ -81,6 +88,7 @@ public class ChatView extends VBox {
                 Label l = new Label(e.text);
                 l.setWrapText(true);
                 l.getStyleClass().add("msg-user");
+                makeCopyable(l, e.text);
                 box.getChildren().addAll(tag, l);
                 getChildren().add(box);
                 break;
@@ -103,6 +111,7 @@ public class ChatView extends VBox {
                     q.setWrapText(true);
                     q.getStyleClass().add("msg-thinking");
                     card.getChildren().addAll(name, q);
+                    makeCopyable(card, "❓ 模型向你提问\n" + askQuestionOf(e.data));
                     getChildren().add(card);
                 } else {
                     VBox card = new VBox(4);
@@ -112,6 +121,7 @@ public class ChatView extends VBox {
                     Label detail = new Label(shorten(e.data == null ? "{}" : e.data.toString(), 120));
                     detail.getStyleClass().add("msg-thinking");
                     card.getChildren().addAll(name, detail);
+                    makeCopyable(card, "🔧 " + e.text + "\n" + (e.data == null ? "{}" : e.data.toString()));
                     getChildren().add(card);
                 }
                 break;
@@ -120,6 +130,7 @@ public class ChatView extends VBox {
                 String data = e.data == null ? "" : e.data.toString();
                 Label l = new Label(data.startsWith("ok") ? "✅ " + e.text + " 成功" : "❌ " + e.text + " 失败");
                 l.getStyleClass().add("msg-thinking");
+                makeCopyable(l, e.text);
                 getChildren().add(l);
                 break;
             }
@@ -151,6 +162,29 @@ public class ChatView extends VBox {
         getChildren().add(alert(text, "msg-error"));
     }
 
+    /** 消息节点复制能力：右键菜单「复制」+ 双击复制全文（消息用 Label/节点渲染，文本不可选中，此为其唯一复制途径）。
+     *  不用 Control.setContextMenu（VBox 等非 Control 节点无此 API），统一右键事件手动弹出菜单 */
+    private static void makeCopyable(Node node, final String text) {
+        if (text == null || text.isEmpty()) return;
+        MenuItem copy = new MenuItem("复制");
+        copy.setOnAction(e -> copyToClipboard(text));
+        final ContextMenu menu = new ContextMenu(copy);
+        node.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getButton() == MouseButton.SECONDARY) {
+                menu.show(node, e.getScreenX(), e.getScreenY());
+                e.consume();
+            } else if (e.getClickCount() == 2) {
+                copyToClipboard(text);
+            }
+        });
+    }
+
+    private static void copyToClipboard(String text) {
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(text);
+        Clipboard.getSystemClipboard().setContent(cc);
+    }
+
     /** 流式节点哨兵：仅思考块与助手内容块携带，标识「可被流式增量替换」 */
     private static final Object STREAMING_MARK = new Object();
 
@@ -164,6 +198,7 @@ public class ChatView extends VBox {
         Label l = new Label(text);
         l.setWrapText(true);
         l.getStyleClass().add(style);
+        makeCopyable(l, text);
         return l;
     }
 
@@ -172,6 +207,7 @@ public class ChatView extends VBox {
         l.setWrapText(true);
         l.getStyleClass().add("msg-thinking");
         l.setUserData(STREAMING_MARK); // 流式块标记：多段思考增量合并为同一块
+        makeCopyable(l, "思考: " + pendingThinking.toString()); // 快照当前已流式到的内容
         return l;
     }
 
@@ -182,6 +218,7 @@ public class ChatView extends VBox {
         for (MarkdownRenderer.Block b : MarkdownRenderer.parse(md)) {
             box.getChildren().add(BlockNodeFactory.create(b));
         }
+        makeCopyable(box, md); // 复制 markdown 原文（当前已渲染部分）
         return box;
     }
 

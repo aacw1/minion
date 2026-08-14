@@ -41,10 +41,12 @@ public class SettingsDialog {
         d.initOwner(owner);
         d.setTitle("设置");
         final BasicPane basic = new BasicPane(config, owner);
-        // 按钮栏「应用」「关闭」相邻：OTHER(U) 落左区（应用被单独放左边根因），
-        // APPLY(A) 在 Win 顺序串右区、CANCEL_CLOSE(C) 在中区末位，中右两区靠右并排 → [应用][关闭] 相邻。
-        // 注：DialogPane.getButtonBar()（8u60+）在本 jfxrt 不可用，仅靠 ButtonData 归区即可
-        ButtonType applyType = new ButtonType("应用", ButtonBar.ButtonData.APPLY);
+        // 按钮栏「关闭」「应用」相邻，调换为关闭在左、应用在右：
+        // ButtonData 按 type 分区排列（LEFT 区 < OTHER 区 < RIGHT 区）。APPLY 属 BUTTON_LEFT
+        // （应用落最左区，与关闭不相邻/相邻但在前）；改为 OK_DONE 进 OTHER 区，其字符 O 在
+        // CLOSE 的字符 C 之后（Win 顺序串 L_E+U+FBIX_NCYOA_R_G_）→ [关闭][应用]。
+        // 注：DialogPane.getButtonBar()/setButtonOrder（8u60+）在本 jfxrt 不可用，仅靠 ButtonData 归区
+        ButtonType applyType = new ButtonType("应用", ButtonBar.ButtonData.OK_DONE);
         d.getDialogPane().getButtonTypes().addAll(applyType, ButtonType.CLOSE);
         // DialogPane 对任意按钮点击都触发关窗（impl_setResultAndClose）；应用=保存不关窗，须用捕获阶段 filter 先 consume
         ((Button) d.getDialogPane().lookupButton(applyType)).addEventFilter(ActionEvent.ACTION, e -> {
