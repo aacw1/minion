@@ -244,19 +244,25 @@ public class InputView extends VBox {
         }
     }
 
-    /** 鼠标点击弹层条目：按 token 模式建块追加，焦点还回输入框（防后续键盘事件落入弹层列表） */
+    /** 鼠标点击弹层条目：按 token 建块并删除已输入的部分词，焦点还回输入框（防后续键盘事件落入弹层列表） */
     private void confirmInsert(String insert) {
         if (insert == null || lastToken == null) return;
-        addChipFor(lastToken.mode, insert);
+        addChipFor(lastToken, insert);
         lastToken = null;
         input.requestFocus();
     }
 
-    /** 按弹层模式建块并追加：@ 模式补回 @ 前缀（FileSuggester insertText 为纯路径） */
-    private void addChipFor(CompletionParser.Mode mode, String insert) {
-        String text = insertionText(mode, insert);
-        if (text == null || text.isEmpty()) return;
-        addChip(InputChip.textChip(InputChip.modeToType(mode), text));
+    /** 按 token 建块并追加：@ 模式补回 @ 前缀（FileSuggester insertText 为纯路径）；
+     *  先删除 token 区间已输入的部分词（坐标过期=用户已改文本，整体放弃不建块）；空插入忽略 */
+    private void addChipFor(CompletionParser.Token t, String insert) {
+        if (insert == null || insert.isEmpty()) return;
+        String text = insertionText(t.mode, insert);
+        try {
+            input.deleteText(t.start, t.end);
+        } catch (RuntimeException ex) {
+            return; // 坐标越界：用户已改文本，静默放弃
+        }
+        addChip(InputChip.textChip(InputChip.modeToType(t.mode), text));
     }
 
     /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 建块追加。
@@ -268,7 +274,7 @@ public class InputView extends VBox {
         popup.hide();
         if (insert == null) return;
         Platform.runLater(new Runnable() {
-            @Override public void run() { addChipFor(t.mode, insert); }
+            @Override public void run() { addChipFor(t, insert); }
         });
     }
 
