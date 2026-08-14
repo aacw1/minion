@@ -33,6 +33,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
@@ -144,6 +145,7 @@ public class MainWindow {
         right.getStyleClass().add("panel-dark");
         chatScroll = new ScrollPane();
         chatScroll.setFitToWidth(true);
+        chatScroll.setPrefHeight(200); // 固定 pref：否则 prefHeight 随消息内容增长，挤压右侧 VBox 把页签行压扁（探针验证）
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
         setupAutoScroll();
@@ -172,6 +174,9 @@ public class MainWindow {
         ColumnConstraints rightCol = new ColumnConstraints();
         rightCol.setPercentWidth(75);
         center.getColumnConstraints().addAll(leftCol, rightCol);
+        RowConstraints row = new RowConstraints();
+        row.setVgrow(Priority.ALWAYS); // 行撑满可用空间：chatScroll pref 固定后防底部留白
+        center.getRowConstraints().add(row);
         center.add(sidebar, 0, 0);
         center.add(rightStack, 1, 0); // 右侧为 StackPane 宿主（ConfirmSheet 遮罩挂顶层，不越分隔线）
         root.setCenter(center);
