@@ -166,10 +166,10 @@
 .msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
 
 /* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
-.log-input { -fx-text-fill: #7db4ff; } /* 输入 蓝 */
-.log-think { -fx-text-fill: #98a0ab; } /* 思考 灰 */
-.log-tool { -fx-text-fill: #e3b341; }  /* 工具 黄 */
-.log-reply { -fx-text-fill: #f0f2f6; } /* 回复 白（主文字色） */
+.log-input { -fx-text-fill: #4285F4; } /* 输入 柔和蓝 */
+.log-think { -fx-text-fill: #F57C00; } /* 思考 橙 */
+.log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
+.log-reply { -fx-text-fill: #2E7D32; } /* 回复 深绿 */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
 .log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
