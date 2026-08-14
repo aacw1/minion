@@ -7,20 +7,25 @@ import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
 import javafx.scene.Node;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
-import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * 会话消息区：订阅 EventList（事件来自后台线程，Listener 内 Platform.runLater 包装），
- * 渲染用户消息/助手消息（Markdown 流式重渲染）/思考块/工具卡片/错误横幅。
+ * 会话消息区（纯控制台输出流）：订阅 EventList（事件来自后台线程，Listener 内 Platform.runLater 包装）。
+ * 每条消息 = HBox（彩色加粗标签 Label + 白色正文 MessageTextArea），段间无缝紧贴（spacing 0），
+ * 整区背景 #121314（.panel-dark）铺满正文窗口（配合 ScrollPane fitToHeight）；
+ * 正文 TextArea 高度自适应（MessageTextArea）内容全部平铺、无内部滚动条；
+ * 段内原生拖选/Ctrl+C/右键复制。
  */
 public class ChatView extends VBox {
+
+    /** 空会话占位文本（只读 TextArea 不显示 promptText，用文本代替） */
+    private static final String EMPTY_HINT = "输入消息开始新的会话";
 
     private final EventList events;
     private final SessionHandle handle;
@@ -33,13 +38,30 @@ public class ChatView extends VBox {
     /** MainWindow 注入：USER_MESSAGE 事件时请求滚动到底 */
     public void setScrollBottomRequest(Runnable r) { this.scrollBottomRequest = r; }
 
+    /** 消息段：彩色加粗标签 + 白色正文 + 所属流标记（思考流/回复流就地更新，互不覆盖） */
+    private static class Seg {
+        final Label tag;
+        final MessageTextArea body;
+        final boolean think;
+        Seg(String tagText, String tagColorClass, String text, boolean think) {
+            tag = new Label(tagText);
+            tag.getStyleClass().addAll("log-tag", tagColorClass);
+            body = new MessageTextArea(text);
+            body.getStyleClass().add("log-body");
+            HBox.setHgrow(body, Priority.ALWAYS); // 正文吃满剩余宽度，wrap 换行正常
+            this.think = think;
+        }
+    }
+
+    private final List<Seg> segs = new ArrayList<Seg>();
+    private boolean empty = true; // 无任何消息段（仍显示占位提示）
+
     public ChatView(EventList events, SessionHandle handle) {
         this.events = events;
         this.handle = handle;
-        getStyleClass().add("panel-dark");
-        getStyleClass().add("chat-content"); // 显式 LCD 用（ScrollPane 裁剪下 JavaFX 8 默认回退灰阶 AA → 发虚）
-        setSpacing(8);
-        setStyle("-fx-padding: 16;");
+        getStyleClass().add("panel-dark"); // 背景 rgb(18,19,20)，随 ScrollPane fitToHeight 铺满正文窗口
+        setSpacing(0); // 段间无缝紧贴（控制台连续输出）
+        setStyle("-fx-padding: 16 16 12 16;"); // 底部 12px + 右栏 VBox spacing 8 = 距输入框约 1 行
         clear();
     }
 
@@ -62,95 +84,65 @@ public class ChatView extends VBox {
 
     public void clear() {
         getChildren().clear();
+        segs.clear();
         pendingContent.setLength(0);
         pendingThinking.setLength(0);
-        getChildren().add(hint("输入消息开始新的会话"));
+        empty = true;
+        getChildren().add(hint());
     }
 
     private void onEventFx(Ev e) {
         switch (e.kind) {
-            case USER_MESSAGE: {
-                Label l = new Label(e.text);
-                l.setWrapText(true);
-                l.getStyleClass().add("msg-user");
-                makeCopyable(l, e.text);
-                getChildren().add(l);
+            case USER_MESSAGE:
+                append("【输入】", "log-input", e.text, false);
                 // 新轮次开始：重置上一轮流式缓冲，防止与下一轮内容拼接（评审 I-1）
                 pendingContent.setLength(0);
                 pendingThinking.setLength(0);
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
-            }
-            case USER_SUPPLEMENT: {
-                VBox box = new VBox(2);
-                Label tag = new Label("⤒ 运行中补充");
-                tag.getStyleClass().add("supplement-tag");
-                Label l = new Label(e.text);
-                l.setWrapText(true);
-                l.getStyleClass().add("msg-user");
-                makeCopyable(l, e.text);
-                box.getChildren().addAll(tag, l);
-                getChildren().add(box);
+            case USER_SUPPLEMENT:
+                append("【输入】", "log-input", e.text, false);
                 break;
-            }
             case THINKING:
                 pendingThinking.append(e.text);
-                replaceLast(thinkingBlock());
+                stream("【思考】", "log-think", pendingThinking.toString(), true);
                 break;
             case CONTENT:
                 pendingContent.append(e.text);
-                replaceLast(assistantBlock(pendingContent.toString()));
+                // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
+                stream("【回复】", "log-reply", MarkdownRenderer.toPlainText(pendingContent.toString()), false);
                 break;
             case TOOL_CALL: {
-                if ("ask_user".equals(e.text)) {
-                    VBox card = new VBox(4);
-                    card.getStyleClass().add("card");
-                    Label name = new Label("❓ 模型向你提问");
-                    name.getStyleClass().add("msg-thinking");
-                    Label q = new Label(askQuestionOf(e.data));
-                    q.setWrapText(true);
-                    q.getStyleClass().add("msg-thinking");
-                    card.getChildren().addAll(name, q);
-                    makeCopyable(card, "❓ 模型向你提问\n" + askQuestionOf(e.data));
-                    getChildren().add(card);
-                } else {
-                    VBox card = new VBox(4);
-                    card.getStyleClass().add("card");
-                    Label name = new Label("🔧 " + e.text);
-                    name.getStyleClass().add("msg-thinking");
-                    Label detail = new Label(shorten(e.data == null ? "{}" : e.data.toString(), 120));
-                    detail.getStyleClass().add("msg-thinking");
-                    card.getChildren().addAll(name, detail);
-                    makeCopyable(card, "🔧 " + e.text + "\n" + (e.data == null ? "{}" : e.data.toString()));
-                    getChildren().add(card);
-                }
+                String body = "ask_user".equals(e.text)
+                        ? "❓ 模型向你提问\n" + askQuestionOf(e.data)
+                        : "🔧 " + e.text + "\n" + shorten(e.data == null ? "{}" : e.data.toString(), 120);
+                append("【工具】", "log-tool", body, false);
                 break;
             }
             case TOOL_RESULT: {
                 String data = e.data == null ? "" : e.data.toString();
-                Label l = new Label(data.startsWith("ok") ? "✅ " + e.text + " 成功" : "❌ " + e.text + " 失败");
-                l.getStyleClass().add("msg-thinking");
-                makeCopyable(l, e.text);
-                getChildren().add(l);
+                boolean ok = data.startsWith("ok");
+                if (ok) append("【工具】", "log-tool", "✅ " + e.text + " 成功", false);
+                else append("【系统】", "log-error", "❌ " + e.text + " 失败", false);
                 break;
             }
             case ERROR:
-                getChildren().add(alert(e.text, "msg-error"));
+                append("【系统】", "log-error", e.text, false);
                 break;
             case WARNING:
-                getChildren().add(alert(e.text, "msg-warning"));
+                append("【系统】", "log-warn", e.text, false);
                 break;
             case STATS:
-                getChildren().add(alert(e.text, "msg-thinking"));
+                append("【系统】", "log-sys", e.text, false);
                 break;
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
-                getChildren().add(alert(e.text, "msg-thinking"));
+                append("【系统】", "log-sys", e.text, false);
                 break;
             case SUB_AGENT_START:
-                getChildren().add(alert("▶ 子任务: " + e.text, "msg-thinking"));
+                append("【工具】", "log-tool", "▶ 子任务: " + e.text, false);
                 break;
             case SUB_AGENT_DONE:
-                getChildren().add(alert("✓ 子任务完成: " + e.text, "msg-thinking"));
+                append("【工具】", "log-tool", "✓ 子任务完成: " + e.text, false);
                 break;
             default:
                 break;
@@ -159,86 +151,34 @@ public class ChatView extends VBox {
 
     /** 系统行（错误横幅等，MainWindow.showError 入口） */
     public void appendSystemLine(String text) {
-        getChildren().add(alert(text, "msg-error"));
+        append("【系统】", "log-error", text, false);
     }
 
-    /** 消息节点复制能力：右键菜单「复制」+ 双击复制全文（消息用 Label/节点渲染，文本不可选中，此为其唯一复制途径）。
-     *  不用 Control.setContextMenu（VBox 等非 Control 节点无此 API），统一右键事件手动弹出菜单 */
-    private static void makeCopyable(Node node, final String text) {
-        if (text == null || text.isEmpty()) return;
-        MenuItem copy = new MenuItem("复制");
-        copy.setOnAction(e -> copyToClipboard(text));
-        final ContextMenu menu = new ContextMenu(copy);
-        node.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() == MouseButton.SECONDARY) {
-                menu.show(node, e.getScreenX(), e.getScreenY());
-                e.consume();
-            } else if (e.getClickCount() == 2) {
-                copyToClipboard(text);
-            }
-        });
+    private Node hint() {
+        MessageTextArea ta = new MessageTextArea(EMPTY_HINT);
+        ta.getStyleClass().add("log-sys");
+        return ta;
     }
 
-    private static void copyToClipboard(String text) {
-        ClipboardContent cc = new ClipboardContent();
-        cc.putString(text);
-        Clipboard.getSystemClipboard().setContent(cc);
-    }
-
-    /** 流式节点哨兵：仅思考块与助手内容块携带，标识「可被流式增量替换」 */
-    private static final Object STREAMING_MARK = new Object();
-
-    private Node hint(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("msg-thinking");
-        return l;
-    }
-
-    private Node alert(String text, String style) {
-        Label l = new Label(text);
-        l.setWrapText(true);
-        l.getStyleClass().add(style);
-        makeCopyable(l, text);
-        return l;
-    }
-
-    private Node thinkingBlock() {
-        Label l = new Label("思考: " + pendingThinking.toString());
-        l.setWrapText(true);
-        l.getStyleClass().add("msg-thinking");
-        l.setUserData(STREAMING_MARK); // 流式块标记：多段思考增量合并为同一块
-        makeCopyable(l, "思考: " + pendingThinking.toString()); // 快照当前已流式到的内容
-        return l;
-    }
-
-    private Node assistantBlock(String md) {
-        VBox box = new VBox(6);
-        box.getStyleClass().add("msg-assistant");
-        box.setUserData(STREAMING_MARK); // 流式块标记：CONTENT 增量替换助手块
-        for (MarkdownRenderer.Block b : MarkdownRenderer.parse(md)) {
-            box.getChildren().add(BlockNodeFactory.create(b));
+    /** 追加一段控制台输出（首段先清掉占位提示） */
+    private void append(String tagText, String tagColorClass, String text, boolean think) {
+        if (empty) {
+            getChildren().clear();
+            empty = false;
         }
-        makeCopyable(box, md); // 复制 markdown 原文（当前已渲染部分）
-        return box;
+        Seg seg = new Seg(tagText, tagColorClass, text, think);
+        segs.add(seg);
+        getChildren().add(new HBox(seg.tag, seg.body));
     }
 
-    /** 流式增量：替换最后一块（思考或助手消息），非流式事件直接追加 */
-    private void replaceLast(Node block) {
-        if (getChildren().isEmpty()) {
-            getChildren().add(block);
+    /** 流式增量：末段是同一流（思考流/回复流）→ 就地更新正文不重建节点；否则新起一段（互不覆盖） */
+    private void stream(String tagText, String tagColorClass, String text, boolean think) {
+        Seg last = segs.isEmpty() ? null : segs.get(segs.size() - 1);
+        if (last != null && last.think == think) {
+            last.body.setStreamText(text);
             return;
         }
-        Node last = getChildren().get(getChildren().size() - 1);
-        if (isStreaming(last)) {
-            getChildren().set(getChildren().size() - 1, block);
-        } else {
-            getChildren().add(block);
-        }
-    }
-
-    /** 仅带哨兵标记的节点才是流式节点；工具结果/统计/子任务等横幅不标记，永不参与流式替换（评审 I-2） */
-    private boolean isStreaming(Node n) {
-        return n.getUserData() == STREAMING_MARK;
+        append(tagText, tagColorClass, text, think);
     }
 
     private static String shorten(String s, int max) {
