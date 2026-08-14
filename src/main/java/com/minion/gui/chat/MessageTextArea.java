@@ -32,8 +32,19 @@ public class MessageTextArea extends TextArea {
     /** 内部文本 wrap 比控件内容区窄的固定槽位（内部 ScrollPane 边框 1px×2 + 垂直滚动条 10px，实测 12px@modena/主题） */
     private static final double INNER_SLOT = 12;
 
+    /** 行高比初始值：TextAreaView 内部 Text 行高与普通 Text 行高的实测比值
+     *  （1.0686@14px YaHei，探针 31 在 22 行/42 行处均复现）——measurer 直测低估约 7%/行，
+     *  流式期间 prefH 恒小于内容 → 滚动条出现 → wrap 变窄 → 死锁（探针 29/31 实证） */
+    private static final double LINE_SCALE_INIT = 1.07;
+
     /** 测量器：与自身同字体，wrap 宽度 = 内容区宽度 - 槽位，layoutBounds 高 = 文本行高 */
     private final Text measurer = new Text();
+
+    /** 行高自适应比例：校正时按 skin 实际渲染高度反推，补偿 measurer 行高差（随字体自适应） */
+    private double lineScale = LINE_SCALE_INIT;
+
+    /** 最近一次 relayout 的测量文本高度（与 lineScale 配对，供新鲜性检测/反推实际比例） */
+    private double lastMeasuredTextHeight = 0;
 
     /** 布局后精校已调度（节流：流式高频 setText 只校正一次） */
     private boolean correctScheduled = false;
@@ -65,7 +76,10 @@ public class MessageTextArea extends TextArea {
         measurer.setFont(getFont());
         measurer.setText(getText()); // 关键：测量器必须同步当前文本，否则一直按空文本测出 1 行高
         measurer.setWrappingWidth(Math.max(width - pad.getLeft() - pad.getRight() - INNER_SLOT, 1));
-        setPrefHeight(measurer.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE);
+        double textH = measurer.getLayoutBounds().getHeight();
+        lastMeasuredTextHeight = textH;
+        // 行高比补偿：skin 内部 Text 行高 ≈ 普通 Text × 1.07（否则流式期间恒低估 → 滚动条死锁）
+        setPrefHeight(textH * lineScale + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE);
         scheduleCorrect(); // 布局后按 skin 实际渲染精校（消除保守测量的空隙/临界 wrap 行差）
     }
 
@@ -78,6 +92,19 @@ public class MessageTextArea extends TextArea {
             Text inner = innerText();
             if (inner == null) return; // 未挂载/未渲染：宽度/文本监听会再触发
             Insets pad = getPadding();
+            // 布局新鲜性检测：inner 的布局高度必须与「当前文本的测量高度 × 行高比」吻合，
+            // 否则说明它仍是旧文本的布局（流式窗口期）——直接精校会把新高度覆盖回旧值
+            // （探针 29 实证 box3H 持续滞后；inner.getText() 恒等于当前文本，文本比对挡不住）
+            if (lastMeasuredTextHeight > 0) {
+                double ratio = inner.getLayoutBounds().getHeight() / lastMeasuredTextHeight;
+                if (ratio < lineScale - 0.03 || ratio > lineScale + 0.05) {
+                    scheduleCorrect(); // 布局未跟上当前文本：下轮布局后重试
+                    return;
+                }
+                if (ratio > 1.0 && Math.abs(ratio - lineScale) > 0.005) {
+                    lineScale = ratio; // 行高比自适应（随字体变化自校准）
+                }
+            }
             double exact = inner.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE;
             if (Math.abs(exact - getPrefHeight()) > 0.5) {
                 setPrefHeight(exact);
