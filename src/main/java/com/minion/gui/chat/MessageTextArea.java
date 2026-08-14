@@ -15,6 +15,9 @@ import javafx.scene.text.Text;
  */
 public class MessageTextArea extends TextArea {
 
+    /** 高度余量：补偿 TextArea skin 内部偏差（目验校准点：低估→内部滚动条回归，高估→文本下方小空隙） */
+    private static final double HEIGHT_FUDGE = 4;
+
     /** 测量器：与自身同字体，wrap 宽度 = 内容区宽度，layoutBounds 高 = 文本行高 */
     private final Text measurer = new Text();
 
@@ -23,9 +26,10 @@ public class MessageTextArea extends TextArea {
         setEditable(false);
         setWrapText(true);
         getStyleClass().add("msg-textarea");
-        // 文本或宽度变化 → 重算高度；首次布局前宽度未定则跳过，宽度监听兜底触发
+        // 文本/宽度/全局字号变化 → 重算高度；首次布局前宽度未定则跳过，宽度监听兜底触发
         textProperty().addListener((obs, ov, nv) -> relayout());
         widthProperty().addListener((obs, ov, nv) -> relayout());
+        fontProperty().addListener((obs, ov, nv) -> relayout());
     }
 
     /** 流式增量更新：就地 setText，不重建节点（不打断用户操作/选中态） */
@@ -40,6 +44,6 @@ public class MessageTextArea extends TextArea {
         Insets pad = getPadding();
         measurer.setFont(getFont());
         measurer.setWrappingWidth(Math.max(width - pad.getLeft() - pad.getRight(), 1));
-        setPrefHeight(measurer.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + 4);
+        setPrefHeight(measurer.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE);
     }
 }
