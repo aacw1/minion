@@ -18,7 +18,7 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     │   ├── MinionApp         Application 启动（静态注入 Config/WorkspaceManager/ModelManager/SessionManager）
     │   ├── sidebar/          SessionListView（会话列表）、WorkspaceListView（工作空间列表）
     │   ├── chat/             ChatView（消息区）、MarkdownRenderer + BlockNodeFactory（flexmark 渲染）
-    │   ├── input/            InputView（4/9 居中大框+竖分割线+@//补全弹层）、SuggestionPopup、CompletionParser
+    │   ├── input/            InputView（0.618 黄金比例居中大框+竖分割线+@//补全弹层）、SuggestionPopup、CompletionParser
     │   ├── command/          CommandDispatcher（斜杠命令本地分发，结果入事件流不发 LLM）
     │   ├── dialog/           SettingsDialog（设置窗三页签）、ConfirmSheet（高危确认底部卡片）
     │   ├── theme/            Theme（弹窗深色挂载）

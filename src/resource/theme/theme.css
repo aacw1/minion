@@ -5,9 +5,9 @@
     -fx-background-color: #0f1115;
 }
 
-/* 面板 */
-.panel { -fx-background-color: #15181f; -fx-border-color: #232733; -fx-border-width: 0 1 0 0; }
-.panel-dark { -fx-background-color: #101218; }
+/* 面板（左侧侧栏 rgb(25,26,27)、右侧正文 rgb(18,19,20)） */
+.panel { -fx-background-color: #191a1b; -fx-border-color: #232733; -fx-border-width: 0 1 0 0; }
+.panel-dark { -fx-background-color: #121314; }
 .card {
     -fx-background-color: #1a1d24;
     -fx-background-radius: 8;
