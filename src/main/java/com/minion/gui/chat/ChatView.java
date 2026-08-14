@@ -69,6 +69,18 @@ public class ChatView extends VBox {
         clear();
     }
 
+    /**
+     * minHeight = prefHeight（防 ScrollPane 压缩，探针 19-20 实证根因）：
+     * ScrollPane fitToHeight 布局用 boundedSize(视口高, content.minH, content.maxH) 定 content 高度。
+     * VBox 默认 minH = 各段最小值之和（TextArea minH≈1-2 行），内容多时 content 被压到视口高，
+     * VBox 空间不足再压缩各段 → 长消息被压矮、段内出现滚动条。
+     * minH=prefH 后：内容多时 boundedSize 取 prefH 自然展开，内容少时取视口高保持铺满（fitToHeight 语义不变）。
+     */
+    @Override
+    protected double computeMinHeight(double width) {
+        return computePrefHeight(width);
+    }
+
     public static ChatView forSession(SessionHandle h) {
         return new ChatView(h.controller.eventList(), h);
     }
