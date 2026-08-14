@@ -79,6 +79,8 @@ public class InputView extends VBox {
         // 同为 target 内 handler，bubble 顺序不保证——行为先执行会移动光标触发 onTextChanged 重置弹层
         // 选中、Enter 插入换行关弹层，导致上下键/确认失效；过滤器先于一切 target 内 handler 执行
         input.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            dbg("key=" + e.getCode() + " ctrl=" + e.isControlDown() + " alt=" + e.isAltDown()
+                    + " showing=" + popup.isShowing() + " caret=" + input.getCaretPosition());
             if (new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN).match(e)) {
                 e.consume();
                 onAction();
@@ -158,6 +160,9 @@ public class InputView extends VBox {
                 }
                 suppressed = null;
             }
+            dbg("onTextChanged mode=" + t.mode + " word='" + input.getText().substring(t.start, t.end)
+                    + "' suppressed=" + suppressed + " showing=" + popup.isShowing()
+                    + " text='" + input.getText() + "'");
             switch (t.mode) {
                 case SLASH:
                     popup.show(frame, SlashSuggester.all(manager.skills()), t.query);
@@ -186,11 +191,13 @@ public class InputView extends VBox {
 
     /** 插入确认文本：替换当前词为插入文本并移动光标（键盘与鼠标点击共用路径）。
      *  @ 文件补全的 insertText 为纯相对路径（FileSuggester 不带 @ 前缀），须补回 @，
-     *  否则替换词区间（含 @ 字符）后前缀丢失；插入文本记录为 suppressed 抑制回弹 */
+     *  否则替换词区间（含 @ 字符）后前缀丢失；插入文本记录为 suppressed 抑制回弹；
+     *  鼠标路径完成后焦点还回输入框（防后续键盘事件落入弹层列表） */
     private void confirmInsert(String insert) {
         if (insert == null || lastToken == null) return;
         suppressed = insertAt(lastToken, insert);
         lastToken = null;
+        input.requestFocus();
     }
 
     /** 执行替换（独立方法供 runLater 复用）：@ 模式补前缀；token 为捕获快照，

@@ -33,6 +33,9 @@ public class SuggestionPopup {
         list.getStyleClass().add("suggest-list");
         list.setMaxHeight(MAX_VISIBLE * ROW_HEIGHT);
         list.setPrefHeight(MAX_VISIBLE * ROW_HEIGHT);
+        // 不可聚焦：鼠标点击条目后焦点不得落入 ListView——否则后续键盘事件全被列表吞掉
+        // （↑↓ 由列表内置导航响应、Enter/Tab 无默认动作），输入框的补全键处理全部失效
+        list.setFocusTraversable(false);
         list.setCellFactory(lv -> new ListCell<Suggestion>() {
             @Override protected void updateItem(Suggestion item, boolean empty) {
                 super.updateItem(item, empty);
