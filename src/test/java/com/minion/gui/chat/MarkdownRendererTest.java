@@ -112,6 +112,11 @@ public class MarkdownRendererTest {
     }
 
     @Test
+    public void toPlainText_ruleIgnored() {
+        assertEquals("", MarkdownRenderer.toPlainText("---"));
+    }
+
+    @Test
     public void toPlainText_mixedDocument_blankLineSeparated() {
         String md = "# 标题\n\n```java\nint a = 1;\n```\n\n- 甲\n- 乙";
         assertEquals("标题\n\nint a = 1;\n\n• 甲\n• 乙", MarkdownRenderer.toPlainText(md));
