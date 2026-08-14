@@ -43,6 +43,7 @@ public class MessageTextArea extends TextArea {
         if (width <= 0) return; // 首次布局前宽度未定，宽度变化监听会再触发
         Insets pad = getPadding();
         measurer.setFont(getFont());
+        measurer.setText(getText()); // 关键：测量器必须同步当前文本，否则一直按空文本测出 1 行高
         measurer.setWrappingWidth(Math.max(width - pad.getLeft() - pad.getRight(), 1));
         setPrefHeight(measurer.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE);
     }
