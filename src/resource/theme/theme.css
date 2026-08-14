@@ -82,6 +82,28 @@
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
+/* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
+.chip-row { -fx-hgap: 8; -fx-vgap: 8; }
+.input-chip {
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 2 4 2 8;
+}
+.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 12px; }
+.chip-close {
+    -fx-background-color: transparent;
+    -fx-text-fill: #98a0ab;
+    -fx-font-size: 11px;
+    -fx-padding: 0 4 0 4;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.chip-close:hover { -fx-text-fill: #f85149; -fx-background-color: rgba(248, 81, 73, 0.15); }
+.input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
+.input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
+.input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
+
 /* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
 .suggest-list {
     -fx-background-color: #1a1d24;

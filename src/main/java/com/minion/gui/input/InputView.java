@@ -5,20 +5,26 @@ import com.minion.gui.session.SessionManager;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.Clipboard; // Task 4 用，可一并加
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
+import java.util.ArrayList;
+import java.util.List;
 
 /** 底部输入区：4/9 宽居中大框（左 TextArea 右按钮、中间竖分割线）+ /命令与 @文件补全弹层。
  *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）。
@@ -35,6 +41,9 @@ public class InputView extends VBox {
     private final SVGPath stopIcon = new SVGPath();
     private final SuggestionPopup popup = new SuggestionPopup();
     private final FileSuggester fileSuggester = new FileSuggester();
+    /** 块行与块列表：模型 List<InputChip> 与视图 FlowPane 同步维护（增删块后须 refreshChipRow + updateButton） */
+    private final List<InputChip> chips = new ArrayList<InputChip>();
+    private final FlowPane chipRow = new FlowPane();
     private HBox frame; // 大框（弹层锚点）
     private CompletionParser.Token lastToken; // 弹层可见时待替换的词
     private String suppressed; // 刚确认插入的补全文本：当前词与之完全一致时不再弹层（防确认后回弹干扰）
@@ -105,14 +114,18 @@ public class InputView extends VBox {
         // 大框：TextArea | 竖分割线 | 按钮（按钮经 VBox 垂直居中，分割线随框高拉伸）
         frame = new HBox(8);
         frame.getStyleClass().add("input-frame");
-        HBox.setHgrow(input, Priority.ALWAYS);
+        // 块行（上方）+ 文本区（下方）：chipRow 无块时 unmanaged 不占位
+        chipRow.getStyleClass().add("chip-row");
+        VBox composer = new VBox(6);
+        composer.getChildren().addAll(chipRow, input);
+        HBox.setHgrow(composer, Priority.ALWAYS);
         Region divider = new Region();
         divider.getStyleClass().add("input-divider");
         VBox buttonBox = new VBox();
         buttonBox.setAlignment(Pos.CENTER);
         VBox.setVgrow(buttonBox, Priority.ALWAYS);
         buttonBox.getChildren().add(sendButton);
-        frame.getChildren().addAll(input, divider, buttonBox);
+        frame.getChildren().addAll(composer, divider, buttonBox);
 
         // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
         GridPane root = new GridPane();
@@ -131,6 +144,67 @@ public class InputView extends VBox {
      *  纯静态可脱离 JavaFX 单测 */
     static String insertionText(CompletionParser.Mode mode, String insert) {
         return mode == CompletionParser.Mode.FILE && !insert.startsWith("@") ? "@" + insert : insert;
+    }
+
+    /** 块行占位开关：无块时 unmanaged（VBox 布局忽略，不产生多余间距） */
+    private void refreshChipRow() {
+        boolean has = !chips.isEmpty();
+        chipRow.setManaged(has);
+        chipRow.setVisible(has);
+    }
+
+    /** 追加块到尾部（模型 + 视图同步） */
+    private void addChip(InputChip chip) {
+        if (chip == null) return;
+        chips.add(chip);
+        chipRow.getChildren().add(chipView(chip));
+        refreshChipRow();
+        updateButton();
+    }
+
+    /** 删除第 i 个块（越界静默忽略） */
+    private void removeChipAt(int i) {
+        if (i < 0 || i >= chips.size()) return;
+        chips.remove(i);
+        chipRow.getChildren().remove(i);
+        refreshChipRow();
+        updateButton();
+    }
+
+    /** 删除最后一个块（Backspace 用）；无块返回 false */
+    private boolean removeLastChip() {
+        if (chips.isEmpty()) return false;
+        removeChipAt(chips.size() - 1);
+        return true;
+    }
+
+    /** 渲染单个块：Label + ✕ 按钮；✕ 点击删除并还焦输入框；COMMAND/SKILL/FILE 超 40 字符挂完整内容 tooltip */
+    private Node chipView(InputChip chip) {
+        Label label = new Label(chip.display);
+        label.getStyleClass().add("chip-label");
+        Button close = new Button("✕");
+        close.getStyleClass().add("chip-close");
+        close.setOnAction(e -> {
+            removeChipAt(chips.indexOf(chip));
+            input.requestFocus();
+        });
+        HBox box = new HBox(6);
+        box.getStyleClass().addAll("input-chip", chipTypeClass(chip.type));
+        box.getChildren().addAll(label, close);
+        if (chip.type != InputChip.Type.PASTE && chip.content.length() > 40) {
+            Tooltip.install(box, new Tooltip(chip.content));
+        }
+        return box;
+    }
+
+    /** 块类型 → 语义样式类 */
+    private static String chipTypeClass(InputChip.Type type) {
+        switch (type) {
+            case COMMAND: return "input-chip-command";
+            case SKILL:   return "input-chip-skill";
+            case FILE:    return "input-chip-file";
+            default:      return "input-chip-paste";
+        }
     }
 
     /** 纯静态判定（可脱离 JavaFX 单测）：运行/提问挂起/有内容 → 按钮模式。
