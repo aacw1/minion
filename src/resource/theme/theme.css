@@ -149,6 +149,36 @@
 /* 运行中补充气泡的小徽标 */
 .supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 11px; -fx-font-weight: bold; }
 
+/* ===== 消息只读 TextArea（消息本体：原生拖选/Ctrl+C/双击选词/右键菜单） =====
+   背景：自身 + 内部子节点全透明——修复 modena 默认白底（-fx-text-box-border,
+   -fx-control-inner-background）从透明子节点后透出的「白色块」 */
+.msg-textarea {
+    -fx-background-color: transparent;
+    -fx-control-inner-background: transparent;
+    -fx-highlight-fill: #3b6fe0;
+    -fx-highlight-text-fill: #ffffff;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-font-smoothing-type: lcd;
+}
+.msg-textarea .content { -fx-background-color: transparent; -fx-padding: 0; }
+.msg-textarea .scroll-pane { -fx-background-color: transparent; }
+.msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
+
+/* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
+.log-input { -fx-text-fill: #7db4ff; } /* 输入 蓝 */
+.log-think { -fx-text-fill: #98a0ab; } /* 思考 灰 */
+.log-tool { -fx-text-fill: #e3b341; }  /* 工具 黄 */
+.log-reply { -fx-text-fill: #f0f2f6; } /* 回复 白（主文字色） */
+.log-error { -fx-text-fill: #f85149; } /* 错误 红 */
+.log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
+.log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
+
+/* ===== 消息区控制台样式：彩色加粗标签 + 白色正文 =====
+   标签：.log-tag 叠加下方 log-* 场景色类；正文统一 .log-body 白（场景色只由标签承担） */
+.log-tag { -fx-font-weight: bold; }
+.log-body { -fx-text-fill: #f0f2f6; }
+
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
 .status-dot-running { -fx-background-color: #3fb950; }
