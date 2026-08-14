@@ -10,7 +10,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
-import javafx.scene.input.Clipboard; // Task 4 用，可一并加
+import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -338,6 +338,7 @@ public class InputView extends VBox {
         refreshChipRow();
         popup.hide();
         input.clear();
+        updateButton();
     }
 
     private boolean hasContent() {
