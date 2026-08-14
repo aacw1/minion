@@ -51,7 +51,8 @@ public class ChatView extends VBox {
             tag = new Label(tagText);
             tag.getStyleClass().addAll("log-tag", tagColorClass);
             body = new MessageTextArea(text);
-            body.getStyleClass().add("log-body");
+            // 正文 = 默认白（.log-body）+ 浅色调类别色（log-body-* 定义于 CSS；四类消息着色，系统行无定义自动回退白）
+            body.getStyleClass().addAll("log-body", "log-body-" + tagColorClass.substring(4));
             HBox.setHgrow(body, Priority.ALWAYS); // 正文吃满剩余宽度，wrap 换行正常
             this.kind = kind;
         }

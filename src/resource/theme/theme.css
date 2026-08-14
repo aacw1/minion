@@ -174,10 +174,15 @@
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
 .log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
 
-/* ===== 消息区控制台样式：彩色加粗标签 + 白色正文 =====
-   标签：.log-tag 叠加下方 log-* 场景色类；正文统一 .log-body 白（场景色只由标签承担） */
+/* ===== 消息区控制台样式：彩色加粗标签 + 浅色调正文 =====
+   标签：.log-tag 叠加 log-* 场景色类（深色）；正文 .log-body 默认白 + log-body-* 浅色调类
+   （与标签同色系提亮，长文本可读；系统行 log-body-error/warn/sys 无定义 → 自动回退白） */
 .log-tag { -fx-font-weight: bold; }
 .log-body { -fx-text-fill: #f0f2f6; }
+.log-body-input { -fx-text-fill: #7db4ff; } /* 输入正文 浅蓝 */
+.log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
+.log-body-reply { -fx-text-fill: #f0f2f6; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
+.log-body-think { -fx-text-fill: #ffb74d; } /* 思考正文 浅橙 */
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
