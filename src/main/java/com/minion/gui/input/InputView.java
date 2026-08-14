@@ -46,7 +46,6 @@ public class InputView extends VBox {
     private final FlowPane chipRow = new FlowPane();
     private HBox frame; // 大框（弹层锚点）
     private CompletionParser.Token lastToken; // 弹层可见时待替换的词
-    private String suppressed; // 刚确认插入的补全文本：当前词与之完全一致时不再弹层（防确认后回弹干扰）
     private volatile SessionHandle current;
     // FX 线程缓存的状态（bindSession/onRunningChanged/onAskChanged 维护）
     private boolean running;
@@ -219,17 +218,6 @@ public class InputView extends VBox {
     private void onTextChanged() {
         try {
             CompletionParser.Token t = CompletionParser.parse(input.getText(), input.getCaretPosition());
-            // 补全确认后抑制回弹：当前词与刚插入的补全文本完全一致（含 / @ 前缀）时不再弹层；
-            // 词被修改后解除抑制恢复补全
-            if (suppressed != null) {
-                if (t.mode != CompletionParser.Mode.NONE
-                        && suppressed.equals(input.getText().substring(t.start, t.end))) {
-                    popup.hide();
-                    lastToken = null;
-                    return;
-                }
-                suppressed = null;
-            }
             switch (t.mode) {
                 case SLASH:
                     popup.show(frame, SlashSuggester.all(manager.skills()), t.query);
@@ -256,35 +244,23 @@ public class InputView extends VBox {
         }
     }
 
-    /** 插入确认文本：替换当前词为插入文本并移动光标（键盘与鼠标点击共用路径）。
-     *  @ 文件补全的 insertText 为纯相对路径（FileSuggester 不带 @ 前缀），须补回 @，
-     *  否则替换词区间（含 @ 字符）后前缀丢失；插入文本记录为 suppressed 抑制回弹；
-     *  鼠标路径完成后焦点还回输入框（防后续键盘事件落入弹层列表） */
+    /** 鼠标点击弹层条目：按 token 模式建块追加，焦点还回输入框（防后续键盘事件落入弹层列表） */
     private void confirmInsert(String insert) {
         if (insert == null || lastToken == null) return;
-        suppressed = insertAt(lastToken, insert);
+        addChipFor(lastToken.mode, insert);
         lastToken = null;
         input.requestFocus();
     }
 
-    /** 执行替换（独立方法供 runLater 复用）：@ 模式补前缀；token 为捕获快照，
-     *  用户已改文本导致坐标越界时静默放弃（不打断输入）；返回最终插入文本（失败为 null） */
-    private String insertAt(CompletionParser.Token t, String insert) {
-        if (t == null || insert == null || insert.isEmpty()) return null;
-        String text = insertionText(t.mode, insert);
-        try {
-            input.replaceText(t.start, t.end, text);
-            input.positionCaret(t.start + text.length());
-            return text;
-        } catch (RuntimeException ex) {
-            return null;
-        }
+    /** 按弹层模式建块并追加：@ 模式补回 @ 前缀（FileSuggester insertText 为纯路径） */
+    private void addChipFor(CompletionParser.Mode mode, String insert) {
+        String text = insertionText(mode, insert);
+        if (text == null || text.isEmpty()) return;
+        addChip(InputChip.textChip(InputChip.modeToType(mode), text));
     }
 
-    /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 执行替换。
-     *  文本修改必须延迟到 KEY_PRESSED 派发结束后：JavaFX 8 在 key 事件派发期间
-     *  （capture 阶段）改 TextArea 文本与 behavior 的 Enter keyMapping 竞争，插入不可靠；
-     *  鼠标点击走 MOUSE_CLICKED（派发尾声）同步插入无此问题 */
+    /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 建块追加。
+     *  runLater 保持原时序（KEY_PRESSED 派发期间改输入区与 behavior 竞争的老规避惯例，统一路径） */
     private void confirmPopup() {
         if (lastToken == null) return;
         final CompletionParser.Token t = lastToken;
@@ -292,7 +268,7 @@ public class InputView extends VBox {
         popup.hide();
         if (insert == null) return;
         Platform.runLater(new Runnable() {
-            @Override public void run() { suppressed = insertAt(t, insert); }
+            @Override public void run() { addChipFor(t.mode, insert); }
         });
     }
 
