@@ -11,6 +11,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -66,7 +67,13 @@ public class InputView extends VBox {
         sendButton.setOnAction(e -> onAction());
         updateButton();
 
-        input.setOnKeyPressed(e -> {
+        // 鼠标点击弹层条目：直接插入（弹层侧回调文本，本类执行替换；根因修复：旧接线点击后无插入）
+        popup.setOnConfirm(insert -> confirmInsert(insert));
+
+        // 键盘用 capture 阶段过滤器而非 setOnKeyPressed：TextArea 默认按键行为（换行/光标移动）
+        // 同为 target 内 handler，bubble 顺序不保证——行为先执行会移动光标触发 onTextChanged 重置弹层
+        // 选中、Enter 插入换行关弹层，导致上下键/确认失效；过滤器先于一切 target 内 handler 执行
+        input.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN).match(e)) {
                 e.consume();
                 onAction();
@@ -102,14 +109,14 @@ public class InputView extends VBox {
         buttonBox.getChildren().add(sendButton);
         frame.getChildren().addAll(input, divider, buttonBox);
 
-        // 4/9 宽居中：3 列百分比（27.8% / 44.4% / 27.8%）
+        // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
         GridPane root = new GridPane();
         ColumnConstraints left = new ColumnConstraints();
-        left.setPercentWidth(27.8);
+        left.setPercentWidth(19.1);
         ColumnConstraints center = new ColumnConstraints();
-        center.setPercentWidth(44.4);
+        center.setPercentWidth(61.8);
         ColumnConstraints right = new ColumnConstraints();
-        right.setPercentWidth(27.8);
+        right.setPercentWidth(19.1);
         root.getColumnConstraints().addAll(left, center, right);
         root.add(frame, 1, 0);
         getChildren().add(root);
@@ -153,14 +160,18 @@ public class InputView extends VBox {
         }
     }
 
-    /** 确认弹层选中：替换当前词为插入文本并移动光标 */
-    private void confirmPopup() {
-        if (lastToken == null) return;
-        String insert = popup.confirmSelected();
-        if (insert == null) return;
+    /** 插入确认文本：替换当前词为插入文本并移动光标（键盘与鼠标点击共用路径） */
+    private void confirmInsert(String insert) {
+        if (insert == null || lastToken == null) return;
         input.replaceText(lastToken.start, lastToken.end, insert);
         input.positionCaret(lastToken.start + insert.length());
         lastToken = null;
+    }
+
+    /** 键盘确认弹层选中：从弹层取插入文本后走共用插入路径 */
+    private void confirmPopup() {
+        if (lastToken == null) return;
+        confirmInsert(popup.confirmSelected());
     }
 
     /** MainWindow 激活会话时调用 */

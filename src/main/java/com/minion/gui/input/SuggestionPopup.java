@@ -13,9 +13,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Consumer;
 
 /** 通用补全弹层：Popup+ListView，锚定输入大框正上方、同宽（Claude Code 风格）。
- *  Popup 不抢焦点：键盘事件由 TextArea 拦截转发（move/confirm/hide）。 */
+ *  Popup 不抢焦点：键盘事件由 TextArea 拦截转发（move/confirm/hide）；
+ *  鼠标点击条目经 onConfirm 回调把插入文本交给输入框（插入逻辑在 InputView 侧）。 */
 public class SuggestionPopup {
 
     /** 行高估算（CSS 未加载时定位用） */
@@ -25,6 +27,7 @@ public class SuggestionPopup {
 
     private final Popup popup = new Popup();
     private final ListView<Suggestion> list = new ListView<Suggestion>();
+    private Consumer<String> onConfirm;
 
     public SuggestionPopup() {
         list.getStyleClass().add("suggest-list");
@@ -47,10 +50,18 @@ public class SuggestionPopup {
                 setGraphic(row);
             }
         });
-        list.setOnMouseClicked(e -> confirmSelected());
+        // 鼠标点击条目：hide + 回调插入文本（根因修复：旧实现仅返回文本不插入，点击后输入框无变化）
+        list.setOnMouseClicked(e -> {
+            Suggestion sel = list.getSelectionModel().getSelectedItem();
+            hide();
+            if (sel != null && onConfirm != null) onConfirm.accept(sel.insertText);
+        });
         popup.getContent().add(list);
         popup.setAutoHide(true);
     }
+
+    /** 鼠标点击确认回调注册：收到选中项 insertText（弹层负责 hide，插入由输入框执行） */
+    public void setOnConfirm(Consumer<String> c) { this.onConfirm = c; }
 
     /** 过滤+排序（纯静态，可单测）：大小写不敏感 contains；前缀匹配优先 → 标签短优先 → 字典序 */
     public static List<Suggestion> filter(List<Suggestion> all, String query) {
