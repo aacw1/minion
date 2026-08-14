@@ -109,10 +109,10 @@ public class SuggestionPopup {
         list.scrollTo(next);
     }
 
-    /** 确认选中：返回选中项 insertText（无选中返回 null），弹层关闭 */
+    /** 确认选中：仅返回选中项 insertText（无选中返回 null），不关弹层——hide 由调用方
+     *  （InputView）在拿到插入文本后统一执行，避免 KEY_PRESSED 派发期间 hide 与插入竞争 */
     public String confirmSelected() {
         Suggestion sel = list.getSelectionModel().getSelectedItem();
-        hide();
         return sel == null ? null : sel.insertText;
     }
 

@@ -37,4 +37,20 @@ public class InputViewButtonTest {
     public void asking_withContent_answer() {
         assertEquals(InputView.BtnMode.ANSWER, InputView.buttonMode(true, true, true));
     }
+
+    /** 确认插入文本：@ 文件补全须补回 @ 前缀（FileSuggester 的 insertText 为纯路径） */
+    @Test
+    public void insertionText_fileMode_prependsAt() {
+        assertEquals("@src/a.txt", InputView.insertionText(CompletionParser.Mode.FILE, "src/a.txt"));
+    }
+
+    @Test
+    public void insertionText_fileMode_keepsExistingAt() {
+        assertEquals("@x.txt", InputView.insertionText(CompletionParser.Mode.FILE, "@x.txt"));
+    }
+
+    @Test
+    public void insertionText_slashMode_unchanged() {
+        assertEquals("/help", InputView.insertionText(CompletionParser.Mode.SLASH, "/help"));
+    }
 }

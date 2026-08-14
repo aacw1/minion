@@ -122,6 +122,12 @@ public class InputView extends VBox {
         getChildren().add(root);
     }
 
+    /** 确认插入的最终文本：@ 文件补全补回 @ 前缀（FileSuggester 的 insertText 为纯路径）。
+     *  纯静态可脱离 JavaFX 单测 */
+    static String insertionText(CompletionParser.Mode mode, String insert) {
+        return mode == CompletionParser.Mode.FILE && !insert.startsWith("@") ? "@" + insert : insert;
+    }
+
     /** 纯静态判定（可脱离 JavaFX 单测）：运行/提问挂起/有内容 → 按钮模式。
      *  提问挂起时模型在等待回答而非忙碌，空输入显示变淡箭头而非终止方块 */
     static BtnMode buttonMode(boolean running, boolean askPending, boolean hasContent) {
@@ -160,18 +166,41 @@ public class InputView extends VBox {
         }
     }
 
-    /** 插入确认文本：替换当前词为插入文本并移动光标（键盘与鼠标点击共用路径） */
+    /** 插入确认文本：替换当前词为插入文本并移动光标（键盘与鼠标点击共用路径）。
+     *  @ 文件补全的 insertText 为纯相对路径（FileSuggester 不带 @ 前缀），须补回 @，
+     *  否则替换词区间（含 @ 字符）后前缀丢失 */
     private void confirmInsert(String insert) {
         if (insert == null || lastToken == null) return;
-        input.replaceText(lastToken.start, lastToken.end, insert);
-        input.positionCaret(lastToken.start + insert.length());
+        insertAt(lastToken, insert);
         lastToken = null;
     }
 
-    /** 键盘确认弹层选中：从弹层取插入文本后走共用插入路径 */
+    /** 执行替换（独立方法供 runLater 复用）：@ 模式补前缀；token 为捕获快照，
+     *  用户已改文本导致坐标越界时静默放弃（不打断输入） */
+    private void insertAt(CompletionParser.Token t, String insert) {
+        if (t == null || insert == null || insert.isEmpty()) return;
+        String text = insertionText(t.mode, insert);
+        try {
+            input.replaceText(t.start, t.end, text);
+            input.positionCaret(t.start + text.length());
+        } catch (RuntimeException ex) {
+            // 坐标过期（延迟期间用户已修改文本）：放弃本次插入
+        }
+    }
+
+    /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 执行替换。
+     *  文本修改必须延迟到 KEY_PRESSED 派发结束后：JavaFX 8 在 key 事件派发期间
+     *  （capture 阶段）改 TextArea 文本与 behavior 的 Enter keyMapping 竞争，插入不可靠；
+     *  鼠标点击走 MOUSE_CLICKED（派发尾声）同步插入无此问题 */
     private void confirmPopup() {
         if (lastToken == null) return;
-        confirmInsert(popup.confirmSelected());
+        final CompletionParser.Token t = lastToken;
+        final String insert = popup.confirmSelected();
+        popup.hide();
+        if (insert == null) return;
+        Platform.runLater(new Runnable() {
+            @Override public void run() { insertAt(t, insert); }
+        });
     }
 
     /** MainWindow 激活会话时调用 */
