@@ -13,7 +13,8 @@ import java.util.concurrent.Executors;
 public class SessionHandle {
 
     public final String id;
-    public final String workspaceName;
+    /** 所属工作空间名：工作空间重命名时同步更新（非 final，否则 activate/send/persist 按旧名查 ctx 全部失效） */
+    public String workspaceName;
     public final Session session;
     public final AgentLoop loop;
     public final SessionController controller;

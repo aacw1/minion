@@ -107,4 +107,24 @@ public class WorkspaceTest {
         ws.resetCwd();
         assertEquals(Paths.get(workDir).toAbsolutePath().normalize(), ws.cwd());
     }
+
+    /** 热更新根目录：旧 cwd 越界回新根；越界守卫按新根判断（设置窗改 work.dir 实时生效） */
+    @Test
+    public void setWorkDir_hotUpdatesAndResetsCwd() throws Exception {
+        Files.createDirectories(Paths.get(workDir, "sub"));
+        ws.cd("sub");
+        Path newDir = tmp.newFolder("new-root").toPath();
+
+        ws.setWorkDir(newDir.toString());
+
+        assertEquals(newDir.toAbsolutePath().normalize(), ws.cwd());
+        assertEquals(newDir.toString(), ws.workDir());
+        assertNull(ws.cd("..")); // 新根外的路径仍被拒绝
+    }
+
+    @Test
+    public void setWorkDir_ignoresBlank() throws Exception {
+        ws.setWorkDir("  ");
+        assertEquals(Paths.get(workDir).toAbsolutePath().normalize(), ws.cwd());
+    }
 }

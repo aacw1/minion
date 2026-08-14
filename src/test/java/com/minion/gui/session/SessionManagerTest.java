@@ -259,6 +259,45 @@ public class SessionManagerTest {
         assertEquals("主空间", m.workspaces().currentName());
     }
 
+    /** 重命名工作空间后会话 workspaceName 同步：activateSession 守卫「非当前空间不激活」不再拒绝，send/persist 按新名查 ctx 可用 */
+    @Test
+    public void renameWorkspace_syncsSessionWorkspaceName() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.switchWorkspace("default");
+        SessionHandle h = m.createSession(null);
+        assertEquals("default", h.workspaceName);
+
+        m.renameWorkspace("default", "主空间");
+
+        assertEquals("主空间", h.workspaceName); // 会话归属随新名（防激活/发送/落盘按旧名查 ctx 落空）
+        m.activateSession(h); // 页签点击路径：不再被当前空间守卫拒绝
+        assertEquals(h, m.currentSession());
+    }
+
+    /** 修改工作空间：workDir 热更新到运行中会话共享的 workspace 实例（无需重启） */
+    @Test
+    public void updateWorkspace_hotUpdatesWorkDir() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null);
+        m.createSession(null);
+        String oldDir = m.currentWorkspaceDir();
+        String newDir = tmp.newFolder("new-root").getPath();
+
+        m.updateWorkspace("default", newDir, "");
+
+        assertEquals(newDir, m.currentWorkspaceDir()); // 共享 workspace 实例已换根
+        assertNotEquals(oldDir, m.currentWorkspaceDir());
+    }
+
     /** 删除带运行中会话的工作空间：先终止等退出完成再删目录，退出落盘不复活目录（评审 I-1 回归） */
     @Test
     public void deleteWorkspace_runningSession_noDirResurrection() throws Exception {

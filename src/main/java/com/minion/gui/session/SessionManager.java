@@ -76,11 +76,12 @@ public class SessionManager {
     private String currentWorkspaceName;
     private SessionHandle currentSession;
 
-    /** 每工作空间上下文（空间级共享对象；工具注册与工作线程下沉到每会话） */
+    /** 每工作空间上下文（空间级共享对象；工具注册与工作线程下沉到每会话）。
+     *  name/store 可变：工作空间重命名时同步（store 目录已迁移，须重建指向新目录，防旧路径复活）。 */
     private static class WorkspaceCtx {
-        final String name;
+        String name;
         final Workspace workspace;
-        final SessionStore store;
+        SessionStore store;
         final ConfirmGate confirmGate;
         final String skillsDir;
         final List<SessionHandle> sessions = new ArrayList<SessionHandle>();
@@ -355,23 +356,32 @@ public class SessionManager {
         return true;
     }
 
-    /** 重命名：配置迁移 + 会话目录迁移（WorkspaceManager.rename 内部完成）+ ctx 换键 + 当前名同步。false=新名非法/重名 */
+    /**
+     * 重命名：配置迁移 + 会话目录迁移（WorkspaceManager.rename 内部完成）+ ctx 换键 + 当前名同步
+     * + 全部会话 workspaceName 同步（否则 activateSession 守卫「非当前空间不激活」拒绝页签切换、
+     * send/persist 按旧名查 ctx 落空）+ store 重建指向新目录。false=新名非法/重名
+     */
     public boolean renameWorkspace(String oldName, String newName) {
         if (!workspaces.rename(oldName, newName)) return false;
         WorkspaceCtx ctx = ctxByName.remove(oldName);
+        ctx.name = newName;
         ctxByName.put(newName, ctx);
+        ctx.store = new SessionStore(WorkspaceManager.sessionDirFor(jarDir, newName)); // 目录已迁移，store 跟随
+        for (SessionHandle h : ctx.sessions) h.workspaceName = newName;
         if (currentWorkspaceName.equals(oldName)) currentWorkspaceName = newName;
         notifyWorkspaceChanged();
         return true;
     }
 
     /**
-     * 修改工作空间：仅更新配置落盘。运行中的会话持有旧 workspace 引用，
-     * 热更新会连锁重建整套上下文（registry/store/loop 引用），YAGNI 不做——
-     * 修改在重启后对新会话生效。
+     * 修改工作空间：配置落盘 + workDir 热更新（所有会话共享同一 workspace 实例，
+     * setWorkDir 后下一轮工具调用即按新根守卫，无需重启）；projectMd 对新会话生效（运行中会话
+     * 的 system prompt 在创建时构建，不热换）。
      */
     public void updateWorkspace(String name, String workDir, String projectMd) {
         workspaces.update(name, workDir, projectMd);
+        WorkspaceCtx ctx = ctxByName.get(name);
+        if (ctx != null) ctx.workspace.setWorkDir(workDir);
     }
 
     /**
