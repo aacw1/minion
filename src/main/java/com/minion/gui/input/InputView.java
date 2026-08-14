@@ -326,8 +326,22 @@ public class InputView extends VBox {
         });
     }
 
+    /** 块 + 文本组装发送文本 */
+    private String composedText() {
+        return InputChip.compose(chips, input.getText());
+    }
+
+    /** 发送后清空：块 + 文本区 + 弹层（块行 unmanaged 自动归位） */
+    private void clearComposer() {
+        chips.clear();
+        chipRow.getChildren().clear();
+        refreshChipRow();
+        popup.hide();
+        input.clear();
+    }
+
     private boolean hasContent() {
-        return input.getText() != null && !input.getText().trim().isEmpty();
+        return !chips.isEmpty() || (input.getText() != null && !input.getText().trim().isEmpty());
     }
 
     private void updatePrompt() {
@@ -365,16 +379,16 @@ public class InputView extends VBox {
                 onSend();
                 break;
             case SUPPLEMENT: {
-                String text = input.getText();
+                String text = composedText();
                 if (text == null || text.trim().isEmpty()) return;
-                input.clear();
+                clearComposer();
                 if (current != null) manager.sendSupplement(current, text);
                 break;
             }
             case ANSWER: {
-                String text = input.getText();
+                String text = composedText();
                 if (text == null || text.trim().isEmpty()) return;
-                input.clear();
+                clearComposer();
                 if (current != null) manager.sendAnswer(current, text);
                 break;
             }
@@ -388,10 +402,9 @@ public class InputView extends VBox {
     }
 
     private void onSend() {
-        String text = input.getText();
+        String text = composedText();
         if (text == null || text.trim().isEmpty()) return;
-        input.clear();
-        popup.hide();
+        clearComposer();
         SessionHandle target = current;
         if (target == null) {
             target = manager.createSession(null);
