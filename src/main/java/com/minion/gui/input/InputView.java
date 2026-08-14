@@ -52,7 +52,7 @@ public class InputView extends VBox {
         input.getStyleClass().add("input-textarea");
         input.setWrapText(true);
         input.setPromptText("输入消息…  (@ 引用文件  / 命令  Ctrl+Enter 发送)");
-        input.setPrefRowCount(3); // 加一行
+        input.setPrefRowCount(2); // 加一行
         input.setMaxHeight(6 * 24);
         input.textProperty().addListener((obs, ov, nv) -> { updateButton(); onTextChanged(); });
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
