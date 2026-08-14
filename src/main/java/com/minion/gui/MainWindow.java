@@ -111,8 +111,6 @@ public class MainWindow {
         VBox sidebar = new VBox(8);
         sidebar.getStyleClass().add("panel");
         sidebar.setMinWidth(200);
-        Label sessionTitle = new Label("会话管理");
-        sessionTitle.getStyleClass().add("section-title");
         sessionList = new SessionListView(manager,
                 h -> {
                     removeTabById(h.id);
@@ -127,8 +125,6 @@ public class MainWindow {
         VBox sessionBox = new VBox(6);
         sessionBox.getChildren().addAll(newSession, sessionList);
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
-        Label wsTitle = new Label("工作空间");
-        wsTitle.getStyleClass().add("section-title");
         final WorkspaceListView wsList = new WorkspaceListView(manager);
         VBox.setVgrow(wsList, Priority.ALWAYS);
         Button newWs = new Button("＋ 新建工作空间");
@@ -138,7 +134,8 @@ public class MainWindow {
         VBox wsBox = new VBox(6);
         wsBox.getChildren().addAll(newWs, wsList);
         VBox.setVgrow(wsBox, Priority.ALWAYS);
-        sidebar.getChildren().setAll(sessionTitle, sessionBox, wsTitle, wsBox);
+        // VBox(8) 间距自然分隔上下两区，不加分隔线
+        sidebar.getChildren().setAll(sessionBox, wsBox);
 
         // 右侧：页签栏（会话 Tab）+ 消息区（ChatView）+ 输入区
         VBox right = new VBox(8);
