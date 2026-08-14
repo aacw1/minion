@@ -79,8 +79,6 @@ public class InputView extends VBox {
         // 同为 target 内 handler，bubble 顺序不保证——行为先执行会移动光标触发 onTextChanged 重置弹层
         // 选中、Enter 插入换行关弹层，导致上下键/确认失效；过滤器先于一切 target 内 handler 执行
         input.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            dbg("key=" + e.getCode() + " ctrl=" + e.isControlDown() + " alt=" + e.isAltDown()
-                    + " showing=" + popup.isShowing() + " caret=" + input.getCaretPosition());
             if (new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN).match(e)) {
                 e.consume();
                 onAction();
@@ -88,8 +86,6 @@ public class InputView extends VBox {
             }
             // 补全弹层优先：↑↓ 移动、Enter/Tab 确认、Esc 仅关弹层
             if (popup.isShowing()) {
-                dbg("popup-branch key=" + e.getCode() + " sel=" + popup.debugSelected()
-                        + " lastToken=" + lastToken + " caret=" + input.getCaretPosition());
                 switch (e.getCode()) {
                     case UP:    popup.move(-1); e.consume(); break;
                     case DOWN:  popup.move(1);  e.consume(); break;
@@ -160,9 +156,6 @@ public class InputView extends VBox {
                 }
                 suppressed = null;
             }
-            dbg("onTextChanged mode=" + t.mode + " word='" + input.getText().substring(t.start, t.end)
-                    + "' suppressed=" + suppressed + " showing=" + popup.isShowing()
-                    + " text='" + input.getText() + "'");
             switch (t.mode) {
                 case SLASH:
                     popup.show(frame, SlashSuggester.all(manager.skills()), t.query);
@@ -210,7 +203,6 @@ public class InputView extends VBox {
             input.positionCaret(t.start + text.length());
             return text;
         } catch (RuntimeException ex) {
-            dbg("insertAt EX " + ex);
             return null;
         }
     }
@@ -220,28 +212,14 @@ public class InputView extends VBox {
      *  （capture 阶段）改 TextArea 文本与 behavior 的 Enter keyMapping 竞争，插入不可靠；
      *  鼠标点击走 MOUSE_CLICKED（派发尾声）同步插入无此问题 */
     private void confirmPopup() {
-        if (lastToken == null) {
-            dbg("confirmPopup lastToken==null");
-            return;
-        }
+        if (lastToken == null) return;
         final CompletionParser.Token t = lastToken;
         final String insert = popup.confirmSelected();
         popup.hide();
-        dbg("confirmPopup sel='" + insert + "' text='" + input.getText() + "'");
         if (insert == null) return;
         Platform.runLater(new Runnable() {
             @Override public void run() { suppressed = insertAt(t, insert); }
         });
-    }
-
-    /** 临时调试日志：键盘确认路径（定位「确认键不回显」，验证后删除） */
-    private static void dbg(String s) {
-        try {
-            java.io.File f = new java.io.File(System.getProperty("java.io.tmpdir"), "minion-input-debug.log");
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write(System.currentTimeMillis() + " " + s + "\n");
-            w.close();
-        } catch (Exception ignored) { }
     }
 
     /** MainWindow 激活会话时调用 */

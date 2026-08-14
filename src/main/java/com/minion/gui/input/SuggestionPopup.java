@@ -122,13 +122,6 @@ public class SuggestionPopup {
         return sel == null ? null : sel.insertText;
     }
 
-    /** 临时调试：当前选中状态（定位键盘确认问题，验证后删除） */
-    public String debugSelected() {
-        int idx = list.getSelectionModel().getSelectedIndex();
-        Suggestion item = idx >= 0 && idx < list.getItems().size() ? list.getItems().get(idx) : null;
-        return "idx=" + idx + " item=" + (item == null ? "null" : item.label);
-    }
-
     public void hide() { popup.hide(); }
 
     public boolean isShowing() { return popup.isShowing(); }
