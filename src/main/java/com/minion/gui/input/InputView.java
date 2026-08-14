@@ -92,6 +92,16 @@ public class InputView extends VBox {
                 onAction();
                 return;
             }
+            // 长文本粘贴（Ctrl+V / Shift+Insert）→ 变块；短文本不拦截走默认粘贴
+            if ((e.isControlDown() && e.getCode() == KeyCode.V)
+                    || (e.isShiftDown() && e.getCode() == KeyCode.INSERT)) {
+                String clip = Clipboard.getSystemClipboard().getString();
+                if (InputChip.shouldChipPaste(clip)) {
+                    addChip(InputChip.pasteChip(clip));
+                    e.consume();
+                    return;
+                }
+            }
             // 补全弹层优先：↑↓ 移动、Enter/Tab 确认、Esc 仅关弹层
             if (popup.isShowing()) {
                 switch (e.getCode()) {
@@ -101,6 +111,13 @@ public class InputView extends VBox {
                     case ENTER: confirmPopup(); e.consume(); break;
                     case ESCAPE: popup.hide(); lastToken = null; e.consume(); break;
                 }
+                return;
+            }
+            // 空文本时 Backspace/Delete 删除最后一个块
+            if ((e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.DELETE)
+                    && !chips.isEmpty() && input.getText().isEmpty()) {
+                removeLastChip();
+                e.consume();
                 return;
             }
             // Esc：终止当前运行（提问挂起时亦可终止）
