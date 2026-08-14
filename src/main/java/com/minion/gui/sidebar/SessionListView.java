@@ -62,7 +62,11 @@ public class SessionListView extends ListView<SessionHandle> {
     }
 
     public void refresh() {
-        Platform.runLater(() -> getItems().setAll(manager.sessions()));
+        Platform.runLater(() -> {
+            getItems().setAll(manager.sessions());
+            SessionHandle cur = manager.currentSession();
+            if (cur != null) getSelectionModel().select(cur); // 选中=激活：微亮框即激活指示（删除会话等路径后重新同步）
+        });
     }
 
     private class SessionCell extends ListCell<SessionHandle> {

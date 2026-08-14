@@ -105,7 +105,7 @@
     -fx-padding: 9 12 9 12;
 }
 .list-view .list-cell:hover { -fx-background-color: #20242e; }
-.list-view .list-cell:selected { -fx-background-color: #2a3344; -fx-text-fill: #f0f2f6; }
+.list-view .list-cell:selected { -fx-background-color: #232a38; -fx-text-fill: #f0f2f6; }
 
 /* 页签 */
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
