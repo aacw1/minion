@@ -2,6 +2,7 @@ package com.minion.core.tools;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -20,8 +21,16 @@ public class PathsGuard {
         if (dir == null || dir.isEmpty()) return false;
         try {
             Path root = Paths.get(dir).toRealPath();
-            Path target = p.toRealPath();
-            return target.startsWith(root);
+            // 目标不存在（写新文件/新建目录，如截图保存）时 toRealPath 抛 NoSuchFileException
+            // 会误判越界：向上找最深已存在祖先做真实路径校验（同 WriteTool.outsideGuard 的 T8 约定）。
+            // NOFOLLOW_LINKS 探活：断链（指向不存在的目录）视为已存在，toRealPath 解析失败即拒绝，
+            // 防止写穿断链逃逸到工作区外。
+            Path probe = p;
+            while (probe != null && !Files.exists(probe, LinkOption.NOFOLLOW_LINKS)) {
+                probe = probe.getParent();
+            }
+            if (probe == null) return false; // 整个祖先链缺失，无法校验
+            return probe.toRealPath().startsWith(root);
         } catch (IOException e) {
             return false;
         }

@@ -183,4 +183,40 @@ public class ConfirmGateTest {
         assertEquals(1, ui.asked.size()); // W 按会话放行，不落持久化白名单
         assertFalse(config.whitelistTools().contains("read"));
     }
+
+    // ---- 越界写审批（截图等输出类工具）----
+
+    @Test
+    public void writeOutside_approveReject() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkWriteOutside(writeTool(), args("{\"path\":\"D:/x.png\"}"), "D:/x.png"));
+        assertEquals(1, ui.asked.size());
+        assertTrue(ui.asked.get(0).startsWith("! 越界写入 "));
+        assertTrue(ui.asked.get(0).contains("D:/x.png"));
+
+        assertFalse(gate(new FakeConfirmUi(ConfirmUi.Decision.REJECT))
+                .checkWriteOutside(writeTool(), args("{\"path\":\"D:/x.png\"}"), "D:/x.png"));
+    }
+
+    @Test
+    public void writeOutside_approveSession_bypassesRest() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE_SESSION);
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkWriteOutside(writeTool(), args("{\"path\":\"D:/x.png\"}"), "D:/x.png"));
+        assertTrue(g.checkWriteOutside(writeTool(), args("{\"path\":\"D:/y.png\"}"), "D:/y.png"));
+        assertEquals(1, ui.asked.size()); // 会话放行后不再弹窗
+    }
+
+    @Test
+    public void writeOutside_switchOn_skipsAsk() throws Exception {
+        Files.write(java.nio.file.Paths.get(config.externalFile().toString()),
+                "\npaths.read.allowOutside=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        config = com.minion.core.config.Config.load(tmp.getRoot().toPath());
+        FakeConfirmUi ui = new FakeConfirmUi();
+        ConfirmGate g = gate(ui);
+        assertTrue(g.checkWriteOutside(writeTool(), args("{\"path\":\"D:/x.png\"}"), "D:/x.png"));
+        assertTrue(ui.asked.isEmpty());
+    }
 }

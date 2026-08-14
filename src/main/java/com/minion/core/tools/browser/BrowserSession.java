@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
@@ -142,7 +143,9 @@ public class BrowserSession {
         JsonObject r = client.command("Page.captureScreenshot", params);
         if (!r.has("data")) return "截图失败: 无数据";
         byte[] png = Base64.getDecoder().decode(r.get("data").getAsString());
-        Files.write(Paths.get(absPath), png);
+        Path target = Paths.get(absPath);
+        if (target.getParent() != null) Files.createDirectories(target.getParent()); // 同 WriteTool：目录不存在时先建
+        Files.write(target, png);
         return "截图已保存: " + absPath;
     }
 

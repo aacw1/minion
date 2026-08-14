@@ -3,9 +3,14 @@ package com.minion.core.tools.browser;
 import com.google.gson.JsonObject;
 import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.Workspace;
+import com.minion.core.tools.confirm.ConfirmGate;
+import com.minion.core.tools.confirm.ConfirmUi;
+import com.minion.core.tools.confirm.FakeConfirmUi;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
@@ -40,6 +45,7 @@ public class BrowserToolsTest {
         final java.util.List<String> commands = new java.util.ArrayList<String>();
         boolean connected;
         JsonObject evalResponse = new JsonObject(); // 测试注入
+        String screenshotData; // 测试注入:Page.captureScreenshot 返回的 base64 数据
         FakeCdpClient() { super(100, 100); }
         @Override
         public void connect(String wsUrl) { connected = true; }
@@ -49,6 +55,11 @@ public class BrowserToolsTest {
         public JsonObject command(String method, JsonObject params) {
             commands.add(method);
             if ("Runtime.evaluate".equals(method) && evalResponse != null) return evalResponse;
+            if ("Page.captureScreenshot".equals(method) && screenshotData != null) {
+                JsonObject r = new JsonObject();
+                r.addProperty("data", screenshotData);
+                return r;
+            }
             return new JsonObject();
         }
     }
@@ -113,6 +124,73 @@ public class BrowserToolsTest {
         ToolResult r = new BrowserScreenshotTool(session(), ws, null)
                 .execute(json("path", "C:\\Windows\\x.png"));
         assertTrue(r.output, r.output.contains("工作路径之外"));
+    }
+
+    /**
+     * 回归(对应线上 bug:模型创建网页小游戏→截图保存被拒→换文案无限重试):
+     * 目标文件还不存在(新文件)且在工作区内的截图必须成功保存,不得误报"工作路径之外"。
+     */
+    @Test
+    public void browserScreenshotNewFileInsideWorkDir_saves() throws Exception {
+        java.nio.file.Path wsDir = java.nio.file.Files.createTempDirectory("minion-ws");
+        try {
+            FakeCdpClient fake = new FakeCdpClient();
+            fake.screenshotData = "aGVsbG8="; // base64("hello")
+            BrowserSession session = new BrowserSession(new FakeLauncher(), fake);
+            ToolResult r = new BrowserScreenshotTool(session, new Workspace(wsDir.toString()), null)
+                    .execute(json("path", "shot.png"));
+            assertTrue(r.output, r.ok);
+            java.nio.file.Path saved = wsDir.resolve("shot.png");
+            assertTrue(saved.toString(), java.nio.file.Files.exists(saved));
+            assertEquals("hello", new String(java.nio.file.Files.readAllBytes(saved),
+                    java.nio.charset.StandardCharsets.UTF_8));
+        } finally {
+            java.nio.file.Files.deleteIfExists(wsDir.resolve("shot.png"));
+        }
+    }
+
+    /** 越界截图+用户拒绝确认:必须保持拒绝(弹框决策生效) */
+    @Test
+    public void browserScreenshotOutside_confirmReject_rejects() throws Exception {
+        Path wsDir = Files.createTempDirectory("minion-ws");
+        Path outsideDir = Files.createTempDirectory("minion-outside");
+        try {
+            ConfirmGate gate = new ConfirmGate(config(), new FakeConfirmUi(ConfirmUi.Decision.REJECT));
+            ToolResult r = new BrowserScreenshotTool(session(), new Workspace(wsDir.toString()), null, gate)
+                    .execute(json("path", outsideDir.resolve("x.png").toString()));
+            assertFalse(r.ok);
+            assertTrue(r.output, r.output.contains("工作路径之外"));
+        } finally {
+            Files.deleteIfExists(outsideDir.resolve("x.png"));
+            Files.deleteIfExists(outsideDir);
+            Files.deleteIfExists(wsDir);
+        }
+    }
+
+    /** 越界截图+用户允许确认:弹框放行后保存到工作区外(决策链:守卫→确认→执行) */
+    @Test
+    public void browserScreenshotOutside_confirmApprove_savesOutside() throws Exception {
+        Path wsDir = Files.createTempDirectory("minion-ws");
+        Path outsideDir = Files.createTempDirectory("minion-outside");
+        try {
+            FakeCdpClient fake = new FakeCdpClient();
+            fake.screenshotData = "aGVsbG8="; // base64("hello")
+            BrowserSession bs = new BrowserSession(new FakeLauncher(), fake);
+            ConfirmGate gate = new ConfirmGate(config(), new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+            ToolResult r = new BrowserScreenshotTool(bs, new Workspace(wsDir.toString()), null, gate)
+                    .execute(json("path", outsideDir.resolve("x.png").toString()));
+            assertTrue(r.output, r.ok);
+            assertTrue(Files.exists(outsideDir.resolve("x.png")));
+        } finally {
+            Files.deleteIfExists(outsideDir.resolve("x.png"));
+            Files.deleteIfExists(outsideDir);
+            Files.deleteIfExists(wsDir);
+        }
+    }
+
+    /** 测试用 Config:加载临时目录(默认无 confirm.skip/allowOutside) */
+    private static com.minion.core.config.Config config() throws Exception {
+        return com.minion.core.config.Config.load(Files.createTempDirectory("minion-cfg"));
     }
 
     @Test

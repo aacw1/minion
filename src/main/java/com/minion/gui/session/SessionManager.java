@@ -220,7 +220,7 @@ public class SessionManager {
         if (browserSession != null) {
             registry.register(new BrowserTool(browserSession));
             registry.register(new BrowserEvalTool(browserSession));
-            registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir));
+            registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir, gate));
             registry.register(new BrowserDebugTool(browserSession));
         }
         return registry;
