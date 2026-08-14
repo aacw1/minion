@@ -57,7 +57,10 @@ public class SuggestionPopup {
             if (sel != null && onConfirm != null) onConfirm.accept(sel.insertText);
         });
         popup.getContent().add(list);
-        popup.setAutoHide(true);
+        // 不用 autoHide：点击输入框（常见操作）会在 bubble 阶段关掉弹层，与 onTextChanged
+        // 的 show() 竞争——点击后弹层闪一下消失，键盘 Enter 落入 TextArea 变成换行，确认失效。
+        // 弹层显示改为输入内容驱动 + 输入框失焦关闭（InputView 监听 focusedProperty）
+        popup.setAutoHide(false);
     }
 
     /** 鼠标点击确认回调注册：收到选中项 insertText（弹层负责 hide，插入由输入框执行） */
@@ -114,6 +117,13 @@ public class SuggestionPopup {
     public String confirmSelected() {
         Suggestion sel = list.getSelectionModel().getSelectedItem();
         return sel == null ? null : sel.insertText;
+    }
+
+    /** 临时调试：当前选中状态（定位键盘确认问题，验证后删除） */
+    public String debugSelected() {
+        int idx = list.getSelectionModel().getSelectedIndex();
+        Suggestion item = idx >= 0 && idx < list.getItems().size() ? list.getItems().get(idx) : null;
+        return "idx=" + idx + " item=" + (item == null ? "null" : item.label);
     }
 
     public void hide() { popup.hide(); }
