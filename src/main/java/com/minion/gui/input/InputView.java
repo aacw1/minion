@@ -47,7 +47,7 @@ public class InputView extends VBox {
     public InputView(final SessionManager manager) {
         this.manager = manager;
         getStyleClass().add("panel-dark");
-        setPadding(new Insets(12, 16, 0, 16)); // 底部 0：整体上移半行（半行≈12px）
+        setPadding(new Insets(12, 16, 12, 16)); // 底部 12：输入框底部距正文部分底部半行（半行≈12px，不贴窗沿）
 
         input.getStyleClass().add("input-textarea");
         input.setWrapText(true);
