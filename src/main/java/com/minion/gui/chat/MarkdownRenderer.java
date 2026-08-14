@@ -80,6 +80,45 @@ public class MarkdownRenderer {
         return out;
     }
 
+    /** Markdown → 可读纯文本（消息区 TextArea 展示用）：去语法记号，块间空行分隔，整体 trim */
+    public static String toPlainText(String md) {
+        List<Block> blocks = parse(md);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < blocks.size(); i++) {
+            appendPlain(blocks.get(i), sb);
+            if (i < blocks.size() - 1) sb.append("\n\n");
+        }
+        return sb.toString().trim();
+    }
+
+    /** 单块 → 纯文本（列表/表格带前缀与分隔，其余直接取 text；RULE 忽略） */
+    private static void appendPlain(Block b, StringBuilder sb) {
+        switch (b.type) {
+            case PARAGRAPH:
+            case HEADING:
+            case CODE:
+            case QUOTE:
+                sb.append(b.text);
+                break;
+            case LIST:
+                for (Block item : b.items) sb.append("• ").append(item.text).append('\n');
+                if (!b.items.isEmpty()) sb.setLength(sb.length() - 1);
+                break;
+            case TABLE:
+                for (TableRowData r : b.rows) {
+                    for (int i = 0; i < r.cells.size(); i++) {
+                        if (i > 0) sb.append(" | ");
+                        sb.append(r.cells.get(i));
+                    }
+                    sb.append('\n');
+                }
+                if (!b.rows.isEmpty()) sb.setLength(sb.length() - 1);
+                break;
+            default:
+                break;
+        }
+    }
+
     private static void convert(Node n, List<Block> out) {
         if (n instanceof Heading) {
             Heading h = (Heading) n;

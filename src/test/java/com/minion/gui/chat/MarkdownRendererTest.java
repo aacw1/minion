@@ -72,4 +72,48 @@ public class MarkdownRendererTest {
         assertEquals(2, blocks.get(0).rows.get(0).cells.size());
         assertEquals("a", blocks.get(0).rows.get(0).cells.get(0));
     }
+
+    // ===== toPlainText：markdown → 可读纯文本（消息区 TextArea 展示用） =====
+
+    @Test
+    public void toPlainText_headingAndParagraph() {
+        assertEquals("标题\n\n正文内容", MarkdownRenderer.toPlainText("# 标题\n\n正文内容"));
+    }
+
+    @Test
+    public void toPlainText_codeBlock_noFence() {
+        assertEquals("int a = 1;\nreturn a;", MarkdownRenderer.toPlainText(
+                "```java\nint a = 1;\nreturn a;\n```"));
+    }
+
+    @Test
+    public void toPlainText_list_withBullets() {
+        assertEquals("• 甲\n• 乙", MarkdownRenderer.toPlainText("- 甲\n- 乙"));
+    }
+
+    @Test
+    public void toPlainText_table_pipeJoined() {
+        assertEquals("a | b\n1 | 2", MarkdownRenderer.toPlainText("| a | b |\n|---|---|\n| 1 | 2 |"));
+    }
+
+    @Test
+    public void toPlainText_inlineMarkup_stripped() {
+        assertEquals("加粗 和 行内码", MarkdownRenderer.toPlainText("**加粗** 和 `行内码`"));
+    }
+
+    @Test
+    public void toPlainText_quote() {
+        assertEquals("引用文字", MarkdownRenderer.toPlainText("> 引用文字"));
+    }
+
+    @Test
+    public void toPlainText_empty() {
+        assertEquals("", MarkdownRenderer.toPlainText(""));
+    }
+
+    @Test
+    public void toPlainText_mixedDocument_blankLineSeparated() {
+        String md = "# 标题\n\n```java\nint a = 1;\n```\n\n- 甲\n- 乙";
+        assertEquals("标题\n\nint a = 1;\n\n• 甲\n• 乙", MarkdownRenderer.toPlainText(md));
+    }
 }

@@ -142,6 +142,7 @@ public class MainWindow {
         right.getStyleClass().add("panel-dark");
         chatScroll = new ScrollPane();
         chatScroll.setFitToWidth(true);
+        chatScroll.setFitToHeight(true); // 消息区铺满正文窗口：内容少时 ChatView 拉伸到视口高（背景 #121314 铺满）
         chatScroll.setPrefHeight(200); // 固定 pref：否则 prefHeight 随消息内容增长，挤压右侧 VBox 把页签行压扁（探针验证）
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
