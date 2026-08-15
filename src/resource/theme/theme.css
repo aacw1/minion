@@ -134,13 +134,18 @@
 
 /* 列表 */
 .list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
+/* 抄 Claude VSCode 插件侧栏页签：背景内缩成胶囊（上下 1px、左右 2px）+ 圆角；
+   hover/selected 只对 filled cell 生效——列表底部空白区域由空 cell 填充，保持透明不变色 */
 .list-view .list-cell {
     -fx-background-color: transparent;
+    -fx-background-insets: 1 2 1 2;
+    -fx-background-radius: 4;
     -fx-text-fill: #d3d7de;
     -fx-padding: 9 12 9 12;
 }
-.list-view .list-cell:hover { -fx-background-color: #20242e; }
-.list-view .list-cell:selected { -fx-background-color: #232a38; -fx-text-fill: #f0f2f6; }
+.list-view .list-cell:filled { -fx-background-color: #1a1d24; }
+.list-view .list-cell:filled:hover { -fx-background-color: #20242e; }
+.list-view .list-cell:filled:selected { -fx-background-color: #232a38; -fx-text-fill: #f0f2f6; }
 
 /* 页签 */
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
