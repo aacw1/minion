@@ -1,5 +1,6 @@
 package com.minion.gui.input;
 
+import com.minion.core.config.Config;
 import com.minion.core.llm.ImagePart;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
@@ -13,8 +14,6 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.FlowPane;
@@ -42,6 +41,7 @@ public class InputView extends VBox {
     enum BtnMode { SEND, SEND_DIM, SUPPLEMENT, ANSWER, ANSWER_DIM, STOP }
 
     private final SessionManager manager;
+    private final Config config;
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
     private final Button uploadButton = new Button();
@@ -61,21 +61,23 @@ public class InputView extends VBox {
     private boolean askPending;
     private String askQuestion;
 
-    public InputView(final SessionManager manager) {
+    public InputView(final SessionManager manager, final Config config) {
         this.manager = manager;
+        this.config = config;
         getStyleClass().add("panel-dark");
         setPadding(new Insets(0, 16, 24, 16)); // 顶部 0：输入框顶部贴消息区（上移半行，总高减半行 96→84）；底部 24：距正文部分底部1行
 
         input.getStyleClass().add("input-textarea");
         input.setWrapText(true);
-        input.setPromptText("输入消息…  (@ 引用文件  / 命令  Ctrl+Enter 发送)");
         input.setPrefRowCount(2); // 加一行
         input.setMaxHeight(6 * 24);
         input.textProperty().addListener((obs, ov, nv) -> { updateButton(); onTextChanged(); });
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
-        // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关
+        // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关；
+        // 焦点进入时刷新文案——设置窗勾选发送键后点回输入框，提示与 tooltip 立即正确
         input.focusedProperty().addListener((obs, ov, nv) -> {
             if (!nv) { popup.hide(); lastToken = null; }
+            else { updateButton(); updatePrompt(); }
         });
 
         // 上箭头（Claude Code 同款语义：可发送）；方块 = 终止
@@ -106,9 +108,19 @@ public class InputView extends VBox {
         // 同为 target 内 handler，bubble 顺序不保证——行为先执行会移动光标触发 onTextChanged 重置弹层
         // 选中、Enter 插入换行关弹层，导致上下键/确认失效；过滤器先于一切 target 内 handler 执行
         input.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN).match(e)) {
+            boolean ctrl = e.isControlDown(), shift = e.isShiftDown(), alt = e.isAltDown(), meta = e.isMetaDown();
+            boolean enterSends = config.enterSends();
+            // 发送键：默认模式优先于弹层（同现状：弹层开着 Ctrl+Enter 也发送）；
+            // Enter 发送模式弹层打开时不发送，Enter/Ctrl+Enter 均走弹层确认
+            if (isSendKey(e.getCode(), ctrl, shift, alt, meta, enterSends) && !(enterSends && popup.isShowing())) {
                 e.consume();
                 onAction();
+                return;
+            }
+            // Enter 发送模式：弹层关闭时 Ctrl+Enter 显式插入换行（JavaFX TextArea 对 Ctrl+Enter 无默认换行绑定，须 replaceSelection）
+            if (enterSends && !popup.isShowing() && e.getCode() == KeyCode.ENTER && ctrl && !shift && !alt && !meta) {
+                e.consume();
+                input.replaceSelection("\n");
                 return;
             }
             // 长文本粘贴（Ctrl+V / Shift+Insert）→ 变块；短文本不拦截走默认粘贴
@@ -171,6 +183,7 @@ public class InputView extends VBox {
         root.getColumnConstraints().addAll(left, center, right);
         root.add(frame, 1, 0);
         getChildren().add(root);
+        updatePrompt(); // askPending 默认 false，显示正常发送键提示
     }
 
     /** 确认插入的最终文本：@ 文件补全补回 @ 前缀（FileSuggester 的 insertText 为纯路径）。
@@ -368,7 +381,7 @@ public class InputView extends VBox {
             String q = askQuestion == null ? "" : askQuestion;
             input.setPromptText("回答: " + (q.length() > 40 ? q.substring(0, 40) + "…" : q));
         } else {
-            input.setPromptText("输入消息…  (@ 引用文件  / 命令  Ctrl+Enter 发送)");
+            input.setPromptText("输入消息…  (@ 引用文件  / 命令  " + sendKeyLabel(config.enterSends()) + " 发送)");
         }
     }
 
@@ -377,14 +390,28 @@ public class InputView extends VBox {
         return "btn-danger";
     }
 
+    /** 当前发送键模式下该按键事件是否为「发送」：默认=Ctrl+Enter（精确修饰键语义，同 KeyCodeCombination）；
+     *  Enter 发送模式=纯 Enter。弹层打开时由事件过滤器分流，不算发送 */
+    static boolean isSendKey(KeyCode code, boolean ctrl, boolean shift, boolean alt, boolean meta, boolean enterSends) {
+        if (code != KeyCode.ENTER) return false;
+        if (enterSends) return !ctrl && !shift && !alt && !meta;
+        return ctrl && !shift && !alt && !meta;
+    }
+
+    /** 发送键显示名（按钮 tooltip / 输入框占位提示用） */
+    static String sendKeyLabel(boolean enterSends) {
+        return enterSends ? "Enter" : "Ctrl+Enter";
+    }
+
     private void updateButton() {
         BtnMode mode = buttonMode(running, askPending, hasContent());
+        String sendKey = sendKeyLabel(config.enterSends());
         switch (mode) {
-            case SEND:       applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "发送 (Ctrl+Enter)"); break;
-            case SEND_DIM:   applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入消息后发送 (Ctrl+Enter)"); break;
-            case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (Ctrl+Enter)"); break;
-            case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (Ctrl+Enter)"); break;
-            case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (Ctrl+Enter)"); break;
+            case SEND:       applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "发送 (" + sendKey + ")"); break;
+            case SEND_DIM:   applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入消息后发送 (" + sendKey + ")"); break;
+            case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (" + sendKey + ")"); break;
+            case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (" + sendKey + ")"); break;
+            case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (" + sendKey + ")"); break;
             case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行 (Esc)"); break;
         }
     }

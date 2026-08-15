@@ -147,7 +147,7 @@ public class MainWindow {
         chatScroll.setContent(new Region()); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
         setupAutoScroll();
-        inputView = new InputView(manager);
+        inputView = new InputView(manager, MinionApp.config());
         // 页签栏（右侧顶部，下带 1px 分隔线；页签为空时整行隐藏）
         tabsBar = new HBox(tabs);
         tabsBar.getStyleClass().add("tabs-bar");
