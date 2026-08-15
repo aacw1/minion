@@ -82,6 +82,17 @@
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
+/* 上传按钮（输入框底部操作行左）：回形针描边图标 */
+.btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
+.icon-upload {
+    -fx-fill: transparent;
+    -fx-stroke: #a8b0bb;
+    -fx-stroke-width: 1.6;
+    -fx-stroke-linecap: round;
+    -fx-stroke-linejoin: round;
+}
+.btn-upload:hover .icon-upload { -fx-stroke: #f0f2f6; }
+
 /* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
 .chip-row { -fx-hgap: 8; -fx-vgap: 8; }
 .input-chip {
@@ -103,6 +114,7 @@
 .input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
 .input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
 .input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
+.input-chip-image { -fx-background-color: #241f38; -fx-border-color: #7c5cd6; }
 
 /* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
 .suggest-list {
