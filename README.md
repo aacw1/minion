@@ -9,6 +9,10 @@
 
 图形界面为唯一界面（CLI 已移除）。需要 JDK 8 且自带 JavaFX：Oracle JDK 8 或 Zulu/AdoptOpenJDK 8 含 OpenJFX 的发行版；Win7 用户注意 Win7 只支持到 8u251 之前的 Oracle 版本。若 PATH 里的 `java` 不是含 JavaFX 的 JDK 8（会报 `NoClassDefFoundError: javafx/application/Application`），请用 `minion.bat` 启动——它按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测，全部落空时给出清晰错误提示。
 
+注意：**双击 jar 走 Windows 文件关联的 javaw.exe，可能与 bat 探测的 JDK 不同**（如关联到 JDK 9/10 的 JavaFX 时文字渲染异常——正文模糊，2026-08-15 实证）。务必保证文件关联指向含 JavaFX 的 JDK 8，或在管理员 cmd 下执行（把路径换成自己的 JDK 8）：
+
+    reg add "HKEY_CLASSES_ROOT\jarfile\shell\open\command" /ve /t REG_SZ /d "\"E:\javame\jdk8\jre\bin\javaw.exe\" -jar \"%1\" %*" /f
+
 首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`。
 
 ## 配置三件套（jar 同目录）
