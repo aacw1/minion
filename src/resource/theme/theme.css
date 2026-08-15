@@ -35,13 +35,21 @@
     -fx-font-weight: bold;
 }
 .btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
-.btn-danger {
-    -fx-background-color: linear-gradient(to bottom, #e0504f, #c93a39);
+/* 发送/确认按钮三态色：空内容与运行中 #f48771，有内容非运行 #ff947c（hover 向浅微调） */
+.btn-send-empty {
+    -fx-background-color: #f48771;
     -fx-text-fill: white;
     -fx-font-weight: bold;
     -fx-background-radius: 8;
 }
-.btn-danger:hover { -fx-background-color: linear-gradient(to bottom, #ef5f5e, #e0504f); }
+.btn-send-empty:hover { -fx-background-color: #f69b85; }
+.btn-send-full {
+    -fx-background-color: #ff947c;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 8;
+}
+.btn-send-full:hover { -fx-background-color: #ffa894; }
 .btn-ghost {
     -fx-background-color: transparent;
     -fx-text-fill: #a8b0bb;
@@ -81,6 +89,8 @@
 }
 .input-frame .input-textarea .content { -fx-background-color: transparent; }
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
+/* 输入框聚焦：大框边框 #f48771（InputView focus 监听切换样式类，失焦还原 #232733） */
+.input-frame-focused { -fx-border-color: #f48771; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
 /* 上传按钮（输入框底部操作行左）：回形针描边图标 */
@@ -309,6 +319,9 @@
     -fx-border-color: transparent;
 }
 .dialog-pane .button:default:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
+
+/* 退出确认弹窗（MainWindow.confirmClose）：无图标无 header，正文居中 */
+.dialog-exit .content { -fx-text-alignment: center; }
 
 /* ===== 危险操作确认底部卡片（ConfirmSheet，右侧面板内） ===== */
 .sheet-scrim { -fx-background-color: rgba(0,0,0,0.55); }

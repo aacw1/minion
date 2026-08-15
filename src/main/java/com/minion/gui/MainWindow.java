@@ -263,6 +263,9 @@ public class MainWindow {
         }
         Alert a = new Alert(Alert.AlertType.CONFIRMATION,
                 "仍有会话正在运行，确认退出？", ButtonType.OK, ButtonType.CANCEL);
+        a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
+        a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
+        a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a);
         a.setTitle("退出确认");
         a.showAndWait();

@@ -33,7 +33,7 @@ import java.util.List;
 
 /** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）；
- *  背景统一红色（btn-danger，与停止一致）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
+ *  背景按状态取色（btn-send-empty #f48771 / btn-send-full #ff947c）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
 public class InputView extends VBox {
 
@@ -75,7 +75,12 @@ public class InputView extends VBox {
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
         // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关；
         // 焦点进入时刷新文案——设置窗勾选发送键后点回输入框，提示与 tooltip 立即正确
+        // 聚焦边框：聚焦时大框边框 #f48771，失焦还原 #232733（frame 构造晚于本监听注册，判空）
         input.focusedProperty().addListener((obs, ov, nv) -> {
+            if (frame != null) {
+                if (nv) frame.getStyleClass().add("input-frame-focused");
+                else frame.getStyleClass().remove("input-frame-focused");
+            }
             if (!nv) { popup.hide(); lastToken = null; }
             else { updateButton(); updatePrompt(); }
         });
@@ -385,9 +390,15 @@ public class InputView extends VBox {
         }
     }
 
-    /** 按钮模式 → 背景样式类：发送/补充/回答/终止统一红色（与停止一致）；纯静态可单测 */
+    /** 按钮模式 → 背景样式类：内容空与运行中 #f48771（btn-send-empty），有内容非运行 #ff947c（btn-send-full）；纯静态可单测 */
     static String buttonStyleClass(BtnMode mode) {
-        return "btn-danger";
+        switch (mode) {
+            case SEND:
+            case ANSWER:
+                return "btn-send-full";
+            default:
+                return "btn-send-empty";
+        }
     }
 
     /** 当前发送键模式下该按键事件是否为「发送」：默认=Ctrl+Enter（精确修饰键语义，同 KeyCodeCombination）；
@@ -418,7 +429,7 @@ public class InputView extends VBox {
 
     private void applyStyle(SVGPath graphic, String styleClass, double opacity, String tip) {
         sendButton.setGraphic(graphic);
-        sendButton.getStyleClass().removeAll("btn-primary", "btn-danger");
+        sendButton.getStyleClass().removeAll("btn-primary", "btn-danger", "btn-send-full", "btn-send-empty");
         sendButton.getStyleClass().add(styleClass);
         sendButton.setOpacity(opacity);
         sendButton.setTooltip(new Tooltip(tip));
