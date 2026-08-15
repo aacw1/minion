@@ -1,6 +1,7 @@
 package com.minion.core.llm;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.Test;
@@ -99,5 +100,47 @@ public class MessageTest {
     @Test
     public void userMessage_supplementFalseByDefault() {
         assertFalse(Message.user("普通").supplement);
+    }
+
+    /** 图片消息：content 输出 OpenAI 标准数组（text + image_url），data URI 带 mime */
+    @Test
+    public void userWithImages_emitsContentArray() {
+        ImagePart img = new ImagePart();
+        img.mime = "image/png";
+        img.base64 = "QUJD";
+        img.name = "截图.png";
+        Message m = Message.userWithImages("看这张图", Collections.singletonList(img));
+        JsonObject api = m.toApiJson();
+        JsonArray parts = api.getAsJsonArray("content");
+        assertEquals(2, parts.size());
+        assertEquals("text", parts.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("看这张图", parts.get(0).getAsJsonObject().get("text").getAsString());
+        JsonObject imgUrl = parts.get(1).getAsJsonObject().get("image_url").getAsJsonObject();
+        assertEquals("data:image/png;base64,QUJD", imgUrl.get("url").getAsString());
+    }
+
+    /** 图片随 Gson 落盘往返（重启后仍可回传模型） */
+    @Test
+    public void userWithImages_roundTripsViaGson() {
+        ImagePart img = new ImagePart();
+        img.mime = "image/jpeg"; img.base64 = "QUJD"; img.name = "a.jpg";
+        Message m = Message.userWithImages("图", Collections.singletonList(img));
+        String json = gson.toJson(m);
+        Message back = gson.fromJson(json, Message.class);
+        assertEquals(1, back.images.size());
+        assertEquals("image/jpeg", back.images.get(0).mime);
+        assertEquals("QUJD", back.images.get(0).base64);
+    }
+
+    /** 无图零回归：content 仍为纯字符串；补充消息带图 supplement 标志保留 */
+    @Test
+    public void userWithImages_nullImages_keepsStringContent() {
+        JsonObject api = Message.userWithImages("你好", null).toApiJson();
+        assertEquals("你好", api.get("content").getAsString());
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "s.png";
+        Message sup = Message.userSupplement("补充", Collections.singletonList(img));
+        assertTrue(sup.supplement);
+        assertFalse(sup.toApiJson().has("supplement"));
     }
 }
