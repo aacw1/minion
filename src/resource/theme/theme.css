@@ -62,10 +62,7 @@
 }
 .btn-close:hover { -fx-background-color: #c93a39; -fx-text-fill: white; }
 
-/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中） =====
-   content 不透明 #1a1d24（与 .input-frame 同色无缝）：透明表面 Prism 强制灰阶
-   AA（125% 缩放发虚），不透明恢复 LCD 子像素渲染——同聊天正文修法（探针实证
-   2026-08-15，详见 specs/2026-08-15-聊天正文模糊修复-design.md） */
+/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
 .input-frame {
     -fx-background-color: #1a1d24;
     -fx-background-radius: 8;
@@ -81,10 +78,7 @@
     -fx-prompt-text-fill: #7a828e;
     -fx-highlight-fill: #3b6fe0;
 }
-.input-frame .input-textarea .content {
-    -fx-background-color: #1a1d24;
-    -fx-padding: 0;
-}
+.input-frame .input-textarea .content { -fx-background-color: transparent; }
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
@@ -204,9 +198,9 @@
 
 /* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
 .log-input { -fx-text-fill: #4285F4; } /* 输入 柔和蓝 */
-.log-think { -fx-text-fill: #F57C00; } /* 思考 橙 */
+.log-think { -fx-text-fill: #9f9e9e; } /* 思考 橙 */
 .log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
-.log-reply { -fx-text-fill: #2E7D32; } /* 回复 深绿 */
+.log-reply { -fx-text-fill: #ffffff; } /* 回复 深绿 */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
 .log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
@@ -218,8 +212,8 @@
 .log-body { -fx-text-fill: #f0f2f6; }
 .log-body-input { -fx-text-fill: #7db4ff; } /* 输入正文 浅蓝 */
 .log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
-.log-body-reply { -fx-text-fill: #f0f2f6; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
-.log-body-think { -fx-text-fill: #ffb74d; } /* 思考正文 浅橙 */
+.log-body-reply { -fx-text-fill: #bfbfbf; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
+.log-body-think { -fx-text-fill: #8c8c8c; } /* 思考正文 浅橙 */
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
