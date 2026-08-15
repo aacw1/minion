@@ -121,6 +121,10 @@ public class ChatView extends VBox {
                 append("【输入】", "log-input", e.text, StreamKind.NONE);
                 break;
             case THINKING:
+                // 空思考增量不渲染（与 CONTENT 分支空防御对称）：qwen 流式每 chunk 带
+                // reasoning_content 空字符串字段（非 null），若空增量也走 stream()，
+                // 正文阶段每 chunk 追加一段【思考】+【回复】，表现为"同一段回复不停重复"
+                if (e.text == null || e.text.isEmpty()) break;
                 stream.onThinking(e.text);
                 stream("【思考】", "log-think", stream.thinking(), StreamKind.THINK);
                 break;

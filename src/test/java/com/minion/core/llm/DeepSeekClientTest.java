@@ -205,6 +205,51 @@ public class DeepSeekClientTest {
         for (String o : outcomes) assertEquals("NETWORK", o);
     }
 
+    /**
+     * qwen 流式每 chunk 的 delta 同时携带 content 与 reasoning_content 字段（另一个为空字符串，
+     * 非 null）。空字符串增量不得转发给 handler——否则 ChatView 每正文 chunk 追加一段，
+     * 界面表现为"同一段问候语不停重复"（qwen3.8-max 线上实证）。
+     */
+    @Test
+    public void streamChat_ignoresEmptyStringDeltas() throws Exception {
+        String sse = "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"We\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\" need answer\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\"Hello! How\",\"reasoning_content\":\"\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\" can I help you\",\"reasoning_content\":\"\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"\"},\"finish_reason\":\"stop\"}]}\n\n"
+                + "data: [DONE]\n\n";
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody(sse, 1));
+
+        final StringBuilder thinking = new StringBuilder();
+        final StringBuilder content = new StringBuilder();
+        final List<String> thinkingDeltas = new ArrayList<String>();
+        final List<String> contentDeltas = new ArrayList<String>();
+        final CountDownLatch done = new CountDownLatch(1);
+        newClient("qwen", true, "max").streamChat(
+                Collections.<Message>singletonList(Message.user("asdasd")), null,
+                new StreamHandler() {
+                    @Override public void onThinking(String delta) {
+                        thinking.append(delta);
+                        thinkingDeltas.add(delta);
+                    }
+                    @Override public void onContent(String delta) {
+                        content.append(delta);
+                        contentDeltas.add(delta);
+                    }
+                    @Override public void onFinish(String finishReason, Usage usage, List<ToolCall> toolCalls) {
+                        done.countDown();
+                    }
+                });
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        // 累积不变（空串 append 无影响），但增量不得把空字符串转发给 UI
+        assertEquals("We need answer", thinking.toString());
+        assertEquals("Hello! How can I help you", content.toString());
+        for (String d : thinkingDeltas) assertFalse("思考增量不得为空串: " + d, d.isEmpty());
+        for (String d : contentDeltas) assertFalse("正文增量不得为空串: " + d, d.isEmpty());
+    }
+
     /** S7：reasoning_tokens 为 null 时不得崩溃（getAsInt 抛 UOE → 整轮流中断） */
     @Test
     public void streamChat_reasoningTokensNull_doesNotCrash() throws Exception {

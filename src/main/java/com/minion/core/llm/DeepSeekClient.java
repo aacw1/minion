@@ -148,15 +148,22 @@ public class DeepSeekClient implements LlmClient {
                     JsonObject delta = choice.has("delta") && choice.get("delta").isJsonObject()
                             ? choice.getAsJsonObject("delta") : null;
                     if (delta != null) {
+                        // 空字符串增量不转发：qwen 流式每 chunk 的 delta 同时携带 content 与
+                        // reasoning_content 字段（另一个为空字符串，非 null）——若空串也回调，
+                        // ChatView 每正文 chunk 追加一段，界面表现为"同一段回复不停重复"
                         if (delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull()) {
                             String d = delta.get("reasoning_content").getAsString();
-                            thinkingSb.append(d);
-                            handler.onThinking(d);
+                            if (!d.isEmpty()) {
+                                thinkingSb.append(d);
+                                handler.onThinking(d);
+                            }
                         }
                         if (delta.has("content") && !delta.get("content").isJsonNull()) {
                             String d = delta.get("content").getAsString();
-                            content.append(d);
-                            handler.onContent(d);
+                            if (!d.isEmpty()) {
+                                content.append(d);
+                                handler.onContent(d);
+                            }
                         }
                         if (delta.has("tool_calls") && delta.get("tool_calls").isJsonArray()) {
                             accumulateToolCalls(delta.getAsJsonArray("tool_calls"), acc);
