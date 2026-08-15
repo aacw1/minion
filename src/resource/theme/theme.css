@@ -172,8 +172,14 @@
 .supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 11px; -fx-font-weight: bold; }
 
 /* ===== 消息只读 TextArea（消息本体：原生拖选/Ctrl+C/双击选词/右键菜单） =====
-   背景：自身 + 内部子节点全透明——修复 modena 默认白底（-fx-text-box-border,
-   -fx-control-inner-background）从透明子节点后透出的「白色块」 */
+   背景策略（探针 2026-08-15 实证，纠正 8-13「显式 LCD」假阳性）：
+   - JavaFX 8 Prism 对透明表面只做灰阶抗锯齿（-fx-font-smoothing-type: lcd 属性
+     在透明层上被压制），Windows 125% 缩放把灰阶柔边放大 → 正文发虚根因；
+   - .content 用不透明 #121314（与 .panel-dark 同色无缝）→ Prism 恢复 LCD 子像素
+     渲染（实测边缘彩色条纹 0% → 53%）；.scroll-pane/.viewport 保持透明即可；
+   - 自身 background transparent + control-inner-background transparent 仍保留：
+     防 modena 默认白底（-fx-text-box-border/-fx-control-inner-background）在
+     非 content 区域（边框带/内边距）透出「白色块」。 */
 .msg-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
@@ -183,7 +189,10 @@
     -fx-faint-focus-color: transparent;
     -fx-font-smoothing-type: lcd;
 }
-.msg-textarea .content { -fx-background-color: transparent; -fx-padding: 0; }
+.msg-textarea .content {
+    -fx-background-color: #121314;
+    -fx-padding: 0;
+}
 .msg-textarea .scroll-pane { -fx-background-color: transparent; }
 .msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
 
