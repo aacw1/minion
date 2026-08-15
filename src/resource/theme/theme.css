@@ -145,8 +145,8 @@
 /* 页签 */
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
 .tab-pane > .tab-content-area { -fx-min-height: 0; -fx-pref-height: 0; -fx-max-height: 0; }
-/* 抄 Claude VSCode 插件页签：椭圆圆角 左右 2px / 上下 1px（-fx-background-radius 斜杠后为垂直半径） */
-.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 2 / 1; -fx-padding: 4 12; }
+/* 抄 Claude VSCode 插件页签：椭圆圆角 左右 2px / 上下 1px（须显式 8 值：JavaFX 8 对 `2 / 1` 简写丢垂直半径） */
+.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 2 2 2 2 / 1 1 1 1; -fx-padding: 4 12; }
 .tab-pane .tab:hover { -fx-background-color: #1a1d24; } /* 去掉未选中页签 hover 变色（固定底色） */
 .tab-pane .tab:selected { -fx-background-color: #232a38; }
 .tab-pane .tab:selected:hover { -fx-background-color: #232a38; } /* 选中页签 hover 同样固定 */
