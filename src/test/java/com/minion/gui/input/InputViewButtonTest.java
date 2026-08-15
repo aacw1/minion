@@ -53,4 +53,15 @@ public class InputViewButtonTest {
     public void insertionText_slashMode_unchanged() {
         assertEquals("/help", InputView.insertionText(CompletionParser.Mode.SLASH, "/help"));
     }
+
+    /** 发送/补充/回答/终止统一红色背景（btn-danger，与停止一致） */
+    @Test
+    public void buttonStyleClass_allModesRed() {
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.SEND));
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.SEND_DIM));
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.SUPPLEMENT));
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.ANSWER));
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.ANSWER_DIM));
+        assertEquals("btn-danger", InputView.buttonStyleClass(InputView.BtnMode.STOP));
+    }
 }

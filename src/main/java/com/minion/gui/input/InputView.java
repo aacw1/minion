@@ -1,5 +1,6 @@
 package com.minion.gui.input;
 
+import com.minion.core.llm.ImagePart;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import javafx.application.Platform;
@@ -23,11 +24,17 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
+import javafx.stage.FileChooser;
+import javafx.stage.FileChooser.ExtensionFilter;
+import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
-/** 底部输入区：4/9 宽居中大框（左 TextArea 右按钮、中间竖分割线）+ /命令与 @文件补全弹层。
- *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）。
+/** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
+ *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）；
+ *  背景统一红色（btn-danger，与停止一致）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
 public class InputView extends VBox {
 
@@ -37,14 +44,16 @@ public class InputView extends VBox {
     private final SessionManager manager;
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
+    private final Button uploadButton = new Button();
     private final SVGPath arrowIcon = new SVGPath();
     private final SVGPath stopIcon = new SVGPath();
+    private final SVGPath uploadIcon = new SVGPath();
     private final SuggestionPopup popup = new SuggestionPopup();
     private final FileSuggester fileSuggester = new FileSuggester();
     /** 块行与块列表：模型 List<InputChip> 与视图 FlowPane 同步维护（增删块后须 refreshChipRow + updateButton） */
     private final List<InputChip> chips = new ArrayList<InputChip>();
     private final FlowPane chipRow = new FlowPane();
-    private HBox frame; // 大框（弹层锚点）
+    private VBox frame; // 大框（弹层锚点）
     private CompletionParser.Token lastToken; // 弹层可见时待替换的词
     private volatile SessionHandle current;
     // FX 线程缓存的状态（bindSession/onRunningChanged/onAskChanged 维护）
@@ -74,6 +83,16 @@ public class InputView extends VBox {
         arrowIcon.getStyleClass().add("icon-send");
         stopIcon.setContent("M7 7 L17 7 L17 17 L7 17 Z");
         stopIcon.getStyleClass().add("icon-stop");
+
+        // 回形针（描边图标，CSS 定义 stroke 颜色）
+        uploadIcon.setContent("M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48");
+        uploadIcon.getStyleClass().add("icon-upload");
+        uploadButton.setGraphic(uploadIcon);
+        uploadButton.setMinSize(30, 30);
+        uploadButton.setPrefSize(30, 30);
+        uploadButton.getStyleClass().add("btn-upload");
+        uploadButton.setTooltip(new Tooltip("上传图片 (最多" + ImagePart.MAX_IMAGES + "张, 每张≤" + (ImagePart.MAX_FILE_BYTES / 1024 / 1024) + "MB)"));
+        uploadButton.setOnAction(e -> chooseImages());
 
         sendButton.setMinSize(36, 36);
         sendButton.setPrefSize(36, 36);
@@ -127,21 +146,19 @@ public class InputView extends VBox {
             }
         });
 
-        // 大框：TextArea | 竖分割线 | 按钮（按钮经 VBox 垂直居中，分割线随框高拉伸）
-        frame = new HBox(8);
+        // 大框：上=块行+输入框，下=底部操作行（上传按钮左 + 弹性空白 + 发送按钮右）
+        frame = new VBox(6);
         frame.getStyleClass().add("input-frame");
         // 块行（上方）+ 文本区（下方）：chipRow 无块时 unmanaged 不占位
         chipRow.getStyleClass().add("chip-row");
         VBox composer = new VBox(6);
         composer.getChildren().addAll(chipRow, input);
-        HBox.setHgrow(composer, Priority.ALWAYS);
-        Region divider = new Region();
-        divider.getStyleClass().add("input-divider");
-        VBox buttonBox = new VBox();
-        buttonBox.setAlignment(Pos.CENTER);
-        VBox.setVgrow(buttonBox, Priority.ALWAYS);
-        buttonBox.getChildren().add(sendButton);
-        frame.getChildren().addAll(composer, divider, buttonBox);
+        VBox.setVgrow(composer, Priority.ALWAYS);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox bottomRow = new HBox(8);
+        bottomRow.getChildren().addAll(uploadButton, spacer, sendButton);
+        frame.getChildren().addAll(composer, bottomRow);
 
         // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
         GridPane root = new GridPane();
@@ -219,6 +236,7 @@ public class InputView extends VBox {
             case COMMAND: return "input-chip-command";
             case SKILL:   return "input-chip-skill";
             case FILE:    return "input-chip-file";
+            case IMAGE:   return "input-chip-image";
             default:      return "input-chip-paste";
         }
     }
@@ -354,14 +372,20 @@ public class InputView extends VBox {
         }
     }
 
+    /** 按钮模式 → 背景样式类：发送/补充/回答/终止统一红色（与停止一致）；纯静态可单测 */
+    static String buttonStyleClass(BtnMode mode) {
+        return "btn-danger";
+    }
+
     private void updateButton() {
-        switch (buttonMode(running, askPending, hasContent())) {
-            case SEND:       applyStyle(arrowIcon, "btn-primary", 1.0, "发送 (Ctrl+Enter)"); break;
-            case SEND_DIM:   applyStyle(arrowIcon, "btn-primary", 0.35, "输入消息后发送 (Ctrl+Enter)"); break;
-            case SUPPLEMENT: applyStyle(arrowIcon, "btn-primary", 1.0, "补充信息给正在运行的模型 (Ctrl+Enter)"); break;
-            case ANSWER:     applyStyle(arrowIcon, "btn-primary", 1.0, "回答模型的提问 (Ctrl+Enter)"); break;
-            case ANSWER_DIM: applyStyle(arrowIcon, "btn-primary", 0.35, "输入回答后发送 (Ctrl+Enter)"); break;
-            case STOP:       applyStyle(stopIcon, "btn-danger", 1.0, "终止当前运行 (Esc)"); break;
+        BtnMode mode = buttonMode(running, askPending, hasContent());
+        switch (mode) {
+            case SEND:       applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "发送 (Ctrl+Enter)"); break;
+            case SEND_DIM:   applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入消息后发送 (Ctrl+Enter)"); break;
+            case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (Ctrl+Enter)"); break;
+            case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (Ctrl+Enter)"); break;
+            case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (Ctrl+Enter)"); break;
+            case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行 (Esc)"); break;
         }
     }
 
@@ -387,6 +411,10 @@ public class InputView extends VBox {
                 break;
             }
             case ANSWER: {
+                if (!composedImages().isEmpty()) {
+                    notifyChat("回答模式暂不支持图片，请删除图片后再回答");
+                    return;
+                }
                 String text = composedText();
                 if (text == null || text.trim().isEmpty()) return;
                 clearComposer();
@@ -404,7 +432,8 @@ public class InputView extends VBox {
 
     private void onSend() {
         String text = composedText();
-        if (text == null || text.trim().isEmpty()) return;
+        List<ImagePart> images = composedImages();
+        if ((text == null || text.trim().isEmpty()) && images.isEmpty()) return;
         clearComposer();
         SessionHandle target = current;
         if (target == null) {
@@ -412,6 +441,72 @@ public class InputView extends VBox {
             if (target == null) return;
             manager.activateSession(target);
         }
-        manager.dispatchCommand(target, text); // 斜杠命令本地分发；普通消息走 send
+        // 带图消息不走斜杠命令分发（图片无法本地处理，照发普通消息）
+        if (images.isEmpty()) {
+            manager.dispatchCommand(target, text); // 斜杠命令本地分发；普通消息走 send
+        } else {
+            manager.send(target, text, images);
+        }
+    }
+
+    /** 图片块 → ImagePart 列表：解析 data URI 头拆 mime/base64；name 取 display 的「图片：」前缀之后 */
+    private List<ImagePart> composedImages() {
+        List<ImagePart> out = new ArrayList<ImagePart>();
+        for (InputChip c : chips) {
+            if (c == null || c.type != InputChip.Type.IMAGE) continue;
+            int comma = c.content.indexOf(',');
+            if (comma < 0 || !c.content.startsWith("data:")) continue;
+            String header = c.content.substring(0, comma); // data:<mime>;base64
+            int semi = header.indexOf(';');
+            String mime = semi > 5 ? header.substring(5, semi) : header.substring(5);
+            ImagePart p = new ImagePart();
+            p.mime = mime;
+            p.base64 = c.content.substring(comma + 1);
+            p.name = c.display.startsWith("图片：") ? c.display.substring(3) : c.display;
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** 上传图片：FileChooser 选图 → 大小/数量校验 → 转 base64 建 IMAGE 块 */
+    private void chooseImages() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("上传图片");
+        chooser.getExtensionFilters().add(new ExtensionFilter("图片文件",
+                "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp"));
+        File f = chooser.showOpenDialog(getScene().getWindow());
+        if (f == null) return;
+        if (f.length() > ImagePart.MAX_FILE_BYTES) {
+            notifyChat("图片超过 " + (ImagePart.MAX_FILE_BYTES / 1024 / 1024) + "MB，拒绝上传: " + f.getName());
+            return;
+        }
+        int have = 0;
+        for (InputChip c : chips) if (c.type == InputChip.Type.IMAGE) have++;
+        if (have >= ImagePart.MAX_IMAGES) {
+            notifyChat("最多上传 " + ImagePart.MAX_IMAGES + " 张图片");
+            return;
+        }
+        try {
+            byte[] bytes = Files.readAllBytes(f.toPath());
+            String b64 = Base64.getEncoder().encodeToString(bytes);
+            addChip(InputChip.imageChip(mimeFor(f.getName()), b64, f.getName()));
+        } catch (Exception ex) {
+            notifyChat("读取图片失败: " + ex.getMessage());
+        }
+    }
+
+    /** 文件名后缀 → mime；未知后缀兜底 png */
+    private static String mimeFor(String name) {
+        String n = name == null ? "" : name.toLowerCase();
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".gif")) return "image/gif";
+        if (n.endsWith(".bmp")) return "image/bmp";
+        if (n.endsWith(".webp")) return "image/webp";
+        return "image/png";
+    }
+
+    /** 聊天区提示（无会话时静默忽略；发送前必先有会话或上传仅装饰） */
+    private void notifyChat(String msg) {
+        if (current != null) current.controller.onWarning(msg);
     }
 }
