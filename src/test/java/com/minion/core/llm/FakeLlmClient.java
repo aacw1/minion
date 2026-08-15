@@ -23,13 +23,18 @@ public class FakeLlmClient implements LlmClient {
         public final List<ToolCall> toolCalls;
         public final String content;
         public final String thinking;
+        public final LlmException error;
         public ScriptedTurn(List<ToolCall> toolCalls, String content) {
-            this(toolCalls, content, null);
+            this(toolCalls, content, null, null);
         }
         public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking) {
+            this(toolCalls, content, thinking, null);
+        }
+        public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking, LlmException error) {
             this.toolCalls = toolCalls;
             this.content = content;
             this.thinking = thinking;
+            this.error = error;
         }
     }
 
@@ -52,6 +57,12 @@ public class FakeLlmClient implements LlmClient {
         turns.add(new ScriptedTurn(toolCalls, content, thinking));
     }
 
+    /** 脚本化失败：streamChat 时以 onError 回调报错（模拟 API 400/500 等） */
+    public void addTurnError(String message) {
+        turns.add(new ScriptedTurn(null, null, null,
+                new LlmException(LlmException.Type.OTHER, message, false)));
+    }
+
     @Override
     public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler) {
         lastRequestMessages = new ArrayList<Message>(messages);
@@ -59,6 +70,10 @@ public class FakeLlmClient implements LlmClient {
         requests.add(new RequestRecord(messages, tools));
         ScriptedTurn turn = turns.get(Math.min(cursor, turns.size() - 1));
         cursor++;
+        if (turn.error != null) {
+            handler.onError(turn.error);
+            return;
+        }
         Usage u = new Usage();
         u.inputTokens = 10;
         u.outputTokens = 5;

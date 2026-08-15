@@ -779,6 +779,44 @@ public class AgentLoopTest {
         assertNull(msgs.get(1).images); // 无图输入不产生 images
     }
 
+    /** 带图请求失败（如 DeepSeek 400 不支持 image_url）：自动移除图片降级为纯文本重试，会话恢复可用 */
+    @Test
+    public void imageFailure_degradesToTextAndRetries() {
+        llm.addTurnError("400: 不支持 image_url");
+        llm.addTurn("好的，已按文字处理");
+        AgentLoop loop = newLoop();
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        loop.runUserTurn("看图", Collections.singletonList(img));
+        // 两次请求：第一次带图失败，第二次降级纯文本成功
+        assertEquals(2, llm.requests.size());
+        // 历史中带图消息 images 已清空（下轮请求不会再触发 400）
+        Message user = loop.messages().get(0);
+        assertEquals(Message.Role.USER, user.role);
+        assertNull(user.images);
+        // 降级成功不显示错误，仅提示一次
+        assertEquals(0, ui.errors.size());
+        assertEquals(1, ui.warnings.size());
+        assertTrue(ui.warnings.get(0).contains("图片"));
+        // 正常完成：assistant 回复入历史
+        assertEquals("好的，已按文字处理", loop.messages().get(1).content);
+    }
+
+    /** 降级后仍失败：不无限重试，正常报错退出 */
+    @Test
+    public void imageFailure_degradeRetryFailsAgain_stopsWithError() {
+        llm.addTurnError("400: 不支持 image_url");
+        llm.addTurnError("500: 服务错误");
+        AgentLoop loop = newLoop();
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        loop.runUserTurn("看图", Collections.singletonList(img));
+        // 原请求 + 降级重试各一次，不无限循环
+        assertEquals(2, llm.requests.size());
+        assertEquals(1, ui.errors.size());
+        assertEquals("500: 服务错误", ui.errors.get(0));
+    }
+
     /** 带思考的测试客户端：onThinking + onContent + onFinish */
     public static class ThinkingLlmClient extends FakeLlmClient {
         @Override

@@ -317,6 +317,7 @@ public class AgentLoop {
                 final List<ToolCall>[] toolCalls = new List[1];
                 final Usage[] usage = new Usage[1];
                 final String[] finish = new String[1];
+                final LlmException[] err = new LlmException[1];
                 final StringBuilder content = new StringBuilder();
                 final StringBuilder thinking = new StringBuilder();
                 try {
@@ -340,7 +341,7 @@ public class AgentLoop {
                         @Override
                         public void onError(LlmException e) {
                             finish[0] = "error";
-                            ui.onError(e.getMessage());
+                            err[0] = e; // 暂存：检查点统一决定显示错误还是图片降级重试
                         }
                     });
                 } catch (LlmException e) {
@@ -357,12 +358,17 @@ public class AgentLoop {
                         Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
                         continue; // 消息未变，直接重发本轮
                     }
+                    if (degradeImagesOnFailure()) continue; // 带图请求失败：清图降级纯文本重试
                     ui.onError(e.getMessage());
                     break;
                 }
 
                 if (usage[0] != null) session.usage.record(usage[0]);
-                if ("error".equals(finish[0])) break;
+                if ("error".equals(finish[0])) {
+                    if (degradeImagesOnFailure()) continue; // 同上：onError 回调路径（如 API 400）
+                    ui.onError(err[0] == null ? "请求失败" : err[0].getMessage());
+                    break;
+                }
 
                 // assistant 回复（含思考与工具调用）入会话历史——reasoningContent 回传硬性要求；
                 // 无正文且无工具调用的空回复不入历史（仅思考消息回传会 400）
@@ -456,6 +462,32 @@ public class AgentLoop {
                 : TokenCounter.estimateMessages(session.messages);
         int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
         ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
+    }
+
+    /** 失败降级：本次请求含带图消息（历史或挂起补充）且请求失败时，清除全部图片以纯文本重发。
+     *  根因修复：图片一旦入历史，模型不支持视觉时（如 DeepSeek 对 image_url 报 400）每次请求
+     *  都会重新失败，会话永久卡死——失败即降级，历史图片只清一次，下轮请求不再触发。
+     *  返回 true=已降级可重发；false=无图可降，按原失败路径退出。 */
+    private boolean degradeImagesOnFailure() {
+        boolean hasImages = false;
+        for (Message m : session.messages) {
+            if (m.images != null && !m.images.isEmpty()) {
+                hasImages = true;
+                break;
+            }
+        }
+        if (!hasImages) return false;
+        for (Message m : session.messages) {
+            if (m.images != null) m.images = null;
+        }
+        // 与 offerSupplement 同锁：FX 线程可能并发入队补充，防止遍历与写入竞争
+        synchronized (session.pendingSupplements) {
+            for (List<ImagePart> imgs : session.pendingSupplementImages) {
+                if (imgs != null) imgs.clear(); // 文本保留，仅弃图
+            }
+        }
+        ui.onWarning("当前模型不支持图片，已自动移除图片并以纯文本重试");
+        return true;
     }
 
     /** 中断时把已收到的流式内容补进历史；不含 toolCalls（切断的 tool_calls 流不可信）。
