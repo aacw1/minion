@@ -117,6 +117,26 @@ public class ModelManagerTest {
         assertEquals("deepseek-v4-flash", m.current().displayName);
     }
 
+    /** 合法已有配置（仅 deepseek 自定义模型）：重载后原样保留，不追加千问、不备份（零迁移） */
+    @Test
+    public void load_validExistingFileUntouched() throws IOException {
+        Path dir = jarDir();
+        String json = "{\"models\":[{\"displayName\":\"custom-deepseek\",\"url\":\"http://custom\",\"apiKey\":\"sk-x\","
+                + "\"modelName\":\"deepseek-custom\",\"provider\":\"deepseek\",\"thinking\":false,"
+                + "\"maxContextTokens\":64000,\"compressThreshold\":0.6,\"keepRecentMessages\":5}],"
+                + "\"currentModelName\":\"custom-deepseek\"}";
+        Files.write(dir.resolve("model.json"), json.getBytes(StandardCharsets.UTF_8));
+        ModelManager m = ModelManager.load(dir);
+        assertEquals(1, m.list().size());
+        ModelConfig c = m.current();
+        assertEquals("custom-deepseek", c.displayName);
+        assertEquals("http://custom", c.url);
+        assertEquals("sk-x", c.apiKey);
+        assertFalse(c.thinking);
+        assertEquals(64000, c.maxContextTokens);
+        assertFalse(Files.exists(dir.resolve("model.json.bak")));
+    }
+
     /** 原子写：save 后无 .tmp 残留，文件内容可被 Gson 重新解析 */
     @Test
     public void save_atomicWriteNoTmpAndReparsable() throws IOException {
