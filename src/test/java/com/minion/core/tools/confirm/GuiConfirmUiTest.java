@@ -9,8 +9,8 @@ import static org.junit.Assert.*;
 
 /**
  * GuiConfirmUi 线程语义测试（不启动 JavaFX Application Thread——
- * Platform.runLater 在未启动时直接排队不执行，因此本测试仅验证
- * ask() 在无 FX 线程时返回 REJECT 不挂死）。
+ * JDK8 实测无 toolkit 时 Platform.runLater 抛 IllegalStateException，
+ * ask() 捕获后防御性 REJECT 立即返回，不会因无限等待而挂死）。
  */
 public class GuiConfirmUiTest {
 

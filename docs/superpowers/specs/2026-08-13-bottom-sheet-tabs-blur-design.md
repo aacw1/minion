@@ -86,6 +86,9 @@ minion.bat                （备选步骤）加 -Dprism.text=t2k
 
 ### 4.3 GuiConfirmUi 改造（线程语义）
 
+> 变更（2026-08-15）：3 秒超时取消，改为 take() 无限等待，点击即送达——
+> 见 docs/superpowers/specs/2026-08-15-confirm-sheet-unbounded-design.md
+
 ```java
 public Decision ask(String message) {
     final LinkedBlockingQueue<Decision> q = new LinkedBlockingQueue<>(1);
@@ -117,6 +120,8 @@ public Decision ask(String message) {
 
 - 排队中的确认若工具侧已 3 秒超时，其卡片仍会随后弹出，用户点击无效果——
   无「等待者已超时」信号回传，与现有 Alert 超时行为同源，接受
+  （2026-08-15 已解决：超时语义改为无限等待后不再存在「等待者已超时」，见
+  docs/superpowers/specs/2026-08-15-confirm-sheet-unbounded-design.md）
 
 ## 5. 需求 2：文字模糊修复（分步验证）
 

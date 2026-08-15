@@ -40,9 +40,9 @@ com.minion
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 ≥100 字符变块阈值、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
-| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；高危操作确认底部卡片（右侧底部 3 行小卡滑入，遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
-| confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → poll(3s) 阻塞等待（不阻塞 FX 线程；无 GUI 环境/超时防御性 REJECT） |
+| confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
 | session/SessionController | 会话侧事件源，输出到该会话 EventList；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、跳过 SYSTEM/TOOL/空消息），restoreSessions 恢复后调用 |
@@ -103,7 +103,7 @@ com.minion
 - **每会话一个 AgentLoop + 独占工作线程**（真并行，切换工作空间/会话不打断后台运行）
 - **每工作空间一套上下文**（WorkspaceCtx：Workspace/SessionStore/ConfirmGate 空间级共享），恢复/新建会话时经 `SessionManager.newRegistry` 注册工具——**每会话独立 ToolRegistry**（TaskTool 绑定本会话 loop，防 task 事件串流）
 - **事件缓冲**：工作线程只写 EventList，FX 线程读取渲染（UI 不被工具执行阻塞）
-- **确认交互**：GuiConfirmUi 经 Platform.runLater 投递 ConfirmSheet，工具线程 poll 等结果（不阻塞 FX 线程）；无 GUI 环境防御性 REJECT
+- **确认交互**：GuiConfirmUi 经 Platform.runLater 投递 ConfirmSheet，工具线程 take() 无限等点击（不阻塞 FX 线程；点击结果即决策，无超时竞态）；无 GUI 环境防御性 REJECT
 - 会话落盘：`loop.setSessionStore(store)` 每轮/退出兜底落盘；关闭窗口 `shutdown()` 终止全部运行中会话（有运行中会话先弹确认）
 - **资源生命周期**：每会话一个 DeepSeekClient（`LlmClient.close()` 取消 in-flight + `dispatcher().executorService().shutdown()` + `connectionPool().evictAll()`，幂等）；会话删除/工作空间删除/`shutdown()` 三处释放，退出钩子统一收口（`manager.shutdown()` + `chrome.stop()`）——否则 okhttp 连接池非 daemon 清理线程把 JVM 拖住约 5 分钟
 - **模型变更**：经 `SessionManager.applyModelChanged()` 全量 propagate（换 LlmClient + ContextManager.update，旧客户端延迟回收）
@@ -154,6 +154,5 @@ com.minion
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |
 | HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
 | CdpClient 连接超时 | 10000ms | Main.java |
-| GuiConfirmUi 弹窗兜底超时 | 3s | GuiConfirmUi.java |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。

@@ -93,7 +93,7 @@ public class ConfirmSheet {
 
         final VBox card = buildCard(message);
         StackPane.setAlignment(card, Pos.BOTTOM_CENTER);
-        StackPane.setMargin(card, new Insets(0, 16, 12, 16));
+        StackPane.setMargin(card, new Insets(0, 16, 24, 16)); // 距底 24px ≈ 1 行（行高单位同输入框 6*24）
         // 宽度随右侧面板收缩（分栏拖窄时不越过分隔线），上限 640
         card.maxWidthProperty().bind(Bindings.min(640, host.widthProperty().subtract(32)));
 
@@ -119,11 +119,14 @@ public class ConfirmSheet {
         });
     }
 
-    /** 卡片：顶部琥珀危险饰条 | 消息 | 按钮行 | 快捷键提示（压缩为 3 行，去掉标题行） */
+    /** 卡片：顶部琥珀危险饰条 | 消息 | 按钮行（压缩为两行，去掉标题行与快捷键提示行） */
     private static VBox buildCard(String message) {
         VBox card = new VBox();
         card.getStyleClass().add("sheet-card");
         card.setPrefWidth(560);
+        // 宿主 StackPane 默认把可缩放子节点拉伸铺满自身（maxHeight 无界 → 卡片铺满整页），
+        // 置 USE_PREF_SIZE 使卡片紧贴内容高度，仅占两行（消息行 + 按钮行）
+        card.setMaxHeight(Region.USE_PREF_SIZE);
 
         Region accent = new Region();
         accent.getStyleClass().add("sheet-accent");
@@ -149,12 +152,9 @@ public class ConfirmSheet {
         buttons.setAlignment(Pos.CENTER_RIGHT);
         buttons.getChildren().addAll(reject, session, whitelist, approve);
 
-        Label hint = new Label("Enter 同意 · Esc 拒绝");
-        hint.getStyleClass().add("sheet-hint");
-
         VBox content = new VBox(6);
-        content.setPadding(new Insets(10, 14, 10, 14));
-        content.getChildren().addAll(body, buttons, hint);
+        content.setPadding(new Insets(8, 14, 8, 14));
+        content.getChildren().addAll(body, buttons);
         card.getChildren().addAll(accent, content);
         return card;
     }
