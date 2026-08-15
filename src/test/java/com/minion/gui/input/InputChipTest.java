@@ -74,6 +74,19 @@ public class InputChipTest {
         assertEquals("粘贴内容，123 字符", c.display);
     }
 
+    @Test public void imageChip_holdsDataUriAndDisplay() {
+        InputChip c = InputChip.imageChip("image/png", "QUJD", "截图.png");
+        assertEquals(InputChip.Type.IMAGE, c.type);
+        assertEquals("data:image/png;base64,QUJD", c.content);
+        assertEquals("图片：截图.png", c.display);
+    }
+
+    @Test public void compose_skipsImageChips() {
+        InputChip img = InputChip.imageChip("image/png", "QUJD", "截图.png");
+        assertEquals("文字", InputChip.compose(listOf(img), "文字"));
+        assertEquals("/help 文字", InputChip.compose(listOf(cmd("/help"), img), "文字"));
+    }
+
     private static String repeat(char ch, int n) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < n; i++) sb.append(ch);
