@@ -46,9 +46,9 @@ public class SessionControllerTest {
         assertEquals("正文回复", evs.get(1).text);
     }
 
-    /** 工具消息/系统消息/空 content/assistant 工具调用 全部跳过 */
+    /** 历史回放：TOOL 结果消息 → TOOL_RESULT 事件；系统消息/空 content 跳过 */
     @Test
-    public void replayHistory_skipsToolAndSystemAndEmpty() {
+    public void replayHistory_skipsSystemAndEmpty() {
         SessionController c = new SessionController();
         List<Message> msgs = new ArrayList<Message>();
         msgs.add(Message.system("system prompt"));
@@ -58,7 +58,36 @@ public class SessionControllerTest {
         msgs.add(withCall);
         msgs.add(Message.assistant(""));
         c.replayHistory(msgs);
-        assertEquals(0, c.eventList().size());
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(0).kind);
+        assertEquals("ReadTool", evs.get(0).text);
+    }
+
+    /** 历史回放：assistant 工具调用 → 逐个 TOOL_CALL 事件（name+参数），
+     *  TOOL 结果消息 → TOOL_RESULT 成功态（历史无成败标记，统一按成功显示）。
+     *  回归保护：重启恢复会话后工具调用过程不丢失 */
+    @Test
+    public void replayHistory_toolCallsAndResults_emitsCallThenResult() {
+        SessionController c = new SessionController();
+        List<Message> msgs = new ArrayList<Message>();
+        Message withCall = Message.assistant(null);
+        ToolCall tc = new ToolCall();
+        tc.name = "ReadTool";
+        tc.arguments = "{\"path\":\"a.txt\"}";
+        withCall.toolCalls = new ArrayList<ToolCall>();
+        withCall.toolCalls.add(tc);
+        msgs.add(withCall);
+        msgs.add(Message.toolResult("tc1", "ReadTool", "file content"));
+        c.replayHistory(msgs);
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(2, evs.size());
+        assertEquals(EventList.Kind.TOOL_CALL, evs.get(0).kind);
+        assertEquals("ReadTool", evs.get(0).text);
+        assertEquals("{\"path\":\"a.txt\"}", evs.get(0).data);
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(1).kind);
+        assertEquals("ReadTool", evs.get(1).text);
+        assertEquals("ok", evs.get(1).data);
     }
 
     @Test

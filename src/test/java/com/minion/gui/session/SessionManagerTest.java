@@ -158,7 +158,7 @@ public class SessionManagerTest {
         assertFalse(m.sessions().get(0).titlePending);
     }
 
-    /** 恢复会话：历史消息灌入 EventList（点击即可重放显示；TOOL 跳过） */
+    /** 恢复会话：历史消息灌入 EventList（点击即可重放显示；TOOL 结果→TOOL_RESULT） */
     @Test
     public void restore_replaysHistoryIntoEventList() throws Exception {
         Path jar = tmp.newFolder("jar").toPath();
@@ -177,9 +177,11 @@ public class SessionManagerTest {
         assertEquals(1, m.sessions().size());
         SessionHandle h = m.sessions().get(0);
         List<EventList.Ev> evs = h.controller.eventList().snapshot();
-        assertEquals(2, evs.size());
+        assertEquals(3, evs.size());
         assertEquals(EventList.Kind.USER_MESSAGE, evs.get(0).kind);
         assertEquals(EventList.Kind.CONTENT, evs.get(1).kind);
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(2).kind);
+        assertEquals("ReadTool", evs.get(2).text);
     }
 
     /** 删除会话：会话文件同步删除（防重启后 restore 复活） */

@@ -3,6 +3,7 @@ package com.minion.gui.session;
 import com.google.gson.JsonObject;
 import com.minion.core.agent.AgentUi;
 import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolCall;
 import com.minion.core.tools.ToolResult;
 
 import java.util.List;
@@ -19,8 +20,8 @@ public class SessionController implements AgentUi {
 
     public EventList eventList() { return events; }
 
-    /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT(content 非空)→CONTENT；
-     *  SYSTEM/TOOL/纯工具调用消息跳过——历史只重演对话内容，不重演工具过程 */
+    /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT→THINKING/CONTENT/TOOL_CALL、
+     *  TOOL→TOOL_RESULT；SYSTEM 跳过。思考与工具过程随历史重演——重启恢复后正文/工具调用不缺失 */
     public void replayHistory(List<Message> messages) {
         for (Message m : messages) {
             if (m == null || m.role == null) continue;
@@ -28,14 +29,26 @@ public class SessionController implements AgentUi {
                 events.add(new EventList.Ev(m.supplement
                         ? EventList.Kind.USER_SUPPLEMENT : EventList.Kind.USER_MESSAGE,
                         m.content, null));
-            } else if (m.role == Message.Role.ASSISTANT
-                    && m.content != null && !m.content.trim().isEmpty()) {
-                // 思考内容先于正文重演：ChatView 的【思考】段只由 THINKING 事件驱动，
-                // 不重演则重启恢复后思考丢失（上下文完好，纯显示缺失）
-                if (m.reasoningContent != null && !m.reasoningContent.isEmpty()) {
-                    events.add(new EventList.Ev(EventList.Kind.THINKING, m.reasoningContent, null));
+            } else if (m.role == Message.Role.ASSISTANT) {
+                if (m.content != null && !m.content.trim().isEmpty()) {
+                    // 思考内容先于正文重演：ChatView 的【思考】段只由 THINKING 事件驱动，
+                    // 不重演则重启恢复后思考丢失（上下文完好，纯显示缺失）
+                    if (m.reasoningContent != null && !m.reasoningContent.isEmpty()) {
+                        events.add(new EventList.Ev(EventList.Kind.THINKING, m.reasoningContent, null));
+                    }
+                    events.add(new EventList.Ev(EventList.Kind.CONTENT, m.content, null));
                 }
-                events.add(new EventList.Ev(EventList.Kind.CONTENT, m.content, null));
+                // 工具调用逐个重演（含纯工具调用无正文消息），参数同运行时 onToolCall 格式
+                if (m.toolCalls != null) {
+                    for (ToolCall tc : m.toolCalls) {
+                        if (tc == null) continue;
+                        events.add(new EventList.Ev(EventList.Kind.TOOL_CALL, tc.name,
+                                tc.arguments == null ? "{}" : tc.arguments));
+                    }
+                }
+            } else if (m.role == Message.Role.TOOL && m.name != null) {
+                // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演（与运行时 ✅ 格式一致）
+                events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, m.name, "ok"));
             }
         }
     }
