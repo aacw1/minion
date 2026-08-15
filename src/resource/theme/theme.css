@@ -138,8 +138,8 @@
    hover/selected 只对 filled cell 生效——列表底部空白区域由空 cell 填充，保持透明不变色 */
 .list-view .list-cell {
     -fx-background-color: transparent;
-    -fx-background-insets: 1 2 1 2;
-    -fx-background-radius: 4;
+    -fx-background-insets: 1 4 1 4;
+    -fx-background-radius: 8;
     -fx-text-fill: #d3d7de;
     -fx-padding: 9 12 9 12;
 }
