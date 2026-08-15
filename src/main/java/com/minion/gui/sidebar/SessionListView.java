@@ -147,6 +147,7 @@ public class SessionListView extends ListView<SessionHandle> {
         TextInputDialog d = new TextInputDialog(h.title);
         d.setTitle("重命名会话");
         d.setHeaderText("输入新标题");
+        d.getDialogPane().setGraphic(null); // 去掉叹号圆圈图标（同需求 6 精简处理）
         Theme.style(d); // 弹窗深色
         d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
     }
@@ -157,6 +158,9 @@ public class SessionListView extends ListView<SessionHandle> {
                 "删除会话「" + (h.title == null ? h.id : h.title) + "」？",
                 ButtonType.OK, ButtonType.CANCEL);
         a.setTitle("删除会话");
+        a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
+        a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
+        a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a); // 弹窗深色
         a.showAndWait().ifPresent(bt -> {
             if (bt == ButtonType.OK) {

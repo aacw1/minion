@@ -26,6 +26,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
@@ -136,6 +137,13 @@ public class MainWindow {
         VBox.setVgrow(wsBox, Priority.ALWAYS);
         // VBox(8) 间距自然分隔上下两区，不加分隔线
         sidebar.getChildren().setAll(sessionBox, wsBox);
+        // 需求：会话/工作空间高度固定黄金比例 0.618:0.382（VBox 无权重 API，监听高度动态设 prefHeight 实现）
+        sidebar.heightProperty().addListener((obs, ov, nv) -> {
+            double h = Math.max(0, nv.doubleValue() - sidebar.getSpacing()); // 扣除两区间距
+            double sessionH = h * 0.618;
+            sessionBox.setPrefHeight(sessionH);
+            wsBox.setPrefHeight(h - sessionH);
+        });
 
         // 右侧：页签栏（会话 Tab）+ 消息区（ChatView）+ 输入区
         VBox right = new VBox(8);
@@ -382,10 +390,21 @@ public class MainWindow {
         }
     }
 
+    private static final int TAB_TITLE_MAX = 16; // 页签标题截取长度（过长撑宽页签栏致标题栏错乱）
+
+    /** 页签标题：超 16 字符截断加省略号（完整标题挂 Tooltip，信息不丢失） */
+    static String tabTitle(String title) {
+        if (title != null && title.length() > TAB_TITLE_MAX) {
+            return title.substring(0, TAB_TITLE_MAX) + "…";
+        }
+        return title;
+    }
+
     private void updateTab(SessionHandle h) {
         for (Tab t : tabs.getTabs()) {
             if (h.id.equals(t.getUserData())) {
-                t.setText(h.title == null ? "(新会话)" : h.title);
+                t.setText(tabTitle(h.title == null ? "(新会话)" : h.title));
+                t.setTooltip(new Tooltip(h.title == null ? "" : h.title)); // 完整标题提示
                 t.setGraphic(runningIndicator(h));
                 return;
             }
@@ -395,14 +414,18 @@ public class MainWindow {
 
     private void addTab(SessionHandle h) {
         if (h.title == null) return;
-        Tab t = new Tab(h.title);
+        Tab t = new Tab(tabTitle(h.title));
         t.setUserData(h.id);
+        t.setTooltip(new Tooltip(h.title)); // 完整标题提示
         t.setGraphic(runningIndicator(h));
         t.setClosable(true);
         t.setOnCloseRequest(e -> {
             e.consume();
             Alert a = new Alert(Alert.AlertType.CONFIRMATION,
                     "删除会话「" + h.title + "」？", ButtonType.OK, ButtonType.CANCEL);
+            a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
+            a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
+            a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
             Theme.style(a); // 需求 6：所有弹窗深色（会话删除确认是全代码库唯一漏配的一处）
             a.showAndWait().ifPresent(bt -> {
                 if (bt == ButtonType.OK) {

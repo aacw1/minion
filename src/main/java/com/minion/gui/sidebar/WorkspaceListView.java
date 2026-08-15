@@ -13,6 +13,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.Node;
@@ -71,6 +72,8 @@ public class WorkspaceListView extends ListView<String> {
             }
             Label nameLabel = new Label(name + (name.equals(workspaces.currentName()) ? "  ●" : ""));
             nameLabel.getStyleClass().add("cell-text");
+            nameLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+            nameLabel.setMinWidth(0); // 允许收缩至省略号：长名称不再撑出横向滚动条（悬停 ⚙/✕ 按钮不被挤出）
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
@@ -91,6 +94,11 @@ public class WorkspaceListView extends ListView<String> {
             setOnMouseExited(e -> { btns.setVisible(false); btns.setManaged(false); });
 
             HBox row = new HBox(6);
+            // 行宽绑定 cell 宽：内容超出即截断，根除横向滚动条（须依赖 insetsProperty 重算：
+            // CSS 异步应用，updateItem 绑定时刻 getInsets 恒为 0，快照会永久漏抵消 padding，同 SessionCell 修法）
+            row.maxWidthProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
+                    () -> getWidth() - getInsets().getLeft() - getInsets().getRight() - 4,
+                    widthProperty(), insetsProperty()));
             row.getChildren().addAll(nameLabel, spacer, btns);
             setGraphic(row);
 
@@ -203,6 +211,9 @@ public class WorkspaceListView extends ListView<String> {
                 "删除工作空间「" + name + "」？其下所有会话与 " + "session/" + name + "/ 目录将一并删除。",
                 ButtonType.OK, ButtonType.CANCEL);
         a.setTitle("删除工作空间");
+        a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
+        a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
+        a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a); // 弹窗深色
         Optional<ButtonType> r = a.showAndWait();
         if (r.isPresent() && r.get() == ButtonType.OK) {
