@@ -231,6 +231,7 @@ public class SettingsDialog {
         private final TextArea cmdWhitelist;
         private final CheckBox allowOutside;
         private final CheckBox skipConfirm;
+        private final CheckBox enterSends;
         private final TextField browserPath;
         private final TextField browserPort;
         private final TextField browserUserData;
@@ -265,6 +266,11 @@ public class SettingsDialog {
             allowOutside.setSelected(config.readAllowOutside());
             skipConfirm = new CheckBox("跳过高危操作确认");
             skipConfirm.setSelected(config.confirmSkip());
+            enterSends = new CheckBox("Enter 发送消息（Ctrl+Enter 换行）");
+            enterSends.setSelected(config.enterSends());
+            // 勾选立即生效：直接写回 Config（内存+落盘），InputView 按键时读取 → 下次按键即新键位；无需点「应用」
+            enterSends.selectedProperty().addListener((obs, ov, nv) ->
+                    config.set("input.enterSends", String.valueOf(nv)));
             Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
             browserNote.getStyleClass().add("msg-thinking");
             browserPath = new TextField(config.browserPath());
@@ -301,6 +307,7 @@ public class SettingsDialog {
                     row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
                     row("读逃逸:", allowOutside),
                     row("确认开关:", skipConfirm),
+                    row("发送键:", enterSends),
                     browserNote,
                     row("browser.path:", browserPathBox),
                     row("browser.port:", browserPort),
