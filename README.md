@@ -79,4 +79,5 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 - `thinking=true` 时按供应商翻译思考参数：deepseek → `thinking`/`reasoning_effort`；qwen → `enable_thinking`（qwen3 混合模型默认开思考，关闭时同样显式传 `enable_thinking:false`）
 - qwen 下请求自动带 `stream_options: {include_usage: true}`（token 统计准确）
 - `provider` 为未知值时回退 deepseek 行为
+- `model.json` 缺失/为空/损坏时自动生成 deepseek + 千问两套配置（除 key 外按各自调用参数预填，key 留空待填）
 - 模板参考：源码目录 `src/resource/config_deepseek.properties` / `config_qwen.properties`（仅记录，实际生效仍为 jar 同目录的配置）
