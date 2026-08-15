@@ -64,6 +64,29 @@ public class FileToolsTest {
         assertTrue(r.output.contains("文件不存在"));
     }
 
+    /** GBK 编码文件（如记事本 ANSI 保存）：UTF-8 解码失败后自动降级 GBK，内容正确并标注转码 */
+    @Test
+    public void read_gbkFile_autoDecoded() throws Exception {
+        // 「阿诗丹顿」的 GBK 字节序列（8 字节 4 汉字）
+        byte[] gbk = new byte[]{(byte) 0xB0, (byte) 0xA2, (byte) 0xCA, (byte) 0xAB,
+                (byte) 0xB5, (byte) 0xA4, (byte) 0xB6, (byte) 0xD9};
+        Files.write(p("gbk.txt"), gbk);
+        ToolResult r = read.execute(args("{\"path\":\"gbk.txt\"}"));
+        assertTrue(r.ok);
+        assertTrue(r.output.contains("阿诗丹顿"));
+        assertTrue(r.output.contains("[GBK 编码文件"));
+    }
+
+    /** UTF-8 文件：正常路径零打扰，不出现转码标注 */
+    @Test
+    public void read_utf8File_noDecodeBanner() throws Exception {
+        Files.write(p("utf8.txt"), "你好".getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"utf8.txt\"}"));
+        assertTrue(r.ok);
+        assertTrue(r.output.contains("你好"));
+        assertFalse(r.output.contains("GBK"));
+    }
+
     @Test
     public void glob_matches() throws Exception {
         Files.createDirectories(p("src/sub"));
