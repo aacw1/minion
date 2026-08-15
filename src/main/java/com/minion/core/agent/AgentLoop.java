@@ -56,8 +56,8 @@ public class AgentLoop {
     private int consecutiveToolErrors = 0;
     public int threads = 4;
     private final ExecutorService pool;
-    /** ask_user 工具实例（构造注册；answerAskUser 经其送达回答） */
-    private final com.minion.core.tools.AskUserTool askUserTool;
+    /** AskUserQuestion 工具实例（构造注册；answerAskUser 经其送达回答） */
+    private final com.minion.core.tools.AskUserQuestionTool askUserTool;
     /** 进行中的工具 future（供 interrupt() 取消） */
     private final List<Future<ToolResult>> inFlight = new ArrayList<Future<ToolResult>>();
 
@@ -84,7 +84,7 @@ public class AgentLoop {
         // restoreSession/startNewSession 原地装载保证引用持续有效——与旧 Main 接线语义一致；
         // 每会话独立 registry 下模型可见 todo 工具，此前仅 TaskTool 自动注册导致 TodoWrite 静默丢失）
         registry.register(new com.minion.core.tools.TodoWriteTool(session.todos));
-        this.askUserTool = new com.minion.core.tools.AskUserTool(ui);
+        this.askUserTool = new com.minion.core.tools.AskUserQuestionTool(ui);
         registry.register(askUserTool);
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
@@ -145,7 +145,7 @@ public class AgentLoop {
         this.subAgentRunner = runner;
     }
 
-    /** 回答 ask_user（SessionManager.sendAnswer 转发）；无挂起时忽略 */
+    /** 回答 AskUserQuestion（SessionManager.sendAnswer 转发）；无挂起时忽略 */
     public boolean answerAskUser(String answer) {
         return askUserTool.complete(answer);
     }
@@ -425,7 +425,7 @@ public class AgentLoop {
                     }
                 }
                 // 运行中补充注入检查点：工具结果全部入历史后、下一轮请求前；
-                // ask_user 挂起时补充等回答的 TOOL 消息入历史后同请求发出；
+                // AskUserQuestion 挂起时补充等回答的 TOOL 消息入历史后同请求发出；
                 // interrupted 不注入——半轮 tool_call 未配对时插入 user 消息会破坏契约（400）
                 if (!interrupted) drainSupplements();
                 // 卡住止损：连续失败达阈值时注入系统提醒（user 消息而非 system——

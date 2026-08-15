@@ -580,7 +580,7 @@ public class SessionManagerTest {
         assertEquals("图片：截图.png 补充内容", evs.get(0).text);
     }
 
-    /** ask_user 挂起 → sendAnswer → 回答入历史继续本轮；ask 状态通知与复位 */
+    /** AskUserQuestion 挂起 → sendAnswer → 回答入历史继续本轮；ask 状态通知与复位 */
     @Test
     public void sendAnswer_resumesAskUserAndResetsState() throws Exception {
         Path jar = tmp.newFolder("jar").toPath();
@@ -605,12 +605,12 @@ public class SessionManagerTest {
         FakeLlmClient llm = m.created.get(0);
         com.minion.core.llm.ToolCall q = new com.minion.core.llm.ToolCall();
         q.id = "q1";
-        q.name = "ask_user";
+        q.name = "AskUserQuestion";
         q.arguments = "{\"question\":\"选哪个？\"}";
         llm.addTurnWithTools(java.util.Collections.singletonList(q), null);
         llm.addTurn("按你的选择执行");
         m.send(h, "帮我选一下");
-        assertTrue("ask_user 未挂起", askStarted.await(5, TimeUnit.SECONDS));
+        assertTrue("AskUserQuestion 未挂起", askStarted.await(5, TimeUnit.SECONDS));
         assertTrue(h.askPending);
         assertEquals("选哪个？", h.askQuestion);
         m.sendAnswer(h, "方案B");

@@ -134,7 +134,7 @@ public class ChatView extends VBox {
                 stream("【回复】", "log-reply", plain, StreamKind.REPLY);
                 break;
             case TOOL_CALL: {
-                String body = "ask_user".equals(e.text)
+                String body = "AskUserQuestion".equals(e.text)
                         ? "❓ 模型向你提问\n" + askQuestionOf(e.data)
                         : "🔧 " + e.text + "\n" + shorten(e.data == null ? "{}" : e.data.toString(), 120);
                 append("【工具】", "log-tool", body, StreamKind.NONE);
@@ -239,7 +239,7 @@ public class ChatView extends VBox {
         String thinking() { return thinking.toString(); }
     }
 
-    /** ask_user 工具调用的 question 参数（解析失败回空串） */
+    /** AskUserQuestion 工具调用的 question 参数（解析失败回空串） */
     private static String askQuestionOf(Object data) {
         try {
             JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString())

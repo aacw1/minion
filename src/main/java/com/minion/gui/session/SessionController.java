@@ -14,7 +14,7 @@ public class SessionController implements AgentUi {
 
     private final EventList events = new EventList();
 
-    /** ask_user 挂起状态回调（非 null=开始挂起并携带问题；null=回答完成），SessionManager 注入 */
+    /** AskUserQuestion 挂起状态回调（非 null=开始挂起并携带问题；null=回答完成），SessionManager 注入 */
     private volatile java.util.function.Consumer<String> askStateListener;
 
     public void setAskStateListener(java.util.function.Consumer<String> l) { this.askStateListener = l; }
@@ -49,9 +49,9 @@ public class SessionController implements AgentUi {
                     }
                 }
             } else if (m.role == Message.Role.TOOL && m.name != null) {
-                // ask_user 的回答存于 TOOL 消息 output：先重演回答行（USER_SUPPLEMENT【输入】段）
+                // AskUserQuestion 的回答存于 TOOL 消息 output：先重演回答行（USER_SUPPLEMENT【输入】段）
                 // 再 ✅ 行，恢复会话后提问与回答成对显示、顺序与运行时一致
-                if ("ask_user".equals(m.name) && m.content != null && !m.content.trim().isEmpty()) {
+                if ("AskUserQuestion".equals(m.name) && m.content != null && !m.content.trim().isEmpty()) {
                     events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, m.content, null));
                 }
                 // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演（与运行时 ✅ 格式一致）

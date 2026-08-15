@@ -121,7 +121,7 @@ public class SubAgentLoop {
         List<JsonObject> list = new ArrayList<JsonObject>();
         for (JsonObject s : registry.schemas()) {
             if ("task".equals(s.getAsJsonObject("function").get("name").getAsString())) continue;
-            if ("ask_user".equals(s.getAsJsonObject("function").get("name").getAsString())) continue;
+            if ("AskUserQuestion".equals(s.getAsJsonObject("function").get("name").getAsString())) continue;
             list.add(s);
         }
         return list;
@@ -134,9 +134,9 @@ public class SubAgentLoop {
                 // 防御：即使模型违规调用，也不得再派发子 agent（防无限递归）
                 return ToolResult.error("子 agent 不可再派发子 agent（task 工具已禁用）");
             }
-            if ("ask_user".equals(call.name)) {
-                // 防御：子 agent 不得挂起询问用户（ask_user 已从 schema 剔除；防模型幻觉调用）
-                return ToolResult.error("子 agent 不可询问用户（ask_user 工具已禁用）");
+            if ("AskUserQuestion".equals(call.name)) {
+                // 防御：子 agent 不得挂起询问用户（AskUserQuestion 已从 schema 剔除；防模型幻觉调用）
+                return ToolResult.error("子 agent 不可询问用户（AskUserQuestion 工具已禁用）");
             }
             Tool tool = registry.get(call.name);
             if (tool == null) return ToolResult.error("未知工具: " + call.name);

@@ -10,19 +10,19 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
-/** ask_user 工具：挂起等待回答；无挂起时 complete 忽略；缺 question 回退默认文案 */
-public class AskUserToolTest {
+/** AskUserQuestion 工具：挂起等待回答；无挂起时 complete 忽略；缺 question 回退默认文案 */
+public class AskUserQuestionToolTest {
 
     @Test
     public void complete_withoutPending_returnsFalse() {
-        AskUserTool tool = new AskUserTool(new RecordingUi());
+        AskUserQuestionTool tool = new AskUserQuestionTool(new RecordingUi());
         assertFalse(tool.complete("无人等待"));
     }
 
     @Test
     public void execute_blocksUntilAnswered() throws Exception {
         RecordingUi ui = new RecordingUi();
-        final AskUserTool tool = new AskUserTool(ui);
+        final AskUserQuestionTool tool = new AskUserQuestionTool(ui);
         final ToolResult[] result = new ToolResult[1];
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
@@ -55,7 +55,7 @@ public class AskUserToolTest {
     @Test
     public void execute_missingQuestion_usesFallbackText() throws Exception {
         RecordingUi ui = new RecordingUi();
-        final AskUserTool tool = new AskUserTool(ui);
+        final AskUserQuestionTool tool = new AskUserQuestionTool(ui);
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
                 try { tool.execute(new JsonObject()); } catch (Exception ignored) { }
@@ -76,7 +76,7 @@ public class AskUserToolTest {
     @Test
     public void twoParallelExecutes_shareOneAnswer() throws Exception {
         RecordingUi ui = new RecordingUi();
-        final AskUserTool tool = new AskUserTool(ui);
+        final AskUserQuestionTool tool = new AskUserQuestionTool(ui);
         final ToolResult[] results = new ToolResult[2];
         final CountDownLatch entered = new CountDownLatch(2);
         Runnable task = new Runnable() {
@@ -119,7 +119,7 @@ public class AskUserToolTest {
     /** schema 契约：question 必填；options 数组；multiSelect 布尔 */
     @Test
     public void schema_hasQuestionRequiredAndOptionsArray() {
-        JsonObject schema = new AskUserTool(new RecordingUi()).schema();
+        JsonObject schema = new AskUserQuestionTool(new RecordingUi()).schema();
         assertEquals("object", schema.get("type").getAsString());
         assertEquals(1, schema.getAsJsonArray("required").size());
         assertEquals("question", schema.getAsJsonArray("required").get(0).getAsString());

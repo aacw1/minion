@@ -70,16 +70,16 @@ public class SystemPromptBuilderTest {
         assertTrue(iOldRule1 > iClarify);
     }
 
-    /** 规则指引模型用 ask_user 工具提问（替代纯文本提问等待） */
+    /** 规则指引模型用 AskUserQuestion 工具提问（替代纯文本提问等待） */
     @Test
-    public void build_mentionsAskUserTool() throws Exception {
+    public void build_mentionsAskUserQuestionTool() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
-        assertTrue(prompt.contains("ask_user"));
+        assertTrue(prompt.contains("AskUserQuestion"));
     }
 
-    /** 审查检查点规则：完成需用户审查的产出（设计文档/实施计划/关键方案）后必须 ask_user 确认 */
+    /** 审查检查点规则：完成需用户审查的产出（设计文档/实施计划/关键方案）后必须 AskUserQuestion 确认 */
     @Test
     public void build_includesReviewGateRule() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(

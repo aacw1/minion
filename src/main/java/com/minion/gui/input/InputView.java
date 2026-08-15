@@ -351,7 +351,7 @@ public class InputView extends VBox {
         });
     }
 
-    /** ask_user 挂起状态变化（MainWindow 转发自 SessionManager 监听） */
+    /** AskUserQuestion 挂起状态变化（MainWindow 转发自 SessionManager 监听） */
     public void onAskChanged(SessionHandle h, boolean asking, String question) {
         if (current != h) return;
         Platform.runLater(() -> {

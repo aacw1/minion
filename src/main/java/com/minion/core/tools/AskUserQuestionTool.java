@@ -7,17 +7,17 @@ import com.minion.core.agent.AgentUi;
 import java.util.concurrent.CompletableFuture;
 
 /** 向用户提问：execute 挂起等待回答（无超时），回答经 complete() 送达后作为工具结果返回。
- *  参照 Claude Code AskUserQuestion；子 agent 禁用（SubAgentLoop 过滤 schema + 同名防御）。 */
-public class AskUserTool implements Tool {
+ *  与 Claude Code 同名 AskUserQuestion；子 agent 禁用（SubAgentLoop 过滤 schema + 同名防御）。 */
+public class AskUserQuestionTool implements Tool {
 
     private final AgentUi ui;
     /** 当前挂起的等待（单槽：同轮多次调用共享同一回答；null=未挂起） */
     private volatile CompletableFuture<String> pending;
 
-    public AskUserTool(AgentUi ui) { this.ui = ui; }
+    public AskUserQuestionTool(AgentUi ui) { this.ui = ui; }
 
     @Override
-    public String name() { return "ask_user"; }
+    public String name() { return "AskUserQuestion"; }
 
     @Override
     public String description() {

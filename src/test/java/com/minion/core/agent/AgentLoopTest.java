@@ -973,20 +973,20 @@ public class AgentLoopTest {
         fail("条件等待超时");
     }
 
-    /** ask_user 工具随 AgentLoop 构造自动注册 */
+    /** AskUserQuestion 工具随 AgentLoop 构造自动注册 */
     @Test
-    public void agentLoop_autoRegistersAskUserTool() {
+    public void agentLoop_autoRegistersAskUserQuestionTool() {
         AgentLoop loop = newLoop();
-        assertNotNull(registry.get("ask_user"));
-        assertEquals("ask_user", registry.get("ask_user").name());
+        assertNotNull(registry.get("AskUserQuestion"));
+        assertEquals("AskUserQuestion", registry.get("AskUserQuestion").name());
     }
 
-    /** 需求3/6：ask_user 挂起 → answerAskUser → 回答作为 TOOL 消息入历史继续本轮 */
+    /** 需求3/6：AskUserQuestion 挂起 → answerAskUser → 回答作为 TOOL 消息入历史继续本轮 */
     @Test
     public void askUser_suspendThenAnswer_continuesTurn() throws Exception {
         ToolCall q = new ToolCall();
         q.id = "q1";
-        q.name = "ask_user";
+        q.name = "AskUserQuestion";
         q.arguments = "{\"question\":\"选哪个方案？\"}";
         llm.addTurnWithTools(Collections.singletonList(q), null);
         llm.addTurn("按方案B执行");
@@ -1014,12 +1014,12 @@ public class AgentLoopTest {
         assertEquals(Message.Role.TOOL, req2.get(req2.size() - 1).role);
     }
 
-    /** 需求6：ask_user 挂起时中断 → 退出 + 半轮 tool_call 被清洗（不留未配对残留） */
+    /** 需求6：AskUserQuestion 挂起时中断 → 退出 + 半轮 tool_call 被清洗（不留未配对残留） */
     @Test
     public void askUser_interruptWhileWaiting_scrubsHalfTurn() throws Exception {
         ToolCall q = new ToolCall();
         q.id = "q2";
-        q.name = "ask_user";
+        q.name = "AskUserQuestion";
         q.arguments = "{\"question\":\"选哪个？\"}";
         llm.addTurnWithTools(Collections.singletonList(q), null);
         final AgentLoop loop = newLoop();

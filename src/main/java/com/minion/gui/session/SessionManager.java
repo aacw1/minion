@@ -56,7 +56,7 @@ public class SessionManager {
         void onSessionActivated(SessionHandle h);
         void onWorkspaceChanged();
         void onError(String message);
-        /** ask_user 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
+        /** AskUserQuestion 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
         default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
     }
 
@@ -519,7 +519,7 @@ public class SessionManager {
         h.controller.onUserSupplement(ImagePart.displayText(images, text));
     }
 
-    /** 回答 ask_user：完成挂起的等待（未挂起时忽略）；回答作为工具结果回传继续本轮 */
+    /** 回答 AskUserQuestion：完成挂起的等待（未挂起时忽略）；回答作为工具结果回传继续本轮 */
     public void sendAnswer(final SessionHandle h, final String text) {
         if (h == null || !h.running) return;
         h.loop.answerAskUser(text);

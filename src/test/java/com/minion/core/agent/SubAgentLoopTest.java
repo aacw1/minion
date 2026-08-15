@@ -212,21 +212,21 @@ public class SubAgentLoopTest {
         assertEquals("子agent结果", r.output);
     }
 
-    /** 子 agent 工具集剔除 ask_user（防嵌套挂起）；违规调用返回错误不挂起 */
+    /** 子 agent 工具集剔除 AskUserQuestion（防嵌套挂起）；违规调用返回错误不挂起 */
     @Test
-    public void subAgent_excludesAskUserTool() throws Exception {
+    public void subAgent_excludesAskUserQuestionTool() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
         FakeLlmClient llm = new FakeLlmClient();
         ToolRegistry registry = new ToolRegistry();
         registry.register(new com.minion.core.tools.example.ExampleTool());
-        registry.register(new com.minion.core.tools.AskUserTool(new RecordingUi()));
+        registry.register(new com.minion.core.tools.AskUserQuestionTool(new RecordingUi()));
         FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
         ConfirmGate confirm = new ConfirmGate(config, confirmUi);
         RecordingUi ui = new RecordingUi();
 
         com.minion.core.llm.ToolCall tc = new com.minion.core.llm.ToolCall();
         tc.id = "s1";
-        tc.name = "ask_user";
+        tc.name = "AskUserQuestion";
         tc.arguments = "{\"question\":\"问？\"}";
         llm.addTurnWithTools(java.util.Collections.singletonList(tc), null);
         llm.addTurn("子任务完成");
@@ -237,10 +237,10 @@ public class SubAgentLoopTest {
         // schema 已剔除（模型不可见）
         for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
             String name = s.getAsJsonObject("function").get("name").getAsString();
-            assertFalse("子 agent 不得暴露 ask_user", "ask_user".equals(name));
+            assertFalse("子 agent 不得暴露 AskUserQuestion", "AskUserQuestion".equals(name));
         }
         // 防御：即使模型违规调用，也返回错误、不挂起
-        assertTrue(ui.toolResults.contains("ask_user"));
+        assertTrue(ui.toolResults.contains("AskUserQuestion"));
         assertTrue(ui.asksStarted.isEmpty());
     }
 }
