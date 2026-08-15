@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -124,6 +125,16 @@ public class EditToolsTest {
         assertTrue(r.output, r.ok);
         String content = new String(Files.readAllBytes(p("b.txt")), StandardCharsets.UTF_8);
         assertTrue("多行替换后仍保持 CRLF", content.contains("A\r\nB\r\nc"));
+    }
+
+    /** GBK 编码文件（记事本 ANSI 保存）：编辑成功且写回仍为 GBK，不得重编码破坏其余内容 */
+    @Test
+    public void edit_gbkFile_editsAndPreservesEncoding() throws Exception {
+        Files.write(p("b.txt"), "阿诗丹顿".getBytes(Charset.forName("GBK")));
+        ToolResult r = edit.execute(args("{\"path\":\"b.txt\",\"oldString\":\"阿诗丹顿\",\"newString\":\"阿诗丹顿2\"}"));
+        assertTrue(r.output, r.ok);
+        String gbkDecoded = new String(Files.readAllBytes(p("b.txt")), Charset.forName("GBK"));
+        assertEquals("写回应保持 GBK 编码（若被重编码为 UTF-8，GBK 解码是乱码）", "阿诗丹顿2", gbkDecoded);
     }
 
     @Test

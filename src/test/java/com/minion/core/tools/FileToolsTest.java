@@ -8,6 +8,7 @@ import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -85,6 +86,15 @@ public class FileToolsTest {
         assertTrue(r.ok);
         assertTrue(r.output.contains("你好"));
         assertFalse(r.output.contains("GBK"));
+    }
+
+    /** GBK 编码文件：搜索中文 pattern 应命中（现状静默跳过导致"未匹配"） */
+    @Test
+    public void grep_gbkFile_matches() throws Exception {
+        Files.write(p("gbk.txt"), "阿诗丹顿".getBytes(Charset.forName("GBK")));
+        ToolResult r = grep.execute(args("{\"pattern\":\"诗丹\"}"));
+        assertTrue(r.ok);
+        assertTrue(r.output.contains("gbk.txt"));
     }
 
     @Test

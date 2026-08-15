@@ -47,23 +47,29 @@ GBK 降级成功时，输出内容首行标注 `[GBK 编码文件，已自动转
 
 - **二进制文件**：GBK 解码宽容，二进制文件（如 PNG 头）会以乱码形式读出。
   用户已明确选择不加二进制探测（方案 A），后续需要可加 NUL 探测。
-- **EditTool / GrepTool 同类风险**：同样以 UTF-8 读文件，编辑/检索 GBK
-  文件会遇到同类问题。本次仅修 Read（用户报告聚焦），其余列为后续项。
+- **EditTool / GrepTool 同类风险**（用户确认后本次一并修复）：新增
+  `TextFiles` 编码辅助统一降级逻辑；EditTool 按原编码写回（不破坏文件其余
+  内容），GrepTool 静默降级（只读安全）。
 
 ## 4. 实现
 
 | 文件 | 改动 |
 |---|---|
-| core/tools/ReadTool.java | execute 中读取改为：try UTF-8 → catch CharacterCodingException 用 GBK 重读（置 gbk 标志）→ 输出首行标注；删除直接 `Files.readAllLines(p, UTF_8)` |
-| test FileToolsTest | 新增 GBK 文件自动转码用例（断言内容正确+含标注）、UTF-8 文件无标注用例（零打扰） |
+| core/tools/TextFiles.java | 新增编码辅助：`readAllLines(Path)` 与 `decode(byte[])`（UTF-8 严格 → GBK 兜底，带降级标志/实际编码返回） |
+| core/tools/ReadTool.java | 改用 TextFiles.readAllLines，降级时输出首行标注；删除内联 try/catch 与 GBK 常量 |
+| core/tools/GrepTool.java | visitFile 改用 TextFiles.readAllLines（GBK 文件不再静默跳过） |
+| core/tools/EditTool.java | 改用 TextFiles.decode 读 + `getBytes(实际编码)` 写回（GBK 文件编辑成功且不重编码破坏） |
+| test FileToolsTest | 新增 GBK 文件自动转码用例（断言内容正确+含标注）、UTF-8 文件无标注用例（零打扰）、GBK 文件 grep 命中用例 |
+| test EditToolsTest | 新增 GBK 文件编辑用例（断言写回仍为 GBK 编码） |
 
 ## 5. 验证
 
-- TDD：先写失败测试 `read_gbkFile_autoDecoded`（GBK 字节 → 读出「阿诗丹顿」+
-  转码标注）确认 RED——实抛 `MalformedInputException: Input length = 1`（与线上
-  完全一致）；实施后转 GREEN。`read_utf8File_noDecodeBanner` 验证 UTF-8 零打扰。
-- 全量 `mvn test` 通过（EXIT=0）。
-- 手动验证（可选）：真实 GUI 中让模型读 GBK 文件，确认可读出并标注。
+- TDD：先写失败测试确认 RED——`read_gbkFile_autoDecoded` 实抛
+  `MalformedInputException: Input length = 1`（与线上完全一致）；
+  `edit_gbkFile_editsAndPreservesEncoding` 报「未找到待替换内容」、
+  `grep_gbkFile_matches` 报「未匹配」。实施后全部转 GREEN。
+- 全量 `mvn test` 通过：438 个用例 0 失败。
+- 手动验证（可选）：真实 GUI 中让模型读/编辑/搜索 GBK 文件，确认可读可改可搜。
 
 ## 6. 文档同步
 

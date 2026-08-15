@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,7 +81,7 @@ public class GrepTool implements Tool {
                 if (count[0] >= max) return FileVisitResult.TERMINATE;
                 Path rel = rootInWork ? workspace.cwd().relativize(file) : file;
                 try {
-                    java.util.List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                    java.util.List<String> lines = TextFiles.readAllLines(file).lines;
                     for (int i = 0; i < lines.size() && count[0] < max; i++) {
                         if (p.matcher(lines.get(i)).find()) {
                             sb.append(rel.toString().replace('\\', '/')).append(':')

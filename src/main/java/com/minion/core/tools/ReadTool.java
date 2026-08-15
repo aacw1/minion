@@ -4,9 +4,6 @@ import com.google.gson.JsonObject;
 import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,8 +12,6 @@ import java.util.List;
 public class ReadTool implements Tool {
 
     private static final int DEFAULT_LIMIT = 2000;
-    /** Windows 记事本 ANSI 保存的常见编码，UTF-8 解码失败时的兜底 */
-    private static final Charset GBK = Charset.forName("GBK");
 
     private final Workspace workspace;
     private final String skillsDir;
@@ -72,22 +67,17 @@ public class ReadTool implements Tool {
         }
         boolean lineNumbers = args.has("lineNumbers") && args.get("lineNumbers").getAsBoolean();
 
-        // UTF-8 严格解码优先；非 UTF-8 文本（Windows 记事本 ANSI 保存的 GBK）抛
-        // CharacterCodingException（"Input length = N" 不可读），自动降级 GBK 重读并标注
-        List<String> lines;
-        boolean gbk = false;
+        // UTF-8 严格解码优先；非 UTF-8 文本（Windows 记事本 ANSI 保存的 GBK）自动
+        // 降级 GBK 重读并首行标注转码（"Input length = N" 即 MalformedInputException 消息）
+        TextFiles.Lines r;
         try {
-            lines = Files.readAllLines(p, StandardCharsets.UTF_8);
-        } catch (CharacterCodingException e) {
-            try {
-                lines = Files.readAllLines(p, GBK);
-                gbk = true;
-            } catch (IOException e2) {
-                return ToolResult.error("文件解码失败（UTF-8 与 GBK 均失败，疑似二进制或未知编码）");
-            }
+            r = TextFiles.readAllLines(p);
+        } catch (IOException e) {
+            return ToolResult.error("文件解码失败（UTF-8 与 GBK 均失败，疑似二进制或未知编码）");
         }
+        List<String> lines = r.lines;
         StringBuilder sb = new StringBuilder();
-        if (gbk) sb.append("[GBK 编码文件，已自动转码显示]\n");
+        if (r.gbk) sb.append("[GBK 编码文件，已自动转码显示]\n");
         int to = Math.min(lines.size(), offset + limit);
         for (int i = offset; i < to; i++) {
             if (lineNumbers) sb.append(i + 1).append(": ");
