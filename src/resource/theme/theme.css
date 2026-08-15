@@ -39,6 +39,7 @@
     -fx-background-color: linear-gradient(to bottom, #e0504f, #c93a39);
     -fx-text-fill: white;
     -fx-font-weight: bold;
+    -fx-background-radius: 8;
 }
 .btn-danger:hover { -fx-background-color: linear-gradient(to bottom, #ef5f5e, #e0504f); }
 .btn-ghost {
@@ -144,8 +145,11 @@
 /* 页签 */
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
 .tab-pane > .tab-content-area { -fx-min-height: 0; -fx-pref-height: 0; -fx-max-height: 0; }
-.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 8 8 0 0; -fx-padding: 4 12; }
+/* 抄 Claude VSCode 插件页签：椭圆圆角 左右 2px / 上下 1px（-fx-background-radius 斜杠后为垂直半径） */
+.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 2 / 1; -fx-padding: 4 12; }
+.tab-pane .tab:hover { -fx-background-color: #1a1d24; } /* 去掉未选中页签 hover 变色（固定底色） */
 .tab-pane .tab:selected { -fx-background-color: #232a38; }
+.tab-pane .tab:selected:hover { -fx-background-color: #232a38; } /* 选中页签 hover 同样固定 */
 .tab-pane .tab-label { -fx-text-fill: #a8b0bb; }
 .tab-pane .tab:selected .tab-label { -fx-text-fill: #f0f2f6; }
 
