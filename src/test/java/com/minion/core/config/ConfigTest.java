@@ -106,6 +106,24 @@ public class ConfigTest {
         assertTrue(c2.readAllowOutside());
     }
 
+    /** 输入发送键：默认 false（Ctrl+Enter 发送） */
+    @Test
+    public void enterSends_defaultsFalse() throws IOException {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertFalse(c.enterSends());
+    }
+
+    /** 输入发送键：外部文件可覆盖为 true，重载后保持 */
+    @Test
+    public void enterSends_externalOverridePersists() throws IOException {
+        Path root = tmp.getRoot().toPath();
+        Config c1 = Config.load(root, TEST_DEFAULTS);
+        Files.write(c1.externalFile(), "\ninput.enterSends=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        Config c2 = Config.load(root, TEST_DEFAULTS);
+        assertTrue(c2.enterSends());
+    }
+
     /** 需求 2/13：Config.set 更新内存并写回外部文件（设置窗基础设置页保存用） */
     @Test
     public void set_updatesMemoryAndPersists() throws IOException {
