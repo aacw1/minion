@@ -12,6 +12,7 @@ import com.minion.core.config.WorkspaceManager;
 import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.DeepSeekClient;
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
@@ -449,7 +450,10 @@ public class SessionManager {
     }
 
     /** 发送：新会话（titlePending）先本地置标题，再跑正式任务 */
-    public void send(final SessionHandle h, final String text) {
+    public void send(final SessionHandle h, final String text) { send(h, text, null); }
+
+    /** 发送（带图）：图片随消息以 OpenAI 视觉 content 数组传给模型 */
+    public void send(final SessionHandle h, final String text, final List<ImagePart> images) {
         if (h == null) return;
         final WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
         if (ctx == null) return;
@@ -468,7 +472,7 @@ public class SessionManager {
                     h.running = true;
                     notifyRunningChanged(h, true);
                     try {
-                        h.loop.runUserTurn(text);
+                        h.loop.runUserTurn(text, images);
                     } finally {
                         if (h.deleted) {
                             // 运行中被删除：runUserTurn 退出路径已把文件写回（deleted 对 AgentLoop 不可见），
@@ -506,10 +510,13 @@ public class SessionManager {
     }
 
     /** 运行中补充：入 AgentLoop 挂起队列 + 发聊天标识事件（UI 事件仅在点击时发一次，注入不重发） */
-    public void sendSupplement(final SessionHandle h, final String text) {
+    public void sendSupplement(final SessionHandle h, final String text) { sendSupplement(h, text, null); }
+
+    /** 运行中补充（带图）：图片占位并入聊天标识事件（聊天区不渲染图片本体） */
+    public void sendSupplement(final SessionHandle h, final String text, final List<ImagePart> images) {
         if (h == null || text == null || text.trim().isEmpty()) return;
-        h.loop.offerSupplement(text);
-        h.controller.onUserSupplement(text);
+        h.loop.offerSupplement(text, images);
+        h.controller.onUserSupplement(ImagePart.displayText(images, text));
     }
 
     /** 回答 ask_user：完成挂起的等待（未挂起时忽略）；回答作为工具结果回传继续本轮 */

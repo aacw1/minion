@@ -1,17 +1,33 @@
 package com.minion.gui.session;
 
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
 import com.minion.gui.session.EventList.Ev;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.*;
 
 /** 历史消息重演：USER→USER_MESSAGE、ASSISTANT content→CONTENT，工具过程跳过 */
 public class SessionControllerTest {
+
+    /** 恢复历史：带图 user 消息事件文本拼图片占位（聊天区不渲染图片本体） */
+    @Test
+    public void replayHistory_userWithImages_emitsPlaceholder() {
+        SessionController c = new SessionController();
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        Message m = Message.userWithImages("看这张图", Collections.singletonList(img));
+        c.replayHistory(Collections.singletonList(m));
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.USER_MESSAGE, evs.get(0).kind);
+        assertEquals("图片：截图.png 看这张图", evs.get(0).text);
+    }
 
     @Test
     public void replayHistory_convertsUserAndAssistant() {

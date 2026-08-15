@@ -2,6 +2,7 @@ package com.minion.gui.session;
 
 import com.google.gson.JsonObject;
 import com.minion.core.agent.AgentUi;
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.tools.ToolResult;
@@ -26,9 +27,10 @@ public class SessionController implements AgentUi {
         for (Message m : messages) {
             if (m == null || m.role == null) continue;
             if (m.role == Message.Role.USER) {
+                // 带图消息事件文本拼图片占位（聊天区不渲染图片本体）
                 events.add(new EventList.Ev(m.supplement
                         ? EventList.Kind.USER_SUPPLEMENT : EventList.Kind.USER_MESSAGE,
-                        m.content, null));
+                        ImagePart.displayText(m.images, m.content), null));
             } else if (m.role == Message.Role.ASSISTANT) {
                 if (m.content != null && !m.content.trim().isEmpty()) {
                     // 思考内容先于正文重演：ChatView 的【思考】段只由 THINKING 事件驱动，

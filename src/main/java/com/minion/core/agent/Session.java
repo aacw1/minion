@@ -1,5 +1,6 @@
 package com.minion.core.agent;
 
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.UsageTracker;
 
@@ -27,6 +28,10 @@ public class Session {
     /** 运行中用户补充的挂起队列（尚未入 messages 历史；检查点/下次发送时批量注入后清空）。
      *  随会话落盘：应用退出时未注入的补充不丢。初始化器保证旧文件反序列化后非 null */
     public List<String> pendingSupplements = new ArrayList<String>();
+
+    /** 挂起补充的图片列表（与 pendingSupplements 按索引一一对应；无图 = 空列表）。
+     *  随会话落盘：应用退出时未注入的补充图片不丢 */
+    public List<List<ImagePart>> pendingSupplementImages = new ArrayList<List<ImagePart>>();
 
     private static final AtomicLong SEQ = new AtomicLong();
 

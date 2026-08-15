@@ -7,6 +7,7 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.core.config.WorkspaceManager;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.Message;
 import com.minion.core.skills.Skill;
@@ -523,6 +524,60 @@ public class SessionManagerTest {
         List<EventList.Ev> evs = h.controller.eventList().snapshot();
         assertEquals(1, evs.size());
         assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+    }
+
+    /** 带图发送：入历史 user 消息 images 保留（FakeLlmClient 单回合；SpyManager 模式同 sendAnswer 测试） */
+    @Test
+    public void send_withImages_keepsImagesInMessage() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h = m.createSession(null);
+        FakeLlmClient llm = m.created.get(0);
+        llm.addTurn("看到了");
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        final CountDownLatch idle = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
+                if (!running) idle.countDown();
+            }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { }
+        });
+        m.send(h, "看这张图", java.util.Collections.singletonList(img));
+        assertTrue("等待会话空闲超时", idle.await(5, TimeUnit.SECONDS));
+        // 最后一条 user 消息带图（其后为 assistant 回复）
+        Message last = null;
+        for (int i = h.session.messages.size() - 1; i >= 0; i--) {
+            if (h.session.messages.get(i).role == Message.Role.USER) {
+                last = h.session.messages.get(i);
+                break;
+            }
+        }
+        assertNotNull(last);
+        assertEquals("看这张图", last.content);
+        assertEquals(1, last.images.size());
+    }
+
+    /** 带图补充：挂起队列 + 事件文本带图片占位 */
+    @Test
+    public void sendSupplement_withImages_queuesAndEmitsPlaceholder() throws Exception {
+        SessionManager m = newManager();
+        SessionHandle h = m.createSession(null);
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        m.sendSupplement(h, "补充内容", java.util.Collections.singletonList(img));
+        assertEquals(1, h.session.pendingSupplements.size());
+        assertEquals(1, h.session.pendingSupplementImages.size());
+        List<EventList.Ev> evs = h.controller.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("图片：截图.png 补充内容", evs.get(0).text);
     }
 
     /** ask_user 挂起 → sendAnswer → 回答入历史继续本轮；ask 状态通知与复位 */

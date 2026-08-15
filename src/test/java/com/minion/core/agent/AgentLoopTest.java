@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.config.Config;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
@@ -757,6 +758,25 @@ public class AgentLoopTest {
         assertEquals("补充A", msgs.get(1).content);
         assertEquals("接着来", msgs.get(2).content);
         assertFalse(msgs.get(2).supplement);
+    }
+
+    /** 补充带图：pendingSupplementImages 与文本同步入队，合并后 user 消息 images 保留 */
+    @Test
+    public void supplement_withImages_keepsImagesInMessage() {
+        llm.addTurn("好的");
+        AgentLoop loop = newLoop();
+        ImagePart img = new ImagePart();
+        img.mime = "image/png"; img.base64 = "QUJD"; img.name = "截图.png";
+        loop.offerSupplement("看图", Collections.singletonList(img));
+        loop.runUserTurn("继续");
+        List<Message> msgs = loop.messages();
+        // 0:user(补充带图) 1:user(输入) 2:assistant
+        assertEquals(3, msgs.size());
+        assertEquals(Message.Role.USER, msgs.get(0).role);
+        assertTrue(msgs.get(0).supplement);
+        assertEquals(1, msgs.get(0).images.size());
+        assertEquals("截图.png", msgs.get(0).images.get(0).name);
+        assertNull(msgs.get(1).images); // 无图输入不产生 images
     }
 
     /** 带思考的测试客户端：onThinking + onContent + onFinish */

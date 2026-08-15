@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
+import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
@@ -162,22 +163,33 @@ public class AgentLoop {
     }
 
     /** 运行中补充：入挂起队列（随会话落盘），检查点或下次发送时入历史 */
-    public void offerSupplement(String text) {
+    public void offerSupplement(String text) { offerSupplement(text, null); }
+
+    /** 运行中补充（带图）：文本与图片同步入挂起队列（随会话落盘） */
+    public void offerSupplement(String text, List<ImagePart> images) {
         if (text == null || text.trim().isEmpty()) return;
         synchronized (session.pendingSupplements) {
             session.pendingSupplements.add(text);
+            session.pendingSupplementImages.add(images == null
+                    ? new ArrayList<ImagePart>() : new ArrayList<ImagePart>(images));
         }
     }
 
     /** 挂起补充全部入历史并清空队列（UI 事件在点击时已发，此处不再发） */
     private void drainSupplements() {
-        List<String> drain;
+        List<String> texts;
+        List<List<ImagePart>> imgs;
         synchronized (session.pendingSupplements) {
             if (session.pendingSupplements.isEmpty()) return;
-            drain = new ArrayList<String>(session.pendingSupplements);
+            texts = new ArrayList<String>(session.pendingSupplements);
+            imgs = new ArrayList<List<ImagePart>>(session.pendingSupplementImages);
             session.pendingSupplements.clear();
+            session.pendingSupplementImages.clear();
         }
-        for (String s : drain) session.messages.add(Message.userSupplement(s));
+        for (int i = 0; i < texts.size(); i++) {
+            List<ImagePart> images = i < imgs.size() ? imgs.get(i) : null;
+            session.messages.add(Message.userSupplement(texts.get(i), images));
+        }
     }
 
     /** 关闭工具执行池（会话删除/应用退出时调用；daemon 线程，shutdownNow 不等任务完成） */
@@ -222,6 +234,8 @@ public class AgentLoop {
         // 挂起补充随会话恢复（旧文件缺字段时 Gson 初始化器已兜底，此处再防御一次）
         session.pendingSupplements = s.pendingSupplements != null
                 ? s.pendingSupplements : new ArrayList<String>();
+        session.pendingSupplementImages = s.pendingSupplementImages != null
+                ? s.pendingSupplementImages : new ArrayList<List<ImagePart>>();
     }
 
     /** /new:清空当前会话内容并回到工作区根。
@@ -269,13 +283,15 @@ public class AgentLoop {
         }
     }
 
-    public void runUserTurn(String input) {
+    public void runUserTurn(String input) { runUserTurn(input, null); }
+
+    public void runUserTurn(String input, List<ImagePart> images) {
         interrupted = false;
         long start = System.currentTimeMillis(); // 统计行：轮次耗时
         // 上次回合遗留的挂起补充先入历史（模型提问自然收尾/中断遗留），与本次输入拼接发送
         drainSupplements();
-        ui.onUserMessage(input);
-        session.messages.add(Message.user(input));
+        ui.onUserMessage(ImagePart.displayText(images, input));
+        session.messages.add(Message.userWithImages(input, images));
         int rounds = 0;
         int retries = 0;
         try {
