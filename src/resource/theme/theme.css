@@ -268,6 +268,7 @@
     -fx-background-radius: 4;
     -fx-padding: 2 6 2 6;
     -fx-cursor: hand;
+    -fx-min-width: 34px; /* ✎/✕/⚙ 为特殊 Unicode 字形，fallback 渲染宽约 15px，padding 占 12px；prefWidth 仅 26px 时文本区 14px < 字形 → Button(ELLIPSIS) 截断成 "…"（用户反馈"重命名删除都变成了..."）。min-width 保证文本区 ≥22px，字形完整 */
 }
 .btn-cell:hover { -fx-text-fill: #f0f2f6; -fx-background-color: #2a2f3a; }
 
