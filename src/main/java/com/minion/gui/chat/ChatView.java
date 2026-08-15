@@ -192,6 +192,14 @@ public class ChatView extends VBox {
             empty = false;
         }
         Seg seg = new Seg(tagText, tagColorClass, text, kind);
+        // 焦点治理：任一段获得焦点即清除其他段选区——选区是 TextInputControl 私有状态，多块同时显示选中
+        // 但 Ctrl+C 只复制焦点块（用户反馈"只有最后的块选中才有复制效果"）；排除自身保留本段选区
+        seg.body.focusedProperty().addListener((obs, ov, nv) -> {
+            if (!Boolean.TRUE.equals(nv)) return;
+            for (Seg other : segs) {
+                if (other != seg) other.body.deselect();
+            }
+        });
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.body));
     }

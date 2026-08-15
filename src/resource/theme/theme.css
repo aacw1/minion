@@ -214,12 +214,13 @@
 .msg-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
-    -fx-highlight-fill: #3b6fe0;
+    -fx-highlight-fill: #232a38; /* 非聚焦选区淡灰：失焦块的残留选区不再亮蓝，消除"多块同时选中"误导 */
     -fx-highlight-text-fill: #ffffff;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
     -fx-font-smoothing-type: lcd;
 }
+.msg-textarea:focused { -fx-highlight-fill: #3b6fe0; } /* 聚焦选区亮蓝（现状色） */
 .msg-textarea .content {
     -fx-background-color: #121314;
     -fx-padding: 0;
