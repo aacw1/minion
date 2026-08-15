@@ -1,7 +1,7 @@
 /* minion 深色科技感主题 */
 .root {
     -fx-font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
-    -fx-font-size: 14px;
+    -fx-font-size: 16px;
     -fx-background-color: #0f1115;
 }
 
@@ -24,8 +24,8 @@
     -fx-border-width: 0 0 1 0;
     -fx-padding: 8 12 8 12;
 }
-.topbar-title { -fx-text-fill: #f0f2f6; -fx-font-size: 14px; -fx-font-weight: bold; }
-.topbar-model { -fx-text-fill: #a8b0bb; -fx-font-size: 12px; }
+.topbar-title { -fx-text-fill: #f0f2f6; -fx-font-size: 16px; -fx-font-weight: bold; }
+.topbar-model { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; }
 
 /* 按钮 */
 .btn { -fx-background-radius: 6; -fx-padding: 6 14 6 14; -fx-cursor: hand; }
@@ -112,11 +112,11 @@
     -fx-border-width: 1;
     -fx-padding: 2 4 2 8;
 }
-.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 12px; }
+.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 14px; }
 .chip-close {
     -fx-background-color: transparent;
     -fx-text-fill: #98a0ab;
-    -fx-font-size: 11px;
+    -fx-font-size: 13px;
     -fx-padding: 0 4 0 4;
     -fx-background-radius: 4;
     -fx-cursor: hand;
@@ -140,7 +140,7 @@
 .suggest-list .list-cell:selected { -fx-background-color: #2a3344; }
 .suggest-label { -fx-text-fill: #d3d7de; }
 .suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #f0f2f6; }
-.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 12px; }
+.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 14px; }
 
 /* 列表 */
 .list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
@@ -185,7 +185,7 @@
     -fx-padding: 10 14 10 14;
     -fx-text-fill: #f0f2f6;
 }
-.msg-thinking { -fx-background-color: #13161c; -fx-background-radius: 6; -fx-text-fill: #98a0ab; -fx-font-size: 12px; }
+.msg-thinking { -fx-background-color: #13161c; -fx-background-radius: 6; -fx-text-fill: #98a0ab; -fx-font-size: 14px; }
 .code-block {
     -fx-background-color: #0d1117;
     -fx-background-radius: 6;
@@ -193,14 +193,14 @@
     -fx-border-radius: 6;
     -fx-padding: 10 14 10 14;
     -fx-font-family: "Consolas", monospace;
-    -fx-font-size: 13px;
+    -fx-font-size: 15px;
     -fx-text-fill: #c9d1d9;
 }
 .msg-error { -fx-background-color: #3d1d1d; -fx-background-radius: 6; -fx-text-fill: #f85149; }
 .msg-warning { -fx-background-color: #3d2f14; -fx-background-radius: 6; -fx-text-fill: #e3b341; }
 
 /* 运行中补充气泡的小徽标 */
-.supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 11px; -fx-font-weight: bold; }
+.supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 13px; -fx-font-weight: bold; }
 
 /* ===== 消息只读 TextArea（消息本体：原生拖选/Ctrl+C/双击选词/右键菜单） =====
    背景策略（探针 2026-08-15 实证，纠正 8-13「显式 LCD」假阳性）：
@@ -259,7 +259,7 @@
 .tooltip { -fx-background-color: #232a38; -fx-text-fill: #c9cdd6; -fx-background-radius: 4; }
 
 /* 侧栏分区标题 */
-.section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 12px; -fx-font-weight: bold; }
+.section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; -fx-font-weight: bold; }
 
 /* 侧栏行内悬停小按钮（会话 ✎ 重命名/✕ 删除；工作空间 ⚙ 修改/✕ 删除） */
 .btn-cell {
@@ -273,7 +273,7 @@
 .btn-cell:hover { -fx-text-fill: #f0f2f6; -fx-background-color: #2a2f3a; }
 
 /* 侧栏消息时间（5m/3h/2d） */
-.cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 11px; } /* 原 #7a828e 过暗看不清 */
+.cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 13px; } /* 原 #7a828e 过暗看不清 */
 
 /* 侧栏列表项名称文字：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill（继承默认黑色），须显式上色 */
 .cell-text { -fx-text-fill: #d3d7de; }
@@ -332,6 +332,7 @@
     -fx-border-color: #2a2f3a;
     -fx-border-radius: 12;
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 24, 0, 0, 8);
+    -fx-font-size: 14px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
 }
 .sheet-accent { -fx-background-color: #e3b341; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
 .sheet-warn { -fx-text-fill: #e3b341; -fx-font-size: 16px; }

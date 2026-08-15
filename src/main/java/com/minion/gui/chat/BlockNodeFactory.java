@@ -26,7 +26,7 @@ public class BlockNodeFactory {
         switch (b.type) {
             case HEADING: {
                 Label l = new Label(b.text);
-                l.setStyle("-fx-font-size: " + Math.max(13, 17 - b.level)
+                l.setStyle("-fx-font-size: " + Math.max(15, 19 - b.level)
                         + "px; -fx-font-weight: bold; -fx-text-fill: #e6e8ee;");
                 return l;
             }
