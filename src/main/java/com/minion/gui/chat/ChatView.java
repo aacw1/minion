@@ -30,8 +30,8 @@ public class ChatView extends VBox {
 
     private final EventList events;
     private final SessionHandle handle;
-    private final StringBuilder pendingContent = new StringBuilder();
-    private final StringBuilder pendingThinking = new StringBuilder();
+    /** 流式缓冲：THINKING/CONTENT 增量累积，轮次边界重置（纯逻辑，见 StreamBuffer） */
+    private final StreamBuffer stream = new StreamBuffer();
 
     /** 用户消息到达时的"滚动到底"回调（MainWindow 注入：强制贴底 + 布局完成后置底） */
     private Runnable scrollBottomRequest;
@@ -102,34 +102,34 @@ public class ChatView extends VBox {
     public void clear() {
         getChildren().clear();
         segs.clear();
-        pendingContent.setLength(0);
-        pendingThinking.setLength(0);
+        stream.onRoundBoundary();
         empty = true;
         getChildren().add(hint());
     }
 
     private void onEventFx(Ev e) {
+        // 轮次边界（用户消息/补充/工具调用到达）先行重置流式缓冲：AgentLoop 一轮 runUserTurn 内
+        // 多轮 agent 回合间无 USER_MESSAGE，若不清零则多轮回复文本跨轮累积进同一段，
+        // 每轮内容越滚越长，表现为"一直在回复同一段内容"（线上实证，用户误判上下文错乱）
+        if (StreamBuffer.isRoundBoundary(e.kind)) stream.onRoundBoundary();
         switch (e.kind) {
             case USER_MESSAGE:
                 append("【输入】", "log-input", e.text, StreamKind.NONE);
-                // 新轮次开始：重置上一轮流式缓冲，防止与下一轮内容拼接（评审 I-1）
-                pendingContent.setLength(0);
-                pendingThinking.setLength(0);
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             case USER_SUPPLEMENT:
                 append("【输入】", "log-input", e.text, StreamKind.NONE);
                 break;
             case THINKING:
-                pendingThinking.append(e.text);
-                stream("【思考】", "log-think", pendingThinking.toString(), StreamKind.THINK);
+                stream.onThinking(e.text);
+                stream("【思考】", "log-think", stream.thinking(), StreamKind.THINK);
                 break;
             case CONTENT:
-                pendingContent.append(e.text);
+                stream.onContent(e.text);
                 // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
-                String plain = MarkdownRenderer.toPlainText(pendingContent.toString());
+                String plain = MarkdownRenderer.toPlainText(stream.content());
                 // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
-                // 不打印【回复】标签——空标签+空白正文的"幽灵段"；pendingContent 只追加不会中途变空
+                // 不打印【回复】标签——空标签+空白正文的"幽灵段"；缓冲只追加不会中途变空
                 if (plain.trim().isEmpty()) break;
                 stream("【回复】", "log-reply", plain, StreamKind.REPLY);
                 break;
@@ -205,6 +205,38 @@ public class ChatView extends VBox {
     private static String shorten(String s, int max) {
         if (s == null) return "";
         return s.length() > max ? s.substring(0, max) + "…" : s;
+    }
+
+    /**
+     * 流式缓冲（纯逻辑，无 JavaFX 依赖，可单测）：THINKING/CONTENT 增量累积；
+     * 轮次边界事件（用户消息/补充/工具调用到达）整清空——AgentLoop 一轮 runUserTurn 内
+     * 多轮 agent 回合（assistant→工具→assistant…）之间无 USER_MESSAGE，
+     * 边界不清零会导致多轮回复文本跨轮累积，显示为"一直在回复同一段内容"。
+     */
+    static class StreamBuffer {
+        private final StringBuilder content = new StringBuilder();
+        private final StringBuilder thinking = new StringBuilder();
+
+        /** 事件种类是否标志新一轮开始（上轮流式缓冲作废） */
+        static boolean isRoundBoundary(EventList.Kind kind) {
+            return kind == EventList.Kind.USER_MESSAGE
+                    || kind == EventList.Kind.USER_SUPPLEMENT
+                    || kind == EventList.Kind.TOOL_CALL;
+        }
+
+        void onThinking(String delta) { thinking.append(delta); }
+
+        void onContent(String delta) { content.append(delta); }
+
+        /** 轮次边界：清空累积，下一轮回复/思考另起新段 */
+        void onRoundBoundary() {
+            content.setLength(0);
+            thinking.setLength(0);
+        }
+
+        String content() { return content.toString(); }
+
+        String thinking() { return thinking.toString(); }
     }
 
     /** ask_user 工具调用的 question 参数（解析失败回空串） */

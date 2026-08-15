@@ -115,7 +115,7 @@ com.minion
 ```
 用户输入 → InputView → SessionManager.dispatchCommand（命令本地/消息 send）→ 会话工作线程 → AgentLoop
   1. 追加 user 消息；TokenCounter 估算达阈值 → 自动压缩
-  2. 流式请求（thinking / 正文 / tool_calls 增量 → EventList → UI 渲染）
+  2. 流式请求（thinking / 正文 / tool_calls 增量 → EventList → UI 渲染；ChatView 流式缓冲在轮次边界——用户消息/补充/工具调用——重置，防多轮回复文本跨轮累积拼接）
   3. finish_reason==tool_calls → 执行工具（同回合并行；Bash 超时 120s；高危经 ConfirmGate→GuiConfirmUi 弹窗）→ tool 消息回传 → 下一轮
   4. 无工具调用 → 本轮完成 → 落盘
 ```
