@@ -45,7 +45,8 @@ public class ModelManager {
         }
         if (!loaded) {
             if (Files.exists(m.file)) backupCorrupt(m.file); // 文件存在但不可用：先备份再重建，避免配置丢失
-            m.models.add(createDefault());
+            m.models.add(createDeepseek());
+            m.models.add(createQwen());
             m.currentName = m.models.get(0).displayName;
             m.save();
         }
@@ -54,7 +55,7 @@ public class ModelManager {
         return m;
     }
 
-    public static ModelConfig createDefault() {
+    public static ModelConfig createDeepseek() {
         ModelConfig c = new ModelConfig();
         c.displayName = "deepseek-v4-flash";
         c.url = "https://api.deepseek.com/v1/chat/completions";
@@ -64,6 +65,22 @@ public class ModelManager {
         c.thinking = true;
         c.reasoningEffort = "max";
         c.maxContextTokens = 900000;
+        c.compressThreshold = 0.8;
+        c.keepRecentMessages = 10;
+        return c;
+    }
+
+    /** 千问（阿里百炼 DashScope OpenAI 兼容模式）；reasoningEffort 对 qwen 无效，客户端仅发 enable_thinking */
+    public static ModelConfig createQwen() {
+        ModelConfig c = new ModelConfig();
+        c.displayName = "qwen3-max";
+        c.url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+        c.apiKey = "";
+        c.modelName = "qwen3-max";
+        c.provider = "qwen";
+        c.thinking = true;
+        c.reasoningEffort = "max";
+        c.maxContextTokens = 131072;
         c.compressThreshold = 0.8;
         c.keepRecentMessages = 10;
         return c;
