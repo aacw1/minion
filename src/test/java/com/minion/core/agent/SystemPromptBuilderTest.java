@@ -78,4 +78,14 @@ public class SystemPromptBuilderTest {
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertTrue(prompt.contains("ask_user"));
     }
+
+    /** 审查检查点规则：完成需用户审查的产出（设计文档/实施计划/关键方案）后必须 ask_user 确认 */
+    @Test
+    public void build_includesReviewGateRule() throws Exception {
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
+                java.util.Collections.<com.minion.core.skills.Skill>emptyList());
+        assertTrue(prompt.contains("需要用户审查的产出"));
+        assertTrue(prompt.contains("未获批准不得继续"));
+    }
 }
