@@ -82,17 +82,6 @@
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
-/* 上传按钮（输入框底部操作行左）：回形针描边图标 */
-.btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
-.icon-upload {
-    -fx-fill: transparent;
-    -fx-stroke: #a8b0bb;
-    -fx-stroke-width: 1.6;
-    -fx-stroke-linecap: round;
-    -fx-stroke-linejoin: round;
-}
-.btn-upload:hover .icon-upload { -fx-stroke: #f0f2f6; }
-
 /* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
 .chip-row { -fx-hgap: 8; -fx-vgap: 8; }
 .input-chip {
@@ -114,7 +103,6 @@
 .input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
 .input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
 .input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
-.input-chip-image { -fx-background-color: #241f38; -fx-border-color: #7c5cd6; }
 
 /* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
 .suggest-list {
@@ -210,9 +198,9 @@
 
 /* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
 .log-input { -fx-text-fill: #4285F4; } /* 输入 柔和蓝 */
-.log-think { -fx-text-fill: #9f9e9e; } /* 思考 橙 */
+.log-think { -fx-text-fill: #8c8c8c; } /* 思考 灰白 */
 .log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
-.log-reply { -fx-text-fill: #ffffff; } /* 回复 深绿 */
+.log-reply { -fx-text-fill: #bfbfbf; } /* 回复 白 */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
 .log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
@@ -224,8 +212,8 @@
 .log-body { -fx-text-fill: #f0f2f6; }
 .log-body-input { -fx-text-fill: #7db4ff; } /* 输入正文 浅蓝 */
 .log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
-.log-body-reply { -fx-text-fill: #bfbfbf; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
-.log-body-think { -fx-text-fill: #8c8c8c; } /* 思考正文 浅橙 */
+.log-body-reply { -fx-text-fill: #c9c9c9; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
+.log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
