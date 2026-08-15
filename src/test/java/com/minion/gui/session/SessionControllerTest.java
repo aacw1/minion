@@ -131,6 +131,43 @@ public class SessionControllerTest {
         assertEquals(EventList.Kind.USER_MESSAGE, evs.get(1).kind);
     }
 
+    /** ask_user 回答显示（设计 2026-08-16）：回答经 USER_SUPPLEMENT 事件入流（【输入】段），
+     *  消息区提问与回答成对显示 */
+    @Test
+    public void onAskUserDone_answer_emitsSupplementEvent() {
+        SessionController c = new SessionController();
+        c.onAskUserDone("方案B");
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("方案B", evs.get(0).text);
+    }
+
+    /** 空回答不投递（与「输入为空不发」一致），仅复位状态 */
+    @Test
+    public void onAskUserDone_emptyAnswer_emitsNothing() {
+        SessionController c = new SessionController();
+        c.onAskUserDone("");
+        c.onAskUserDone(null);
+        assertEquals(0, c.eventList().snapshot().size());
+    }
+
+    /** 历史回放：ask_user 的 TOOL 消息（回答在 output）→ 先 USER_SUPPLEMENT 回答行再 TOOL_RESULT ✅，
+     *  恢复会话后提问与回答成对显示，顺序与运行时一致 */
+    @Test
+    public void replayHistory_askUserToolResult_emitsAnswerThenResult() {
+        SessionController c = new SessionController();
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.toolResult("tc1", "ask_user", "方案B"));
+        c.replayHistory(msgs);
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(2, evs.size());
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("方案B", evs.get(0).text);
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(1).kind);
+        assertEquals("ask_user", evs.get(1).text);
+    }
+
     /** ask_user 状态转发：开始（带问题）→ 完成（null） */
     @Test
     public void askStateListener_startAndDone() {

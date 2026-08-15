@@ -49,6 +49,11 @@ public class SessionController implements AgentUi {
                     }
                 }
             } else if (m.role == Message.Role.TOOL && m.name != null) {
+                // ask_user 的回答存于 TOOL 消息 output：先重演回答行（USER_SUPPLEMENT【输入】段）
+                // 再 ✅ 行，恢复会话后提问与回答成对显示、顺序与运行时一致
+                if ("ask_user".equals(m.name) && m.content != null && !m.content.trim().isEmpty()) {
+                    events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, m.content, null));
+                }
                 // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演（与运行时 ✅ 格式一致）
                 events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, m.name, "ok"));
             }
@@ -102,5 +107,8 @@ public class SessionController implements AgentUi {
     }
     @Override public void onAskUserDone(String answer) {
         if (askStateListener != null) askStateListener.accept(null);
+        // 回答入事件流（USER_SUPPLEMENT 渲染为【输入】段）：消息区提问「❓ 模型向你提问」与回答成对显示；
+        // 空回答不投递，与「输入为空不发」一致
+        if (answer != null && !answer.isEmpty()) onUserSupplement(answer);
     }
 }
