@@ -106,16 +106,27 @@ public class ConfigTest {
         assertTrue(c2.readAllowOutside());
     }
 
-    /** 输入发送键：默认 false（Ctrl+Enter 发送） */
+    /** 输入发送键：无键（空/旧配置）回落默认 true（Enter 发送） */
     @Test
-    public void enterSends_defaultsFalse() throws IOException {
+    public void enterSends_defaultsTrueWhenKeyMissing() throws IOException {
         Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
-        assertFalse(c.enterSends());
+        assertTrue(c.enterSends());
     }
 
-    /** 输入发送键：外部文件可覆盖为 true，重载后保持 */
+    /** 输入发送键：外部文件显式 false 覆盖默认（用户选择优先，保护旧默认用户），重载后保持 */
     @Test
-    public void enterSends_externalOverridePersists() throws IOException {
+    public void enterSends_explicitFalseOverridesDefault() throws IOException {
+        Path root = tmp.getRoot().toPath();
+        Config c1 = Config.load(root, TEST_DEFAULTS);
+        Files.write(c1.externalFile(), "\ninput.enterSends=false\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        Config c2 = Config.load(root, TEST_DEFAULTS);
+        assertFalse(c2.enterSends());
+    }
+
+    /** 输入发送键：外部文件显式 true 覆盖默认，重载后保持 */
+    @Test
+    public void enterSends_explicitTrueOverridesDefault() throws IOException {
         Path root = tmp.getRoot().toPath();
         Config c1 = Config.load(root, TEST_DEFAULTS);
         Files.write(c1.externalFile(), "\ninput.enterSends=true\n".getBytes(StandardCharsets.UTF_8),

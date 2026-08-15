@@ -96,8 +96,8 @@ public class Config {
     /** 读逃逸：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
     public boolean readAllowOutside() { return Boolean.parseBoolean(get("paths.read.allowOutside", "false")); }
     public boolean confirmSkip() { return Boolean.parseBoolean(get("confirm.skip", "false")); }
-    /** 输入框发送键：true=Enter 发送（Ctrl+Enter 换行）；false（默认）=Ctrl+Enter 发送（Enter 换行） */
-    public boolean enterSends() { return Boolean.parseBoolean(get("input.enterSends", "false")); }
+    /** 输入框发送键：true=Enter 发送（Ctrl+Enter 换行）；false=Ctrl+Enter 发送（Enter 换行）；无键（空/旧配置）默认 true */
+    public boolean enterSends() { return Boolean.parseBoolean(get("input.enterSends", "true")); }
     public Set<String> whitelistTools()    { return csv(get("confirm.whitelist.tools", "")); }
     public Set<String> whitelistCommands() { return csv(get("confirm.whitelist.commands", "")); }
     public String browserPath()       { return get("browser.path", ""); }
