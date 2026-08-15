@@ -28,6 +28,24 @@ public class SessionControllerTest {
         assertEquals("你好，我是助手", evs.get(1).text);
     }
 
+    /** 历史回放：assistant 带 reasoningContent → 先 THINKING 事件（完整文本）再 CONTENT。
+     *  回归保护：重启恢复会话后【思考】段不丢失（此前 replayHistory 只重演 content） */
+    @Test
+    public void replayHistory_assistantWithReasoning_emitsThinkingThenContent() {
+        SessionController c = new SessionController();
+        List<Message> msgs = new ArrayList<Message>();
+        Message m = Message.assistant("正文回复");
+        m.reasoningContent = "思考过程";
+        msgs.add(m);
+        c.replayHistory(msgs);
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(2, evs.size());
+        assertEquals(EventList.Kind.THINKING, evs.get(0).kind);
+        assertEquals("思考过程", evs.get(0).text);
+        assertEquals(EventList.Kind.CONTENT, evs.get(1).kind);
+        assertEquals("正文回复", evs.get(1).text);
+    }
+
     /** 工具消息/系统消息/空 content/assistant 工具调用 全部跳过 */
     @Test
     public void replayHistory_skipsToolAndSystemAndEmpty() {

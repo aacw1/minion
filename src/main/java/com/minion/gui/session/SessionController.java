@@ -30,6 +30,11 @@ public class SessionController implements AgentUi {
                         m.content, null));
             } else if (m.role == Message.Role.ASSISTANT
                     && m.content != null && !m.content.trim().isEmpty()) {
+                // 思考内容先于正文重演：ChatView 的【思考】段只由 THINKING 事件驱动，
+                // 不重演则重启恢复后思考丢失（上下文完好，纯显示缺失）
+                if (m.reasoningContent != null && !m.reasoningContent.isEmpty()) {
+                    events.add(new EventList.Ev(EventList.Kind.THINKING, m.reasoningContent, null));
+                }
                 events.add(new EventList.Ev(EventList.Kind.CONTENT, m.content, null));
             }
         }
