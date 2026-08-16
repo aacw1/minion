@@ -138,7 +138,7 @@ public class AgentLoop {
 
     /** 当前系统提示（含已加载技能），子 agent 复用 */
     public String buildSystemPrompt() {
-        return promptBuilder.build(allSkills, loadedSkills);
+        return promptBuilder.build(allSkills);
     }
 
     public void setSubAgentRunner(java.util.function.Function<JsonObject, String> runner) {
@@ -309,7 +309,7 @@ public class AgentLoop {
                         ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
                     }
                 }
-                String system = promptBuilder.build(allSkills, loadedSkills);
+                String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
                 request.add(Message.system(system));
                 request.addAll(session.messages);

@@ -167,7 +167,7 @@ public class SessionManager {
                 ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                         mc.keepRecentMessages, llm,
                         TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name))
-                                .build(allSkills, new ArrayList<Skill>())));
+                                .build(allSkills)));
                 SessionController controller = new SessionController();
                 controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
                 AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
@@ -238,7 +238,7 @@ public class SessionManager {
         ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                 mc.keepRecentMessages, llm,
                 TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName))
-                        .build(allSkills, new ArrayList<Skill>())));
+                        .build(allSkills)));
         SessionController controller = new SessionController();
         AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
                 new SystemPromptBuilder(projectMdPath(currentWorkspaceName)),

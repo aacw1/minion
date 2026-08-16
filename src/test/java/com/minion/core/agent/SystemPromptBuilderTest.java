@@ -18,33 +18,32 @@ public class SystemPromptBuilderTest {
     public TemporaryFolder tmp = new TemporaryFolder();
 
     @Test
-    public void build_includesProjectMdAndSkillsInOrder() throws Exception {
+    public void build_includesProjectMdAndSkillCatalog() throws Exception {
         Path work = tmp.getRoot().toPath();
         File md = new File(work.toFile(), "project.md");
         Files.write(md.toPath(), "这是一个测试项目".getBytes(StandardCharsets.UTF_8));
 
         SystemPromptBuilder b = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md");
-
         Skill available = new Skill("review", "代码审查技能", "审查指令全文", "SKILL.md");
-        Skill loaded = new Skill("debug", "调试技能", "调试指令全文", "SKILL.md");
-        String prompt = b.build(java.util.Collections.singletonList(available),
-                java.util.Collections.singletonList(loaded));
+        String prompt = b.build(java.util.Collections.singletonList(available));
 
         int iProject = prompt.indexOf("=== 项目介绍 ===");
         int iSkills = prompt.indexOf("=== 可用技能 ===");
-        int iLoaded = prompt.indexOf("=== 已加载技能 ===");
         assertTrue(iProject > 0);
         assertTrue(iSkills > iProject);
-        assertTrue(iLoaded > iSkills);
         assertTrue(prompt.contains("这是一个测试项目"));
         assertTrue(prompt.contains("review — 代码审查技能"));
-        assertTrue(prompt.contains("调试指令全文"));
+        // 路由引导语：匹配才加载；正文以用户消息注入
+        assertTrue(prompt.contains("调用 Skill 工具加载"));
+        assertTrue(prompt.contains("匹配才加载"));
+        // 已加载技能段删除：正文不再进系统提示词
+        assertFalse(prompt.contains("=== 已加载技能 ==="));
+        assertFalse(prompt.contains("审查指令全文"));
     }
 
     @Test
     public void build_missingProjectMd_skipsSection() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/nope.md").build(
-                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertFalse(prompt.contains("=== 项目介绍 ==="));
         assertFalse(prompt.contains("=== 可用技能 ==="));
@@ -53,7 +52,6 @@ public class SystemPromptBuilderTest {
     @Test
     public void build_includesStuckStopRule() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
-                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertTrue(prompt.contains("停止调用工具"));
         assertTrue(prompt.contains("不要反复重试同一方法"));
@@ -62,7 +60,6 @@ public class SystemPromptBuilderTest {
     @Test
     public void build_clarificationRuleIsFirst() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
-                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         int iClarify = prompt.indexOf("不要猜测用户意图");
         int iOldRule1 = prompt.indexOf("使用工具前先想清楚目标");
@@ -74,7 +71,6 @@ public class SystemPromptBuilderTest {
     @Test
     public void build_mentionsAskUserQuestionTool() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
-                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertTrue(prompt.contains("AskUserQuestion"));
     }
@@ -83,7 +79,6 @@ public class SystemPromptBuilderTest {
     @Test
     public void build_includesReviewGateRule() throws Exception {
         String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md").build(
-                java.util.Collections.<com.minion.core.skills.Skill>emptyList(),
                 java.util.Collections.<com.minion.core.skills.Skill>emptyList());
         assertTrue(prompt.contains("需要用户审查的产出"));
         assertTrue(prompt.contains("未获批准不得继续"));
