@@ -166,12 +166,12 @@ public class SessionManager {
                 LlmClient llm = newLlm(mc);
                 ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                         mc.keepRecentMessages, llm,
-                        TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name))
+                        TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir())
                                 .build(allSkills)));
                 SessionController controller = new SessionController();
                 controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
                 AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
-                        new SystemPromptBuilder(projectMdPath(ctx.name)),
+                        new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir()),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
                 loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
@@ -238,11 +238,11 @@ public class SessionManager {
         LlmClient llm = newLlm(mc);
         ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                 mc.keepRecentMessages, llm,
-                TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName))
+                TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir())
                         .build(allSkills)));
         SessionController controller = new SessionController();
         AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
-                new SystemPromptBuilder(projectMdPath(currentWorkspaceName)),
+                new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir()),
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
         loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效

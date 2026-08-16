@@ -67,6 +67,29 @@ public class SystemPromptBuilderTest {
         assertTrue(iOldRule1 > iClarify);
     }
 
+    /** 工作目录注入：模型必须知道当前工作目录，否则会猜测/编造路径（曾实测编造出旧项目目录路径） */
+    @Test
+    public void build_injectsWorkDirBeforeProjectMd() throws Exception {
+        Path work = tmp.getRoot().toPath();
+        Files.write(work.resolve("project.md"), "项目".getBytes(StandardCharsets.UTF_8));
+        String prompt = new SystemPromptBuilder(work.resolve("project.md").toString(), "D:/work/minion")
+                .build(java.util.Collections.<Skill>emptyList());
+        int iWork = prompt.indexOf("D:/work/minion");
+        int iProject = prompt.indexOf("=== 项目介绍 ===");
+        assertTrue(iWork > 0);
+        assertTrue(iProject > 0);
+        assertTrue("工作目录段应在项目介绍之前", iWork < iProject);
+        assertTrue(prompt.contains("pwd"));
+    }
+
+    /** 未传工作目录时不注入该段（兼容构造行为） */
+    @Test
+    public void build_withoutWorkDir_skipsSection() throws Exception {
+        String prompt = new SystemPromptBuilder(tmp.getRoot().getPath() + "/nope.md").build(
+                java.util.Collections.<Skill>emptyList());
+        assertFalse(prompt.contains("D:/work/minion"));
+    }
+
     /** 规则指引模型用 AskUserQuestion 工具提问（替代纯文本提问等待） */
     @Test
     public void build_mentionsAskUserQuestionTool() throws Exception {

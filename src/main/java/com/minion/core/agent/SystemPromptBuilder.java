@@ -25,11 +25,25 @@ public class SystemPromptBuilder {
           + "7. 当工具连续失败、或发现缺少完成任务所必需的信息/权限时，停止调用工具；向用户说明已尝试的方案、失败原因，并列出需要用户补充的信息或需要用户选择的方案（可调用 AskUserQuestion 工具提问），等待用户回复。不要反复重试同一方法。";
 
     private final String projectMdPath;
+    /** 工作目录（可空=不注入；模型必须知道当前目录，否则会猜测/编造路径，曾实测编造出旧项目目录） */
+    private final String workDir;
 
-    public SystemPromptBuilder(String projectMdPath) { this.projectMdPath = projectMdPath; }
+    public SystemPromptBuilder(String projectMdPath) { this(projectMdPath, null); }
+
+    public SystemPromptBuilder(String projectMdPath, String workDir) {
+        this.projectMdPath = projectMdPath;
+        this.workDir = workDir;
+    }
 
     public String build(List<Skill> allSkills) {
         StringBuilder sb = new StringBuilder(BUILTIN);
+        if (workDir != null && !workDir.trim().isEmpty()) {
+            sb.append("\n\n=== 当前工作目录 ===\n")
+              .append("工作目录: ").append(workDir).append("\n")
+              .append("- 工具的相对路径与 Bash 命令均以工作目录为基准；不要猜测或编造其他项目路径。\n")
+              .append("- 不确定当前目录时，用 Bash 执行 pwd 查看。\n")
+              .append("- 工作目录之外：读取需经系统授权确认；修改/新建将被拒绝。确需访问外部路径时说明用途，等待系统确认。");
+        }
         String projectMd = loadProjectMd(projectMdPath);
         if (!projectMd.isEmpty()) {
             sb.append("\n\n=== 项目介绍 ===\n").append(projectMd.trim());

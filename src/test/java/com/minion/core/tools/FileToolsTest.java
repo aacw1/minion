@@ -65,6 +65,16 @@ public class FileToolsTest {
         assertTrue(r.output.contains("文件不存在"));
     }
 
+    /** 文件不存在且路径在工作区外：错误需提示"工作目录"，引导模型自纠（曾实测模型编造旧项目路径） */
+    @Test
+    public void read_missingOutsideWorkDir_hintsWorkDir() throws Exception {
+        String missing = new File(System.getProperty("java.io.tmpdir"), "minion-no-such-file-xyz.txt").getAbsolutePath();
+        ToolResult r = read.execute(args("{\"path\":\"" + missing.replace("\\", "\\\\") + "\"}"));
+        assertFalse(r.ok);
+        assertTrue(r.output.contains("文件不存在"));
+        assertTrue(r.output.contains("工作目录"));
+    }
+
     /** GBK 编码文件（如记事本 ANSI 保存）：UTF-8 解码失败后自动降级 GBK，内容正确并标注转码 */
     @Test
     public void read_gbkFile_autoDecoded() throws Exception {
