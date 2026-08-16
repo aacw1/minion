@@ -3,6 +3,8 @@ package com.minion.gui.dialog;
 import com.minion.core.config.Config;
 import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
+import com.minion.core.mcp.McpManager;
+import com.minion.core.mcp.McpServer;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.event.ActionEvent;
@@ -30,13 +32,17 @@ import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Window;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
-/** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
+/** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / MCP / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
 
     public static void show(Window owner, final ModelManager models,
-                            final SessionManager manager, final Config config) {
+                            final SessionManager manager, final Config config,
+                            final McpManager mcp) {
         Dialog<Void> d = new Dialog<Void>();
         d.initOwner(owner);
         d.setTitle("设置");
@@ -57,16 +63,18 @@ public class SettingsDialog {
 
         // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
         final ListView<String> nav = new ListView<String>();
-        nav.getItems().addAll("基础设置", "模型", "关于");
+        nav.getItems().addAll("基础设置", "模型", "MCP", "关于");
         nav.setPrefWidth(120);
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
         final Node model = modelPane(models, manager);
+        final Node mcpNode = mcpPane(mcp, owner);
         final Node about = aboutPane();
         final StackPane content = new StackPane();
         nav.getSelectionModel().selectedItemProperty().addListener((obs, ov, item) -> {
             if (item == null) return;
             content.getChildren().setAll("基础设置".equals(item) ? basic.root
-                    : "模型".equals(item) ? model : about);
+                    : "模型".equals(item) ? model
+                    : "MCP".equals(item) ? mcpNode : about);
         });
         nav.getSelectionModel().select(0); // 默认选中基础设置（选中监听触发内容显示）
 
@@ -218,6 +226,230 @@ public class SettingsDialog {
         });
         Optional<ModelConfig> r = d.showAndWait();
         return r.isPresent() ? r.get() : null;
+    }
+
+    // ===== MCP 页（列表 + 状态点 + 启用开关 + 新建/编辑/删除/重连） =====
+
+    /** MCP 页：服务器列表（状态点/传输/工具数/失败原因/启用开关）+ 操作按钮；连接线程回调经 FX 刷新 */
+    private static VBox mcpPane(final McpManager mcp, final Window owner) {
+        if (mcp == null) { // 未装配（异常路径）：空列表提示
+            VBox empty = new VBox(10);
+            empty.setPadding(new Insets(10));
+            Label tip = new Label("MCP 管理器未装配");
+            tip.getStyleClass().add("msg-thinking");
+            empty.getChildren().add(tip);
+            return empty;
+        }
+        final ListView<McpServer> list = new ListView<McpServer>();
+        list.setCellFactory(lv -> new ListCell<McpServer>() {
+            @Override protected void updateItem(McpServer item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    return;
+                }
+                // 状态点：灰=未启用 绿=已连接 橙=连接中 红=失败
+                String color = !item.enabled ? "gray"
+                        : item.state == McpServer.State.CONNECTED ? "green"
+                        : item.state == McpServer.State.CONNECTING ? "orange" : "red";
+                Label dot = new Label("●");
+                dot.setStyle("-fx-text-fill: " + color + ";");
+                Label name = new Label(item.name);
+                String metaText = item.transport
+                        + (item.state == McpServer.State.CONNECTED
+                            ? "  " + (item.tools.size() - item.skippedTools) + " 工具"
+                            : item.state == McpServer.State.FAILED ? "  失败: " + shorten(item.failReason)
+                            : item.state == McpServer.State.CONNECTING ? "  连接中…" : "");
+                Label meta = new Label(metaText);
+                meta.getStyleClass().add("msg-thinking");
+                CheckBox on = new CheckBox("启用");
+                on.setSelected(item.enabled);
+                on.selectedProperty().addListener((obs, ov, nv) -> {
+                    item.enabled = nv;
+                    if (nv) mcp.ensureConnectedAsync(item.name);
+                    else mcp.disconnect(item.name);
+                });
+                HBox box = new HBox(8, dot, name, meta, on);
+                HBox.setHgrow(meta, Priority.ALWAYS);
+                setGraphic(box);
+            }
+        });
+        refresh(list, mcp);
+        // 连接线程回调（onStateChanged 在后台连接线程）：切回 FX 线程刷新列表
+        mcp.addListener(s -> javafx.application.Platform.runLater(() -> refresh(list, mcp)));
+
+        HBox actions = new HBox(8);
+        Button add = new Button("新建");
+        Button edit = new Button("编辑");
+        Button del = new Button("删除");
+        Button reconnect = new Button("重连");
+        add.getStyleClass().add("btn-ghost");
+        edit.getStyleClass().add("btn-ghost");
+        del.getStyleClass().add("btn-ghost");
+        reconnect.getStyleClass().add("btn-ghost");
+        add.setOnAction(e -> {
+            McpServer s = form(null, owner);
+            if (s != null) {
+                mcp.servers().add(s);
+                mcp.save();
+            }
+            refresh(list, mcp);
+        });
+        edit.setOnAction(e -> {
+            McpServer s = list.getSelectionModel().getSelectedItem();
+            if (s == null) return;
+            McpServer out = form(s, owner);
+            if (out != null) {
+                mcp.save();
+                // 命令/传输可能已改：原连接态 → 断开重连（新配置生效）
+                if (out.state != McpServer.State.DISCONNECTED) {
+                    mcp.disconnect(out.name);
+                    mcp.ensureConnectedAsync(out.name);
+                }
+            }
+            refresh(list, mcp);
+        });
+        del.setOnAction(e -> {
+            McpServer s = list.getSelectionModel().getSelectedItem();
+            if (s == null) return;
+            Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                    "删除 MCP 服务器「" + s.name + "」？", ButtonType.OK, ButtonType.CANCEL);
+            Theme.style(a);
+            a.setTitle("删除 MCP 服务器");
+            Optional<ButtonType> r = a.showAndWait();
+            if (r.isPresent() && r.get() == ButtonType.OK) {
+                mcp.servers().remove(s);
+                mcp.disconnect(s.name);
+                mcp.save();
+            }
+            refresh(list, mcp);
+        });
+        reconnect.setOnAction(e -> {
+            McpServer s = list.getSelectionModel().getSelectedItem();
+            if (s == null) return;
+            mcp.reconnect(s.name); // 同步等待 ≤10s；成功/失败后状态刷新
+            refresh(list, mcp);
+        });
+        actions.getChildren().addAll(add, edit, del, reconnect);
+
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(10));
+        box.getChildren().addAll(list, actions);
+        return box;
+    }
+
+    private static void refresh(ListView<McpServer> list, McpManager mcp) {
+        list.getItems().clear();
+        list.getItems().addAll(mcp.servers());
+    }
+
+    /** 新建（null 带默认值）/ 编辑（预填）MCP 服务器表单；OK 返回服务器对象（编辑回写原对象），取消 null */
+    private static McpServer form(McpServer s, final Window owner) {
+        Dialog<McpServer> d = new Dialog<McpServer>();
+        d.initOwner(owner);
+        d.setTitle(s == null ? "新建 MCP 服务器" : "编辑 MCP 服务器");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        Theme.style(d);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+        TextField name = new TextField(s == null ? "" : s.name);
+        ComboBox<String> transport = new ComboBox<String>();
+        transport.getItems().addAll("stdio", "sse");
+        transport.setValue(s == null ? "stdio" : s.transport);
+        TextField command = new TextField(s == null ? "npx" : s.command);
+        TextArea argsArea = new TextArea(s == null ? "@playwright/mcp" : joinLines(s.args));
+        TextArea envArea = new TextArea(s == null ? "" : pairLines(s.env));
+        TextField url = new TextField(s == null ? "" : s.url);
+        TextArea headerArea = new TextArea(s == null ? "" : pairLines(s.headers));
+        // 传输为 sse 时命令/参数区禁用（命令只对 stdio 有意义）
+        transport.valueProperty().addListener((obs, ov, nv) -> {
+            boolean stdio = "stdio".equals(nv);
+            command.setDisable(!stdio);
+            argsArea.setDisable(!stdio);
+        });
+        boolean stdio0 = "stdio".equals(transport.getValue());
+        command.setDisable(!stdio0);
+        argsArea.setDisable(!stdio0);
+
+        grid.addRow(0, new Label("名称:"), name);
+        grid.addRow(1, new Label("传输:"), transport);
+        grid.addRow(2, new Label("命令:"), command);
+        grid.addRow(3, new Label("参数(每行一个):"), argsArea);
+        grid.addRow(4, new Label("环境变量(KEY=VALUE):"), envArea);
+        grid.addRow(5, new Label("URL(SSE):"), url);
+        grid.addRow(6, new Label("请求头(K:V):"), headerArea);
+        d.getDialogPane().setContent(grid);
+
+        d.setResultConverter(bt -> {
+            if (bt != ButtonType.OK) return null;
+            String nm = name.getText().trim();
+            if (nm.isEmpty()) return null; // 名称空视为取消
+            McpServer out = s == null ? new McpServer() : s;
+            out.name = nm;
+            out.transport = transport.getValue() == null ? "stdio" : transport.getValue();
+            out.command = command.getText().trim();
+            out.args = splitLines(argsArea.getText());
+            out.env = parsePairs(envArea.getText());
+            out.url = url.getText().trim();
+            out.headers = parsePairs(headerArea.getText());
+            out.enabled = s != null && s.enabled; // 新建默认禁用（用户勾选启用时再连接）
+            return out;
+        });
+        Optional<McpServer> r = d.showAndWait();
+        return r.isPresent() ? r.get() : null;
+    }
+
+    // ===== MCP 表单文本辅助（纯逻辑，测试覆盖） =====
+
+    /** 参数列表 → 每行一个 */
+    static String joinLines(List<String> args) {
+        if (args == null || args.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String a : args) sb.append(a).append('\n');
+        return sb.toString();
+    }
+
+    /** 键值表 → KEY=VALUE 每行一个 */
+    static String pairLines(Map<String, String> pairs) {
+        if (pairs == null || pairs.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : pairs.entrySet()) {
+            sb.append(e.getKey()).append('=').append(e.getValue()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** 每行一个：trim 后去空行 */
+    static List<String> splitLines(String text) {
+        List<String> out = new ArrayList<String>();
+        for (String line : text.split("\\r?\\n")) {
+            if (!line.trim().isEmpty()) out.add(line.trim());
+        }
+        return out;
+    }
+
+    /** KEY=VALUE（或 K:V）逐行解析；非法行忽略 */
+    static Map<String, String> parsePairs(String text) {
+        Map<String, String> out = new java.util.LinkedHashMap<String, String>();
+        for (String line : text.split("\\r?\\n")) {
+            if (line.trim().isEmpty()) continue;
+            int i = line.indexOf('=');
+            if (i < 0) i = line.indexOf(':');
+            if (i <= 0) continue;
+            out.put(line.substring(0, i).trim(), line.substring(i + 1).trim());
+        }
+        return out;
+    }
+
+    /** 失败原因截断（列表显示）：null→空、取首行、超 40 字符截断加省略号 */
+    static String shorten(String s) {
+        if (s == null) return "";
+        int i = s.indexOf('\n');
+        String first = i < 0 ? s : s.substring(0, i);
+        return first.length() > 40 ? first.substring(0, 40) + "…" : first;
     }
 
     // ===== 基础设置页 =====

@@ -29,6 +29,9 @@ public class McpManager {
 
     public List<McpServer> servers() { return store.list(); }
 
+    /** 持久化服务器配置（设置页新建/编辑/删除后调用） */
+    public void save() { store.save(); }
+
     public void addListener(Listener l) { listeners.add(l); }
 
     /** 惰性连接入口（幂等）：CONNECTING/CONNECTED 直接返回；否则后台线程连接 */

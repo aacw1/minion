@@ -129,6 +129,8 @@ public class SessionManager {
 
     public WorkspaceManager workspaces() { return workspaces; }
     public ModelManager models() { return models; }
+    /** MCP 管理器（设置窗 MCP 页/启用开关共用；Main 装配后非 null） */
+    public McpManager mcpManager() { return mcp; }
 
     public void addListener(Listener l) { listeners.add(l); }
 
