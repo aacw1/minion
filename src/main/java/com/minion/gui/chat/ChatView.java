@@ -174,7 +174,7 @@ public class ChatView extends VBox {
             case TOOL_CALL: {
                 String body = "AskUserQuestion".equals(e.text)
                         ? "❓ 模型向你提问\n" + askQuestionOf(e.data)
-                        : "🔧 " + e.text + "\n" + shorten(e.data == null ? "{}" : e.data.toString(), 120);
+                        : "⛭ " + e.text + "\n" + shorten(e.data == null ? "{}" : e.data.toString(), 120);
                 append("【工具】", "log-tool", body, StreamKind.NONE);
                 break;
             }
