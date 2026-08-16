@@ -208,6 +208,81 @@ public class JdkResolverTest {
                 JdkResolver.decide(true, false, false, "C:\\cur\\java.exe", null, true).plan);
     }
 
+    // ---------- javawExe / consoleHidden（控制台隐藏，2026-08-16） ----------
+
+    @Test
+    public void javawExe_derivesSameDir() {
+        assertEquals("C:\\jdk\\bin\\javaw.exe", JdkResolver.javawExe("C:\\jdk\\bin\\java.exe"));
+    }
+
+    @Test
+    public void javawExe_nullReturnsNull() {
+        assertNull(JdkResolver.javawExe(null));
+    }
+
+    @Test
+    public void javawExe_nonExeReturnsNull() {
+        assertNull(JdkResolver.javawExe("C:\\jdk\\bin\\java"));
+    }
+
+    @Test
+    public void consoleHidden_missingFileDefaultsHidden() throws IOException {
+        Path dir = Files.createTempDirectory("jdk-test");
+        try {
+            assertTrue(JdkResolver.consoleHidden(dir.resolve("config.properties")));
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    public void consoleHidden_falseValueMeansHidden() throws IOException {
+        Path dir = Files.createTempDirectory("jdk-test");
+        try {
+            Path cfg = dir.resolve("config.properties");
+            Files.write(cfg, "boot.console=false\n".getBytes());
+            assertTrue(JdkResolver.consoleHidden(cfg));
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    public void consoleHidden_trueValueMeansVisible() throws IOException {
+        Path dir = Files.createTempDirectory("jdk-test");
+        try {
+            Path cfg = dir.resolve("config.properties");
+            Files.write(cfg, "boot.console=true\n".getBytes());
+            assertFalse(JdkResolver.consoleHidden(cfg));
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    public void consoleHidden_missingKeyDefaultsHidden() throws IOException {
+        Path dir = Files.createTempDirectory("jdk-test");
+        try {
+            Path cfg = dir.resolve("config.properties");
+            Files.write(cfg, "input.enterSends=true\n".getBytes());
+            assertTrue(JdkResolver.consoleHidden(cfg));
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    public void consoleHidden_invalidValueDefaultsHidden() throws IOException {
+        Path dir = Files.createTempDirectory("jdk-test");
+        try {
+            Path cfg = dir.resolve("config.properties");
+            Files.write(cfg, "boot.console=yes\n".getBytes());
+            assertTrue(JdkResolver.consoleHidden(cfg));
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
     private static void deleteRecursively(Path p) throws IOException {
         if (!Files.exists(p)) return;
         Files.walk(p).sorted(java.util.Comparator.reverseOrder()).forEach(f -> {

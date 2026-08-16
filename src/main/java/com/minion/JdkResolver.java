@@ -116,4 +116,38 @@ public final class JdkResolver {
         list.add(Paths.get("C:\\Program Files (x86)\\Java\\jdk1.8"));
         return list;
     }
+
+    /**
+     * javaw.exe 路径：java.exe 同目录推导（JDK 标准布局，仅文件名不同）；
+     * 输入 null 或非 .exe 返回 null（无法推导）。
+     */
+    public static String javawExe(String javaExe) {
+        if (javaExe == null) return null;
+        File f = new File(javaExe);
+        if (!f.getName().toLowerCase().endsWith(".exe")) return null;
+        return new File(f.getParent(), "javaw.exe").getPath();
+    }
+
+    /**
+     * 控制台是否隐藏：读 jar 同目录 config.properties 的 boot.console 键
+     * （Boot 在 Main 前运行，不依赖 Config 类）。文件缺失 / 键缺失 / 非法值
+     * 一律按默认隐藏（true）；值 true（可见控制台）返回 false。
+     */
+    public static boolean consoleHidden(Path configFile) {
+        try {
+            if (!Files.isRegularFile(configFile)) return true;
+            java.util.Properties p = new java.util.Properties();
+            java.io.InputStream in = Files.newInputStream(configFile);
+            try {
+                p.load(in);
+            } finally {
+                in.close();
+            }
+            String v = p.getProperty("boot.console");
+            if (v == null) return true;
+            return !Boolean.parseBoolean(v.trim());
+        } catch (Exception e) {
+            return true;   // 读失败一律默认隐藏，不让启动链报错
+        }
+    }
 }

@@ -10,7 +10,8 @@
 
 jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 
-- 双击 jar（javaw、无控制台）自动开启控制台窗口，日志可见
+- 双击 jar（javaw、无控制台）默认隐藏控制台：javaw 直启无多余窗口；排障需看日志时，在 jar 同目录 `config.properties` 设 `boot.console=true` 恢复开窗
+- 终端 `java -jar` 启动：命令行窗口不隐藏（启动器只在无控制台场景才改用 javaw；mintty/Git Bash 因 `System.console()==null` 误判为无控制台，`boot.console=true` 时仍会额外开窗——真实 Windows 控制台 cmd/PowerShell 无此问题）
 - 当前 JVM 非 JDK 8 时自动切换：按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测含 JavaFX 的 JDK 8 并重启，全程无感
 - 找不到 JDK 8 但当前 JVM 能运行 → 照常启动并弹窗提示建议安装 JDK 8（可关闭，不影响使用）；当前 JVM 连 JavaFX 都没有 → 错误弹窗并退出
 - 默认软件渲染（`prism.order=sw`）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证）。想用硬件渲染：`set MINION_PRISM=d3d` 再启动
@@ -24,14 +25,14 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 |---|---|
 | `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建（work.dir 用系统文件夹选择框选，project.md 可文件选择器选取；新建/修改弹窗同样支持） |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；⚙ 设置窗「模型」页管理 |
-| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）；⚙ 设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
+| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；⚙ 设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
 
 ## 快捷操作
 
 - 发送键两种模式（基础设置「发送键」勾选即生效，默认开启）：默认 Enter 发送、Ctrl+Enter 换行；取消勾选后 Ctrl+Enter 发送、Enter 换行；Esc 关闭补全弹层 / 终止当前运行
 - `@` 引用工作空间文件：按文件名反显（↑↓/鼠标选择、滚轮滚动），Enter/Tab 插入工作区根相对路径
 - 补全确认反显为输入块：弹层选中的 /命令、@文件 与粘贴的 ≥100 字符长文本变为输入框上方不可编辑块，✕ 或空输入时 Backspace 删除；发送时块与文本按顺序组合（/命令仍须在消息开头）
-- `/` 斜杠命令与技能补全：/help /skills /skill <名> /compact /tokens；`/skill ` 后按技能名过滤；命令由客户端本地执行，结果以系统行显示在聊天区，不发给模型
+- `/` 斜杠命令与技能补全：/help /skills /skill <名> [参数] /compact /tokens；`/skill ` 后按技能名过滤，命令后尾随文字作为技能参数（以「用户参数: 」注入技能正文）；命令由客户端本地执行，结果以系统行显示在聊天区，不发给模型
 - ⚙ 设置（右上角）：左列导航（基础设置 / 模型 / 关于）；切换模型、修改参数即时生效（运行中会话下一轮生效）；基础设置页底部按钮栏「应用」（保存不关窗）与「关闭」
 - 无会话时直接发送自动新建会话；发送后输入框自动清空
 - 消息区发送消息强制置底；新内容增长时贴底自动跟随，向上翻过半屏暂停、翻回底半屏恢复

@@ -65,7 +65,12 @@ public class Boot {
     private static void relaunch(JdkResolver.Decision d, String[] args) throws Exception {
         String jarPath = new File(Boot.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getPath();
         String jarDir = new File(jarPath).getParent();
-        List<String> cmd = JdkResolver.buildCommand(d.javaExe, jarDir, jarPath, d.newConsole, args);
+        // 控制台隐藏（boot.console=false 默认）：exe 换 javaw.exe 直启，无窗口；
+        // boot.console=true 恢复既有行为（java.exe + cmd start 开窗 / 继承控制台）
+        boolean hidden = JdkResolver.consoleHidden(Paths.get(jarDir, "config.properties"));
+        String exe = hidden ? JdkResolver.javawExe(d.javaExe) : d.javaExe;
+        boolean newConsole = hidden ? false : d.newConsole;
+        List<String> cmd = JdkResolver.buildCommand(exe, jarDir, jarPath, newConsole, args);
         // 工作目录固定为 jar 目录：相对路径（config.properties/skills/workspace.json）按 jar 同目录解析
         try {
             new ProcessBuilder(cmd).directory(new File(jarDir)).start();
