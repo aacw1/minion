@@ -1,6 +1,6 @@
 # minion
 
-win7&jdk8代码开发工具，使用 java8开发，含有子 agent、工具（包含网页抓取）、上下文压缩、风险操作确认、使用技能等功能。
+win7&jdk8代码开发工具，使用 java8开发，含有子 agent、工具（包含网页抓取）、MCP 工具扩展（stdio/SSE）、上下文压缩、风险操作确认、使用技能等功能。
 
 ## 启动（GUI）
 
@@ -17,7 +17,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 - 默认软件渲染（`prism.order=sw`）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证）。想用硬件渲染：`set MINION_PRISM=d3d` 再启动
 - 环境变量 `MINION_JAVA`（java.exe 全路径）优先于一切探测，显式指定即信任
 
-首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`。
+首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`（MCP 服务器配置 `mcp.json` 在设置窗首次保存时生成）。
 
 ## 配置三件套（jar 同目录）
 
@@ -26,6 +26,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 | `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建（work.dir 用系统文件夹选择框选，project.md 可文件选择器选取；新建/修改弹窗同样支持） |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；⚙ 设置窗「模型」页管理 |
 | `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；⚙ 设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
+| `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；⚙ 设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
 
 ## 快捷操作
 
@@ -33,7 +34,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 - `@` 引用工作空间文件：按文件名反显（↑↓/鼠标选择、滚轮滚动），Enter/Tab 插入工作区根相对路径
 - 补全确认反显为输入块：弹层选中的 /命令、@文件 与粘贴的 ≥100 字符长文本变为输入框上方不可编辑块，✕ 或空输入时 Backspace 删除；发送时块与文本按顺序组合（/命令仍须在消息开头）
 - `/` 斜杠命令与技能补全：/help /skills /skill <名> [参数] /compact /tokens；`/skill ` 后按技能名过滤，命令后尾随文字作为技能参数（以「用户参数: 」紧跟 `<skill>` 技能块之后注入）；命令由客户端本地执行，结果以系统行显示在聊天区，不发给模型
-- ⚙ 设置（右上角）：左列导航（基础设置 / 模型 / 关于）；切换模型、修改参数即时生效（运行中会话下一轮生效）；基础设置页底部按钮栏「应用」（保存不关窗）与「关闭」
+- ⚙ 设置（右上角）：左列导航（基础设置 / 模型 / MCP / 关于）；切换模型、修改参数即时生效（运行中会话下一轮生效）；基础设置页底部按钮栏「应用」（保存不关窗）与「关闭」
 - 无会话时直接发送自动新建会话；发送后输入框自动清空
 - 消息区发送消息强制置底；新内容增长时贴底自动跟随，向上翻过半屏暂停、翻回底半屏恢复
 - 每轮回复结束显示 token 统计行（⏱ 耗时 · in/out/thinking 会话累计 · ctx 上下文占比）
@@ -71,6 +72,29 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 - `BrowserDebug`  network/console/page —— 网络请求、控制台日志、页面状态
 
 登录示例:对话里告知账号密码 → 模型用 BrowserEval 填表提交 → 登录态保存在 userDataDir,下次会话保留。
+
+## MCP 工具扩展（stdio / SSE）
+
+对接 MCP（Model Context Protocol）服务器，把服务器上的工具暴露给模型调用。标准 JSON-RPC 2.0 协议，兼容 Claude Code / 千问等生态的 MCP 服务器。配置在 ⚙ 设置窗「MCP」页管理（服务器列表 + 状态点 + 启用开关 + 新建/编辑/删除/重连），落盘 `mcp.json`。
+
+字段：
+
+    name=playwright            # 服务器名（工具名前缀区分来源）
+    transport=stdio            # stdio 或 sse
+    command=npx                # stdio：可执行命令（Windows 下 .cmd/.bat 自动以 cmd /c 包装）
+    args=@playwright/mcp       # 参数，每行一个
+    env=KEY=VALUE              # 环境变量，每行一个
+    url=                       # sse：服务端点（此时命令/参数区禁用）
+    headers=K:V                # sse：请求头，每行一个
+
+连接时机：启用服务器后首次新建/恢复会话时后台预连接（不阻塞界面），连接完成后该服务器的工具自动补充注册进所有会话（下一轮请求即可被模型调用）；与内置工具重名的自动跳过并在列表标注。
+
+Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org) 安装 LTS）：
+
+1. ⚙ 设置 → MCP → 新建：名称 `playwright`、传输 `stdio`、命令 `npx`、参数 `@playwright/mcp`，保存后勾选「启用」
+2. 新建会话，对话里让模型「打开 https://www.baidu.com 并返回标题」→ 模型会调用 playwright 的浏览器工具完成操作
+
+与浏览器（CDP）工具的关系：MCP 是独立通道，二者可共存。`config.properties` 未配置 `browser.path` 时不加载 CDP 工具（避免未装 Chrome 环境报错），MCP 不受影响。
 
 ## 模型供应商配置（deepseek / qwen）
 

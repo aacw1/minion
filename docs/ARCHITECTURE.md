@@ -8,12 +8,13 @@
 ```
 com.minion
 ├── Boot                    自举启动器（shade 打包入口）：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环
-├── Main                    入口：装配配置/技能/浏览器/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
+├── Main                    入口：装配配置/技能/浏览器/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
 ├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、会话管理
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
-    ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、PathsGuard
+    ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、mcp/（McpProxyTool）、PathsGuard
+    ├── mcp/                MCP 客户端核心：McpManager（状态机/惰性连接/路由）、StdioMcpClient、SseMcpClient、McpStore（mcp.json）、McpServer、JsonRpc
     ├── skills/             SkillManager、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、TokenCounter
     ├── storage/            SessionStore
@@ -25,7 +26,7 @@ com.minion
 ### com.minion（根）
 
 - `Boot`：shade 打包入口（自举启动器：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环），直启或子进程调用 `Main` 进入正常装配
-- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ ChromeLauncher+CdpClient+BrowserSession（浏览器）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
+- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ McpManager（MCP，惰性连接）/ ChromeLauncher+CdpClient+BrowserSession（浏览器，`browser.path` 未配置则不创建，CDP 工具不加载）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。退出钩子统一收口：manager.shutdown（会话+LLM+MCP 子进程）→ chrome.stop。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
 
 ### gui/
 
@@ -42,7 +43,7 @@ com.minion
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 ≥100 字符变块阈值、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
-| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点●绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
@@ -83,7 +84,17 @@ com.minion
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件
 - `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
+- `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `example/ExampleTool`：新工具模板示例（未注册）
+
+### core/mcp/（MCP 客户端核心，JDK8 自研，无官方 SDK 依赖）
+
+- `McpManager`：状态机（DISCONNECTED/CONNECTING/CONNECTED/FAILED）+ 惰性连接（首次 ensureConnectedAsync 才 spawn 进程，幂等去重）+ 全局工具表 + call 路由（未连接先同步重连 ≤10s）+ `save()`（配置持久化）+ shutdown；`addListener` 连接线程回调（GUI 层 Platform.runLater 刷新）
+- `StdioMcpClient`：spawn 子进程 + stdin/stdout 按行 JSON-RPC（`.cmd/.bat` 自动 `cmd /c` 包装）；按 id 关联 pending 队列同步等待响应；调用超时 120s
+- `SseMcpClient`：okhttp-sse EventSource（GET /sse 流）+ POST 响应体作为 JSON-RPC 响应
+- `McpStore`：jarDir/mcp.json 单文件多服务器（原子写，损坏备份 .bak）
+- `McpServer`：配置字段（name/transport/command/args/env/url/headers/enabled，gson 落盘）+ transient 运行时状态（state/failReason/tools/skippedTools）
+- `McpToolInfo` / `JsonRpc`：工具元数据 / JSON-RPC 2.0 消息编解码（request/response/responseError/notification）
 
 ### core/skills/ · core/context/ · core/storage/ · core/config/
 
@@ -106,6 +117,7 @@ com.minion
 
 - **每会话一个 AgentLoop + 独占工作线程**（真并行，切换工作空间/会话不打断后台运行）
 - **每工作空间一套上下文**（WorkspaceCtx：Workspace/SessionStore/ConfirmGate 空间级共享），恢复/新建会话时经 `SessionManager.newRegistry` 注册工具——**每会话独立 ToolRegistry**（TaskTool 绑定本会话 loop，防 task 事件串流）
+- **MCP 接线**：newRegistry 对每个启用服务器触发 `ensureConnectedAsync`（首次建会话即后台预连接，不阻塞界面）；连接完成（McpManager.Listener）补注册该服务器工具进所有存活会话的 registry（AgentLoop 每轮动态 `registry.schemas()`，下一轮即可被模型调用）；与内置工具重名跳过并计数 skippedTools；新建/恢复会话另有兜底补注册（覆盖连接完成于会话注册前毫秒级竞态）
 - **事件缓冲**：工作线程只写 EventList，FX 线程读取渲染（UI 不被工具执行阻塞）
 - **确认交互**：GuiConfirmUi 经 Platform.runLater 投递 ConfirmSheet，工具线程 take() 无限等点击（不阻塞 FX 线程；点击结果即决策，无超时竞态）；无 GUI 环境防御性 REJECT
 - 会话落盘：`loop.setSessionStore(store)` 每轮/退出兜底落盘；关闭窗口 `shutdown()` 终止全部运行中会话（有运行中会话先弹确认）
