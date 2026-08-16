@@ -44,6 +44,20 @@ public class EventList {
         }
     }
 
+    /**
+     * 增量重放 + 注册直通（原子）：锁内快照 [from, size) 并设 active/listener。
+     * 拆两步有竞态——先取尾部快照后注册，间隙 add 的事件会丢（进缓冲但 listener 未注册）；
+     * 先注册后取快照，间隙 add 的事件重复（既入缓冲又直通）。锁内一步完成两者，add 同锁互斥。
+     * 返回 [from, size) 的副本，调用方锁外渲染（新增直通事件经 runLater 入队，顺序由 FX 队列 FIFO 保证）。
+     */
+    public synchronized List<Ev> rebind(Listener listener, int from) {
+        this.active = true;
+        this.listener = listener;
+        int n = events.size();
+        if (from >= n) return new ArrayList<Ev>();
+        return new ArrayList<Ev>(events.subList(Math.max(0, from), n));
+    }
+
     public synchronized void add(Ev e) {
         events.add(e);
         if (active && listener != null) listener.onEvent(e);

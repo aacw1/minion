@@ -49,6 +49,16 @@ public class ChatView extends VBox {
     /** MainWindow 注入：头部段被截断时回调，参数 = 被删段高度合计（像素，补偿 vvalue 用） */
     public void setTrimListener(DoubleConsumer listener) { this.trimListener = listener; }
 
+    /** 增量重放游标：已渲染到缓冲第几个事件（仅 FX 线程读写；直通渲染完成才推进，下次 bind 不重复） */
+    private int replayed = 0;
+
+    /** 上次展示结束时的滚动位置（MainWindow 切走时记、切回恢复；缓存视图内容连续，vvalue 语义保留） */
+    private double savedVvalue = 1.0;
+
+    public void rememberVvalue(double v) { this.savedVvalue = v; }
+
+    public double savedVvalue() { return savedVvalue; }
+
     /** 流身份：THINK=思考流、REPLY=回复流（流式就地更新末段正文），NONE=静态行（永不参与就地更新） */
     private enum StreamKind { THINK, REPLY, NONE }
 
@@ -99,14 +109,27 @@ public class ChatView extends VBox {
     /** 本视图绑定的会话句柄（MainWindow 判断「删除的是当前展示会话」用） */
     public SessionHandle handle() { return handle; }
 
-    /** 绑定/解绑事件流：active=true 先清空，再经 EventList 同步重放存量 + 后续直通 */
+    /** 直通监听器：渲染完成才推进游标（下次 bind 不重复渲染直通过的事件） */
+    private final EventList.Listener fxListener = new EventList.Listener() {
+        @Override public void onEvent(Ev e) {
+            Platform.runLater(() -> { replayed++; onEventFx(e); });
+        }
+    };
+
+    /**
+     * 绑定/解绑事件流：active=true 增量重放自上次游标起的新事件 + 后续直通（视图缓存场景不 clear，
+     * 流式合并状态与 segs 连续，切走再切回输出无缝）；active=false 解绑直通，事件只入缓冲。
+     * 首次绑定游标=0 全量重放（语义与旧 clear+重放一致）。
+     */
     public void bind(boolean active) {
-        if (active) clear(); // FX 线程调用：先清再重放，避免存量事件重复渲染
-        events.setActive(active, new EventList.Listener() {
-            @Override public void onEvent(Ev e) {
-                Platform.runLater(() -> onEventFx(e));
-            }
-        });
+        if (active) {
+            // rebind 锁内原子：快照 [replayed, size) + 注册直通；间隙 add 既不丢也不重复
+            List<Ev> tail = events.rebind(fxListener, replayed);
+            replayed = events.size(); // rebind 后已渲染位置；此后的直通事件在渲染完成时 replayed++
+            for (Ev e : tail) onEventFx(e); // FX 线程同步渲染，先于队列中直通事件执行
+        } else {
+            events.setActive(false, null);
+        }
     }
 
     public void clear() {
@@ -114,6 +137,7 @@ public class ChatView extends VBox {
         segs.clear();
         stream.onRoundBoundary();
         empty = true;
+        replayed = 0; // 清空后游标归零：下次 bind 从 0 全量重放（clear 仅删除会话回收路径调用）
         getChildren().add(hint());
     }
 

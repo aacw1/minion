@@ -42,6 +42,8 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（页签栏 + 消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
@@ -54,6 +56,10 @@ public class MainWindow {
     private ChatView chatView;
     private ScrollPane chatScroll;
     private final AutoScrollPolicy policy = new AutoScrollPolicy();
+    /** 会话视图缓存（key = 会话 id）：切页签不重建消息区，只增量重放新事件；删除会话/切工作空间清理 */
+    private final Map<String, ChatView> viewCache = new HashMap<String, ChatView>();
+    /** 无活动会话时的空白占位（clearChatPane 后 setContent 用；视图内容保留在缓存中不销毁） */
+    private final Region placeholder = new Region();
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
     private HBox tabsBar; // 右侧顶部页签栏（无会话时整行隐藏）
@@ -115,6 +121,7 @@ public class MainWindow {
         sessionList = new SessionListView(manager,
                 h -> {
                     removeTabById(h.id);
+                    viewCache.remove(h.id); // 删除会话：缓存视图一并释放
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh();
                 });
@@ -152,7 +159,7 @@ public class MainWindow {
         chatScroll.setFitToWidth(true);
         chatScroll.setFitToHeight(true); // 消息区铺满正文窗口：内容少时 ChatView 拉伸到视口高（背景 #121314 铺满）
         chatScroll.setPrefHeight(200); // 固定 pref：否则 prefHeight 随消息内容增长，挤压右侧 VBox 把页签行压扁（探针验证）
-        chatScroll.setContent(new Region()); // 激活会话后换 ChatView
+        chatScroll.setContent(placeholder); // 激活会话后换 ChatView
         VBox.setVgrow(chatScroll, Priority.ALWAYS);
         setupAutoScroll();
         WheelScrollAccelerator.attach(chatScroll); // 滚轮加速：每格固定像素滚动（替换 JavaFX 8 默认慢速比例滚动）
@@ -206,7 +213,20 @@ public class MainWindow {
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
                     selectTab(h);
+                    if (chatView != null) chatView.rememberVvalue(chatScroll.getVvalue()); // 切走前记滚动位置
+                    ChatView cached = viewCache.get(h.id);
+                    if (cached != null) {
+                        // 缓存命中：不重建消息区，只增量重放上次绑定后的新事件（毫秒级），恢复滚动位置
+                        chatView = cached;
+                        chatView.bind(true);
+                        chatScroll.setContent(chatView);
+                        chatScroll.setVvalue(chatView.savedVvalue());
+                        if (inputView != null) inputView.bindSession(h);
+                        sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
+                        return;
+                    }
                     chatView = ChatView.forSession(h);
+                    viewCache.put(h.id, chatView);
                     chatView.setScrollBottomRequest(() -> {
                         policy.forceFollow();
                         Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
@@ -235,6 +255,7 @@ public class MainWindow {
             @Override public void onWorkspaceChanged() {
                 Platform.runLater(() -> {
                     clearChatPane();
+                    viewCache.clear(); // 工作空间切换：不跨空间残留缓存视图
                     wsList.refresh();
                     sessionList.refresh();
                     rebuildTabs();
@@ -298,13 +319,12 @@ public class MainWindow {
         }
     }
 
-    /** 清空右侧面板：解绑事件流、回占位提示、解绑输入区（删除会话/切换工作空间后调用） */
+    /** 清空右侧面板：解绑事件流、回空白占位、解绑输入区（删除会话/切换工作空间后调用）。
+     *  视图内容保留在缓存中（下次激活增量重放），不 clear 销毁——销毁由 viewCache 清理（删除/切空间）连带 GC。 */
     private void clearChatPane() {
-        if (chatView != null) {
-            chatView.bind(false);  // 分离监听器（EventList 缓冲保留，会话仍在时下次 bind(true) 重放）
-            chatView.clear();      // 回「输入消息开始新的会话」占位
-        }
+        if (chatView != null) chatView.bind(false); // 分离监听器（EventList 缓冲保留，视图缓存保留）
         chatView = null;
+        chatScroll.setContent(placeholder); // 无活动会话：空白占位
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
     }
 
@@ -446,6 +466,7 @@ public class MainWindow {
                 if (bt == ButtonType.OK) {
                     manager.deleteSession(h);
                     tabs.getTabs().remove(t);
+                    viewCache.remove(h.id); // 删除会话：缓存视图一并释放
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh(); // 页签关闭路径同样联动刷新列表
                 }
