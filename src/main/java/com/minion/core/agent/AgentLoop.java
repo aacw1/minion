@@ -34,6 +34,8 @@ public class AgentLoop {
 
     private volatile LlmClient llm;
     private final ToolRegistry registry;
+    /** 工具注册表（供 MCP 连接完成后的补注册：SessionManager 经会话句柄访问） */
+    public ToolRegistry registry() { return registry; }
     private final SystemPromptBuilder promptBuilder;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
