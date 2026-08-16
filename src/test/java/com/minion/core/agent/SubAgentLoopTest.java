@@ -243,4 +243,43 @@ public class SubAgentLoopTest {
         assertTrue(ui.toolResults.contains("AskUserQuestion"));
         assertTrue(ui.asksStarted.isEmpty());
     }
+
+    /** 子 agent 工具集剔除 Skill（防正文注入主会话）；违规调用返回错误 */
+    @Test
+    public void subAgent_excludesSkillTool() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate confirm = new ConfirmGate(config, confirmUi);
+        RecordingUi ui = new RecordingUi();
+        // 构造 AgentLoop 让 registry 真实含 Skill（生产中即此状态）
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+
+        com.minion.core.llm.ToolCall tc = new com.minion.core.llm.ToolCall();
+        tc.id = "s1";
+        tc.name = "Skill";
+        tc.arguments = "{\"name\":\"brainstorming\"}";
+        llm.addTurnWithTools(java.util.Collections.singletonList(tc), null);
+        llm.addTurn("子任务完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.run();
+        // schema 已剔除（模型不可见）
+        for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
+            String name = s.getAsJsonObject("function").get("name").getAsString();
+            assertFalse("子 agent 不得暴露 Skill", "Skill".equals(name));
+        }
+        // 防御：即使模型违规调用，也返回错误、不注入主会话
+        assertTrue(ui.toolResults.contains("Skill"));
+        for (com.minion.core.llm.Message m : loop.messages()) {
+            assertFalse("技能正文不得注入主会话", m.pinned);
+        }
+    }
 }
