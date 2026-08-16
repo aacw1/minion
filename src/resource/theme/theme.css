@@ -229,20 +229,20 @@
 .msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
 
 /* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
-.log-input { -fx-text-fill: #4285F4; } /* 输入 柔和蓝 */
+.log-input { -fx-text-fill: #75aaff; } /* 输入 柔和蓝 */
 .log-think { -fx-text-fill: #8c8c8c; } /* 思考 灰白 */
 .log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
 .log-reply { -fx-text-fill: #bfbfbf; } /* 回复 白 */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
-.log-sys { -fx-text-fill: #a8b0bb; }   /* 系统/占位 灰 */
+.log-sys { -fx-text-fill: #16C60C; }   /* 系统/占位 灰 */
 
 /* ===== 消息区控制台样式：彩色加粗标签 + 浅色调正文 =====
    标签：.log-tag 叠加 log-* 场景色类（深色）；正文 .log-body 默认白 + log-body-* 浅色调类
    （与标签同色系提亮，长文本可读；系统行 log-body-error/warn/sys 无定义 → 自动回退白） */
 .log-tag { -fx-font-weight: bold; }
 .log-body { -fx-text-fill: #f0f2f6; }
-.log-body-input { -fx-text-fill: #7db4ff; } /* 输入正文 浅蓝 */
+.log-body-input { -fx-text-fill: #8cbcff; } /* 输入正文 浅蓝 */
 .log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
 .log-body-reply { -fx-text-fill: #c9c9c9; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
 .log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
