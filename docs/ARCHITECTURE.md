@@ -7,6 +7,7 @@
 
 ```
 com.minion
+├── Boot                    自举启动器（shade 打包入口）：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环
 ├── Main                    入口：装配配置/技能/浏览器/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
 ├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、会话管理
 └── core/
@@ -23,6 +24,7 @@ com.minion
 
 ### com.minion（根）
 
+- `Boot`：shade 打包入口（自举启动器：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环），直启或子进程调用 `Main` 进入正常装配
 - `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ ChromeLauncher+CdpClient+BrowserSession（浏览器）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
 
 ### gui/

@@ -83,6 +83,8 @@ public final class JdkResolver {
     /**
      * RELAUNCH 派生命令构造：newConsole=true 走 cmd /c start 开新控制台（cmd 首个引号参数为窗口标题）；
      * false 直接派生（继承当前控制台）。--relaunched 标记防循环，原 args 透传。
+     * 注意：newConsole=true 的 cmd start 形态下，无空格参数若含 cmd 元字符（& | %）会被 cmd 解析
+     * （直接派生形态无此问题）；当前 Main 不解析 CLI 参数，纯潜伏风险。
      */
     public static List<String> buildCommand(String javaExe, String jarDir, String jarPath,
                                             boolean newConsole, String[] originalArgs) {

@@ -1,6 +1,7 @@
 package com.minion;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -50,8 +51,12 @@ public class Boot {
         }
     }
 
-    /** 软件渲染默认（bat 的 -Dprism.order=sw 迁移）；MINION_PRISM 环境变量覆盖。须在 JavaFX 初始化前调用 */
+    /**
+     * 软件渲染默认（bat 的 -Dprism.order=sw 迁移）；优先级：显式 -Dprism.order > MINION_PRISM > sw 默认。
+     * 须在 JavaFX 初始化前调用。
+     */
     private static void setPrismOrder() {
+        if (System.getProperty("prism.order") != null) return;   // 尊重用户显式 -Dprism.order
         String p = System.getenv("MINION_PRISM");
         System.setProperty("prism.order", (p == null || p.isEmpty()) ? "sw" : p);
     }
@@ -62,7 +67,12 @@ public class Boot {
         String jarDir = new File(jarPath).getParent();
         List<String> cmd = JdkResolver.buildCommand(d.javaExe, jarDir, jarPath, d.newConsole, args);
         // 工作目录固定为 jar 目录：相对路径（config.properties/skills/workspace.json）按 jar 同目录解析
-        new ProcessBuilder(cmd).directory(new File(jarDir)).start();
+        try {
+            new ProcessBuilder(cmd).directory(new File(jarDir)).start();
+        } catch (IOException e) {
+            // javaw 双击场景异常上抛会静默无窗，统一走错误框兜底
+            errorExit();
+        }
         System.exit(0);
     }
 

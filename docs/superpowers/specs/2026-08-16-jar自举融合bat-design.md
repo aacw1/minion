@@ -148,3 +148,14 @@ JAVA_HOME / MINION_JAVA 指向 JDK 8 安装目录。」
 - 删除：minion.bat
 - 文档：README / CLAUDE.md / ARCHITECTURE.md 同步
 - 无新依赖（JDK8 兼容性不变；javax.swing 为 JDK8 自带）
+
+## 实施偏差
+
+- `buildCommand` 实际为 5 参（javaExe, jarDir, jarPath, newConsole, originalArgs）——jarDir 供
+  cmd start 的 /D 标志，设计 §3 的 4 参签名过时
+- 实施中修正两处简报/计划笔误：buildCommand 单测 size 断言 12→11（cmd start 形态恰 11 元素）；
+  JdkResolverTest 需 `import com.minion.JdkResolver.Plan`（嵌套枚举简单名不在同包其他类作用域）
+- mintty（Git Bash）下 `System.console()==null`：终端 java -jar 也会被判定「无控制台」而开新
+  控制台窗口（真实 Windows 控制台 cmd/PowerShell 行为正确）
+- 最终修复：relaunch 失败统一走 errorExit 兜底；prism.order 尊重显式 -D（优先级 显式-D >
+  MINION_PRISM > sw 默认）
