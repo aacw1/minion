@@ -52,13 +52,14 @@ public class ContextManager {
         return estimate(messages) >= maxContextTokens * threshold;
     }
 
-    /** 按完整回合链切块。summary 消息跳过（已压缩过，不再参与）；system 消息跳过（系统提示词
-     *  不并入链、不进入压缩批次，由 compress 原样保留）。 */
+    /** 按完整回合链切块。summary 消息跳过（已压缩过，不再参与）；pinned 消息跳过（技能
+     *  正文常驻，压缩豁免，由 compress 原样保留）；system 消息跳过（系统提示词不并入链、
+     *  不进入压缩批次，由 compress 原样保留）。 */
     public static List<List<Message>> chunkChains(List<Message> messages) {
         List<List<Message>> chains = new ArrayList<List<Message>>();
         List<Message> cur = new ArrayList<Message>();
         for (Message m : messages) {
-            if (m.summary || m.role == Message.Role.SYSTEM) {
+            if (m.summary || m.pinned || m.role == Message.Role.SYSTEM) {
                 flush(chains, cur);
                 continue;
             }
@@ -124,6 +125,11 @@ public class ContextManager {
             return messages;
         }
 
+        // 技能加载消息（pinned）常驻：不入链不参与摘要，原样保留在摘要后
+        List<Message> pinnedMsgs = new ArrayList<Message>();
+        for (Message m : messages) {
+            if (m.pinned) pinnedMsgs.add(m);
+        }
         List<Message> result = new ArrayList<Message>();
         for (Message m : messages) {
             if (m.role == Message.Role.SYSTEM) result.add(m); // system 原样保留，置于最前
@@ -131,6 +137,7 @@ public class ContextManager {
         Message summaryMsg = Message.user("【历史对话摘要】\n" + summary.trim());
         summaryMsg.summary = true;
         result.add(summaryMsg);
+        result.addAll(pinnedMsgs);
         for (int i = take; i < chains.size(); i++) {
             result.addAll(chains.get(i)); // 保留未被压缩的链；旧 summary 由新摘要取代
         }

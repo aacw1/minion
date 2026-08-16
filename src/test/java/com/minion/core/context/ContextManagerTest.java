@@ -176,4 +176,45 @@ public class ContextManagerTest {
         out = cm.compress(sampleHistory());
         assertTrue(out.get(0).content.contains("【摘要】B")); // 换客户端后走新客户端
     }
+
+    /** 压缩豁免：pinned 技能消息不入链（不参与切块/摘要），普通历史照常成链 */
+    @Test
+    public void chunkChains_skipsPinnedSkillMessages() {
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.user("任务1"));
+        msgs.add(Message.assistant("完成"));
+        msgs.add(Message.skill("<skill name=\"review\">\n审查指令全文\n</skill>"));
+        msgs.add(Message.user("任务2"));
+        msgs.add(Message.assistant("回答"));
+        List<List<Message>> chains = ContextManager.chunkChains(msgs);
+        // pinned 不入链：链1 = [任务1, 完成]，链2 = [任务2, 回答]
+        assertEquals(2, chains.size());
+        assertEquals(2, chains.get(0).size());
+        assertEquals(2, chains.get(1).size());
+    }
+
+    /** 压缩后 pinned 技能消息原样保留（摘要后、保留链前），且不进入摘要批次 */
+    @Test
+    public void compress_keepsPinnedSkillMessages() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(100, 0.8, 2, llm, 0);
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.user("任务1"));
+        msgs.add(Message.assistant("完成"));
+        msgs.add(Message.skill("<skill name=\"review\">\n审查指令全文\n</skill>"));
+        msgs.add(Message.user("任务2"));
+        msgs.add(Message.assistant("回答"));
+        List<Message> result = cm.compress(msgs);
+        // summary + pinned + 保留链（链2 = 2 条）
+        assertEquals(4, result.size());
+        assertTrue(result.get(0).summary);
+        assertTrue(result.get(1).pinned);
+        assertTrue(result.get(1).content.contains("审查指令全文"));
+        assertEquals("任务2", result.get(2).content);
+        assertEquals("回答", result.get(3).content);
+        // 摘要批次不含技能正文
+        String batch = llm.lastRequestMessages.get(1).content;
+        assertFalse(batch.contains("审查指令全文"));
+    }
 }
