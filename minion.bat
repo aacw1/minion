@@ -38,13 +38,9 @@ echo   - Set MINION_JAVA to the full path of its java.exe (e.g. set MINION_JAVA=
 exit /b 1
 
 :run
-rem 默认软件渲染（-Dprism.order=sw）：JDK 8 JavaFX 的 D3D 管线在 VM/低端显卡上
-rem 切页签等节点突发后设备状态损坏，渲染线程每帧抛 D3DTexture NPE（界面卡死+刷屏）。
-rem 想用硬件渲染恢复原状：set MINION_PRISM=d3d
-if defined MINION_PRISM (
-    set "PRISM_ARGS=-Dprism.order=%MINION_PRISM%"
-) else (
-    set "PRISM_ARGS=-Dprism.order=sw"
-)
+rem Software rendering by default: JDK8 JavaFX D3D pipeline crashes on VMs/weak GPUs
+rem (NPE storm in com.sun.prism.d3d.* after tab-switch node bursts, UI freezes).
+rem To use hardware rendering instead: set MINION_PRISM=d3d
+if defined MINION_PRISM (set "PRISM_ARGS=-Dprism.order=%MINION_PRISM%") else (set "PRISM_ARGS=-Dprism.order=sw")
 "%MINION_JAVA%" %PRISM_ARGS% -jar "%~dp0target\minion-0.1.0.jar" %*
 endlocal
