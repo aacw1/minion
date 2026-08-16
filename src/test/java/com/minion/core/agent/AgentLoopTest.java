@@ -470,15 +470,36 @@ public class AgentLoopTest {
         assertTrue(assistant.toolCalls == null || assistant.toolCalls.isEmpty());
     }
 
-    /** S3：loadSkill 按 name 判重，重复加载不重复注入系统提示词 */
+    /** 技能加载入队（/skill 手动加载路径）：offerSkillLoad → 下轮请求生效（<skill> 消息 pinned 入历史） */
     @Test
-    public void loadSkill_deduplicatesByName() {
+    public void offerSkillLoad_injectsSkillMessageNextTurn() {
         AgentLoop loop = newLoop();
-        loop.loadSkill(new Skill("review", "审查", "执行审查", "review.skill.md"));
-        loop.loadSkill(new Skill("review", "另一个描述", "执行审查 2", "review2.skill.md"));
-        assertEquals(1, loop.loadedSkills().size());
-        loop.loadSkill(new Skill("deploy", "部署", "发布", "deploy.skill.md"));
-        assertEquals(2, loop.loadedSkills().size());
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"));
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        // 0:user(技能) 1:user(输入) 2:assistant
+        List<Message> msgs = loop.messages();
+        assertEquals(3, msgs.size());
+        assertEquals(Message.Role.USER, msgs.get(0).role);
+        assertTrue(msgs.get(0).pinned);
+        assertTrue(msgs.get(0).content.contains("<skill name=\"brainstorming\">"));
+        assertTrue(msgs.get(0).content.contains("正文：先澄清需求"));
+        // 第一轮请求即携带技能正文（runUserTurn 开头 drain；请求 = system + 全部历史）
+        assertEquals(3, llm.requests.get(0).messages.size());
+        assertTrue(llm.requests.get(0).messages.get(1).content.contains("正文：先澄清需求"));
+    }
+
+    /** 同一技能重复入队：同轮仅注入一次 */
+    @Test
+    public void offerSkillLoad_deduplicatesPendingQueue() {
+        AgentLoop loop = newLoop();
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"));
+        loop.offerSkillLoad(new Skill("review", "另一个描述", "审查正文 2", "SKILL.md"));
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        long pinnedCount = loop.messages().stream()
+                .filter(m -> m.pinned && m.content.contains("<skill name=\"review\">")).count();
+        assertEquals(1, pinnedCount);
     }
 
     /** S5：restoreSession 恢复 usage 与 todos（T21 M6） */

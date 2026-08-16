@@ -81,16 +81,14 @@ public class CommandDispatcherTest {
 
     @Test public void skill_loadsIntoLoop() {
         String r = dispatcher.dispatch(h, "/skill brainstorming");
-        assertEquals("已加载技能: brainstorming", r);
-        assertEquals(1, h.loop.loadedSkills().size());
-        assertEquals("brainstorming", h.loop.loadedSkills().get(0).name);
-        // 系统提示词包含已加载技能指令（下一轮请求生效）
-        assertTrue(h.loop.buildSystemPrompt().contains("指令正文"));
+        assertTrue(r.contains("已加载技能: brainstorming"));
+        // 入队待注入：系统提示词不含正文（正文以 user 消息注入，下轮请求生效）
+        assertFalse(h.loop.buildSystemPrompt().contains("指令正文"));
     }
 
     @Test public void skill_caseInsensitive() {
         String r = dispatcher.dispatch(h, "/SKILL BRAINSTORMING");
-        assertEquals("已加载技能: brainstorming", r);
+        assertTrue(r.contains("已加载技能: brainstorming"));
     }
 
     @Test public void skill_missingArgShowsUsage() {

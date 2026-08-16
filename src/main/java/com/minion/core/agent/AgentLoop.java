@@ -46,7 +46,9 @@ public class AgentLoop {
 
     private volatile boolean interrupted = false;
     private List<Skill> allSkills = new ArrayList<Skill>();
-    private List<Skill> loadedSkills = new ArrayList<Skill>();
+    /** 待注入的技能加载队列（FX 线程 /skill 与工具线程 Skill 工具入队；主循环检查点 drain 后注入历史）。
+     *  队列级去重：同名已在队列 → 跳过（同轮防重复插入）；历史级幂等由 Skill 工具报告、模型判断 */
+    private final List<Skill> pendingSkillLoads = new ArrayList<Skill>();
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
@@ -105,14 +107,28 @@ public class AgentLoop {
     public UsageTracker usage() { return session.usage; }
     public List<Skill> allSkills() { return allSkills; }
     public void setAllSkills(List<Skill> skills) { this.allSkills = skills; }
-    public List<Skill> loadedSkills() { return loadedSkills; }
-    /** 按 name 判重：重复加载同一技能会重复注入系统提示词（token 浪费 + 指令歧义）。
-     *  synchronized：FX 线程 /skill 加载与会话线程读 loadedSkills 并发（ArrayList 非线程安全） */
-    public synchronized void loadSkill(Skill skill) {
-        for (Skill loaded : loadedSkills) {
-            if (loaded.name.equals(skill.name)) return;
+
+    /** 技能加载入队（手动 /skill 与 Skill 工具共用）；同名已在队列 → 跳过（同轮防重复插入） */
+    public synchronized void offerSkillLoad(Skill skill) {
+        for (Skill s : pendingSkillLoads) {
+            if (s.name.equals(skill.name)) return;
         }
-        loadedSkills.add(skill);
+        pendingSkillLoads.add(skill);
+    }
+
+    /** 检查点注入：待加载技能以 <skill> 用户消息（pinned）入历史——同轮下一请求生效；
+     *  与补充注入同一语义（中断轮不注入，防半轮 tool_call 未配对时插入 user 消息破坏契约） */
+    private void drainPendingSkillLoads() {
+        List<Skill> queue;
+        synchronized (this) {
+            if (pendingSkillLoads.isEmpty()) return;
+            queue = new ArrayList<Skill>(pendingSkillLoads);
+            pendingSkillLoads.clear();
+        }
+        for (Skill s : queue) {
+            session.messages.add(Message.skill(
+                    "<skill name=\"" + s.name + "\">\n" + s.instructions + "\n</skill>"));
+        }
     }
 
     /** 启用会话自动落盘（Task 18） */
@@ -290,6 +306,7 @@ public class AgentLoop {
         long start = System.currentTimeMillis(); // 统计行：轮次耗时
         // 上次回合遗留的挂起补充先入历史（模型提问自然收尾/中断遗留），与本次输入拼接发送
         drainSupplements();
+        drainPendingSkillLoads();
         ui.onUserMessage(ImagePart.displayText(images, input));
         session.messages.add(Message.userWithImages(input, images));
         int rounds = 0;
@@ -427,7 +444,10 @@ public class AgentLoop {
                 // 运行中补充注入检查点：工具结果全部入历史后、下一轮请求前；
                 // AskUserQuestion 挂起时补充等回答的 TOOL 消息入历史后同请求发出；
                 // interrupted 不注入——半轮 tool_call 未配对时插入 user 消息会破坏契约（400）
-                if (!interrupted) drainSupplements();
+                if (!interrupted) {
+                    drainSupplements();
+                    drainPendingSkillLoads();
+                }
                 // 卡住止损：连续失败达阈值时注入系统提醒（user 消息而非 system——
                 // OpenAI 兼容 API 只接受首条 system，插在对话中间会 400），
                 // 模型下轮应输出提问文本而非再调工具；注入后计数重置，roundLimit 为最外层兜底

@@ -48,8 +48,8 @@ public class CommandDispatcher {
         if (parts.length < 2) return "用法: /skill <技能名>（/skills 查看列表）";
         for (Skill s : skills) {
             if (s.name.equalsIgnoreCase(parts[1])) {
-                h.loop.loadSkill(s);
-                return "已加载技能: " + s.name;
+                h.loop.offerSkillLoad(s);
+                return "已加载技能: " + s.name + "（正文将注入，下一轮请求生效）";
             }
         }
         return "未找到技能: " + parts[1] + "（/skills 查看列表）";
