@@ -3,6 +3,8 @@ package com.minion;
 import com.minion.core.config.Config;
 import com.minion.core.config.ModelManager;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.core.mcp.McpManager;
+import com.minion.core.mcp.McpStore;
 import com.minion.core.skills.Skill;
 import com.minion.core.skills.SkillManager;
 import com.minion.core.tools.browser.BrowserSession;
@@ -30,22 +32,32 @@ public class Main {
         SkillManager skillManager = new SkillManager(skillsDir);
         List<Skill> skills = skillManager.scan();
 
-        // 浏览器工具（懒启动 Chrome；退出钩子关停自启进程）
-        ChromeLauncher chrome = new ChromeLauncher(config.browserPath(), config.browserPort(),
-                Paths.get(config.browserUserDataDir()), config.browserHeadless(),
-                config.browserTimeoutMs());
-        BrowserSession browserSession = new BrowserSession(chrome, new CdpClient(10000,
-                config.browserTimeoutMs()));
+        // MCP 服务器管理（mcp.json；惰性连接，退出钩子关停子进程）
+        McpManager mcpManager = new McpManager(McpStore.load(jarDir));
+
+        // 浏览器工具（懒启动 Chrome；未配置 browser.path 则不加载 CDP 工具）
+        BrowserSession browserSession = null;
+        ChromeLauncher chrome = null;
+        String browserPath = config.browserPath();
+        if (browserPath != null && !browserPath.trim().isEmpty()) {
+            chrome = new ChromeLauncher(browserPath, config.browserPort(),
+                    Paths.get(config.browserUserDataDir()), config.browserHeadless(),
+                    config.browserTimeoutMs());
+            browserSession = new BrowserSession(chrome, new CdpClient(10000,
+                    config.browserTimeoutMs()));
+        }
+        final ChromeLauncher chromeToStop = chrome;
 
         ConfirmUi confirmUi = new GuiConfirmUi();
         SessionManager manager = new SessionManager(confirmUi, config, jarDir,
-                workspaces, models, skills, browserSession);
+                workspaces, models, skills, browserSession, mcpManager);
 
-        // 退出钩子统一收口：先关会话（AgentLoop + LLM okhttp 资源 + 线程池），再停自启 Chrome
+        // 退出钩子统一收口：先关会话（AgentLoop + LLM okhttp 资源 + 线程池 + MCP 子进程），再停自启 Chrome
         // （manager.shutdown 幂等——关窗已 shutdown 时此处空转）
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             manager.shutdown();
-            chrome.stop();
+            mcpManager.shutdown();
+            if (chromeToStop != null) chromeToStop.stop();
         }));
 
         MinionApp.start(config, workspaces, models, manager);

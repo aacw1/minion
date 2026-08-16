@@ -14,6 +14,10 @@ import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.DeepSeekClient;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
+import com.minion.core.mcp.McpManager;
+import com.minion.core.mcp.McpServer;
+import com.minion.core.mcp.McpToolInfo;
+import com.minion.core.tools.mcp.McpProxyTool;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.BashTool;
@@ -69,7 +73,8 @@ public class SessionManager {
     private final WorkspaceManager workspaces;
     private final ModelManager models;
     private final List<Skill> allSkills;
-    private final BrowserSession browserSession; // 可为 null（测试）
+    private final BrowserSession browserSession; // 可为 null（测试/未配置浏览器路径）
+    private final McpManager mcp; // 可为 null（测试）；MCP 服务器管理：惰性连接 + 工具补注册
     private final CommandDispatcher dispatcher; // 斜杠命令本地分发（GUI 输入路径）
     private final List<Listener> listeners = new ArrayList<Listener>();
 
@@ -99,7 +104,8 @@ public class SessionManager {
 
     public SessionManager(ConfirmUi confirmUi, Config config, Path jarDir,
                           WorkspaceManager workspaces, ModelManager models,
-                          List<Skill> allSkills, BrowserSession browserSession) {
+                          List<Skill> allSkills, BrowserSession browserSession,
+                          McpManager mcp) {
         this.confirmUi = confirmUi;
         this.config = config;
         this.jarDir = jarDir;
@@ -107,7 +113,16 @@ public class SessionManager {
         this.models = models;
         this.allSkills = allSkills;
         this.browserSession = browserSession;
+        this.mcp = mcp;
         this.dispatcher = new CommandDispatcher(allSkills);
+        if (mcp != null) {
+            // 连接完成（后台线程）：补注册 MCP 工具进所有存活会话（下一轮 schemas() 可见）
+            mcp.addListener(new McpManager.Listener() {
+                @Override public void onStateChanged(McpServer server) {
+                    registerMcpToolsToAllSessions(server);
+                }
+            });
+        }
         loadWorkspaceContexts();
         this.currentWorkspaceName = workspaces.currentName();
     }
@@ -186,6 +201,7 @@ public class SessionManager {
                     }
                 });
                 ctx.sessions.add(h);
+                registerConnectedMcpTools(h); // 兜底：恢复会话也带 MCP 工具（连接已完成场景）
             } catch (Exception e) {
                 notifyError("会话恢复失败（跳过）: " + e.getMessage());
             }
@@ -225,7 +241,54 @@ public class SessionManager {
             registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir, gate));
             registry.register(new BrowserDebugTool(browserSession));
         }
+        if (mcp != null) {
+            for (McpServer s : mcp.servers()) {
+                if (!s.enabled) continue;
+                mcp.ensureConnectedAsync(s.name); // 惰性预连接：首次建会话即后台拉起，连接完成后工具补注册
+                registerMcpTools(registry, s);    // 已连接（恢复场景）：直接注册
+            }
+        }
         return registry;
+    }
+
+    /**
+     * 注册 MCP 服务器工具：与内置工具重名者跳过并计数（设置页展示 skippedTools）。
+     * 幂等：重复调用只补充新增工具。
+     */
+    private void registerMcpTools(ToolRegistry registry, McpServer server) {
+        int skipped = 0;
+        for (McpToolInfo info : server.tools) {
+            if (registry.get(info.name) != null) {
+                skipped++;
+                continue;
+            }
+            registry.register(new McpProxyTool(mcp, server.name, info));
+        }
+        server.skippedTools = skipped;
+    }
+
+    /** 连接完成（工具表变化）：补注册进所有存活会话（连接线程回调，只读遍历会话列表） */
+    private void registerMcpToolsToAllSessions(McpServer server) {
+        if (server.tools == null || server.tools.isEmpty()) return;
+        for (WorkspaceCtx ctx : ctxByName.values()) {
+            for (SessionHandle h : ctx.sessions) {
+                registerMcpTools(h.loop.registry(), server);
+            }
+        }
+    }
+
+    /**
+     * 新会话兜底：注册连接已完成的 MCP 工具。
+     * 覆盖「newRegistry 时未连接、连接完成于 sessions.add 之前」的竞态窗口——
+     * 彼时 listener 遍历不到本会话，而 newRegistry 又早于工具填充。
+     */
+    private void registerConnectedMcpTools(SessionHandle h) {
+        if (mcp == null) return;
+        for (McpServer s : mcp.servers()) {
+            if (s.state == McpServer.State.CONNECTED && !s.tools.isEmpty()) {
+                registerMcpTools(h.loop.registry(), s);
+            }
+        }
     }
 
     /** 创建会话（恢复会话传 title；新建传 null → titlePending） */
@@ -256,6 +319,7 @@ public class SessionManager {
             }
         });
         ctx.sessions.add(h);
+        registerConnectedMcpTools(h); // 兜底：连接已完成场景（listener 遍历不到新建会话时）
         try {
             ctx.store.save(s); // 立即落盘（含空会话）
         } catch (Exception e) {

@@ -10,6 +10,10 @@ import com.minion.core.llm.FakeLlmClient;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.Message;
+import com.minion.core.mcp.FakeMcpServer;
+import com.minion.core.mcp.McpManager;
+import com.minion.core.mcp.McpServer;
+import com.minion.core.mcp.McpStore;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.confirm.ConfirmUi;
@@ -44,7 +48,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         return new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
     }
 
     /** 新建会话：无标题 → titlePending */
@@ -94,7 +98,7 @@ public class SessionManagerTest {
         ws.add("projB", tmp.newFolder("b").getPath(), "");
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.switchWorkspace("projA");
         SessionHandle h = m.createSession(null);
         assertEquals(1, m.sessions().size());
@@ -131,7 +135,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         SessionHandle h = m.createSession(null);
         Path f = WorkspaceManager.sessionDirFor(jar, ws.currentName()).resolve(h.id + ".json");
         assertTrue(Files.exists(f));
@@ -153,7 +157,7 @@ public class SessionManagerTest {
         new SessionStore(dir).save(s);
 
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         assertEquals(1, m.sessions().size());
         assertEquals("已保存的会话", m.sessions().get(0).title);
         assertFalse(m.sessions().get(0).titlePending);
@@ -174,7 +178,7 @@ public class SessionManagerTest {
         Files.createDirectories(sdir);
         new SessionStore(sdir).save(s);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
-                ModelManager.load(jar), new ArrayList<Skill>(), null);
+                ModelManager.load(jar), new ArrayList<Skill>(), null, null);
         assertEquals(1, m.sessions().size());
         SessionHandle h = m.sessions().get(0);
         List<EventList.Ev> evs = h.controller.eventList().snapshot();
@@ -193,7 +197,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         SessionHandle h = m.createSession(null);
         Path f = WorkspaceManager.sessionDirFor(jar, ws.currentName()).resolve(h.id + ".json");
         assertTrue(Files.exists(f));
@@ -209,7 +213,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.addWorkspace("projX", tmp.newFolder("x").getPath(), "");
         m.switchWorkspace("projX");
         SessionHandle h = m.createSession(null);
@@ -227,7 +231,7 @@ public class SessionManagerTest {
         ws.add("projB", tmp.newFolder("b").getPath(), "");
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.switchWorkspace("projA");
         m.createSession(null);
         Path sessionDir = WorkspaceManager.sessionDirFor(jar, "projA");
@@ -248,7 +252,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.switchWorkspace("default");
         m.createSession(null);
         Path oldDir = WorkspaceManager.sessionDirFor(jar, "default");
@@ -270,7 +274,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.switchWorkspace("default");
         SessionHandle h = m.createSession(null);
         assertEquals("default", h.workspaceName);
@@ -290,7 +294,7 @@ public class SessionManagerTest {
         WorkspaceManager ws = WorkspaceManager.load(jar);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.createSession(null);
         String oldDir = m.currentWorkspaceDir();
         String newDir = tmp.newFolder("new-root").getPath();
@@ -311,7 +315,7 @@ public class SessionManagerTest {
         ws.add("projB", tmp.newFolder("b").getPath(), "");
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
-                new ArrayList<Skill>(), null);
+                new ArrayList<Skill>(), null, null);
         m.switchWorkspace("projA"); // 先切换再注册 listener：只捕获删除触发的通知
         final CountDownLatch wsChanged = new CountDownLatch(1);
         m.addListener(new SessionManager.Listener() {
@@ -625,13 +629,45 @@ public class SessionManagerTest {
         assertEquals("按你的选择执行", h.session.messages.get(3).content);
     }
 
+    /** MCP 接线：启用服务器首次建会话触发异步预连接，连接成功后 MCP 工具注册进会话 registry（下一轮 schemas 可见） */
+    @Test
+    public void createSession_registersMcpToolsAfterConnect() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        McpStore store = McpStore.load(jar);
+        McpServer server = new McpServer();
+        server.name = "fake";
+        server.transport = "stdio";
+        server.command = System.getProperty("java.home") + "/bin/java";
+        server.args = new ArrayList<String>();
+        server.args.add("-cp");
+        server.args.add(System.getProperty("java.class.path"));
+        server.args.add(FakeMcpServer.class.getName());
+        server.enabled = true;
+        store.list().add(server);
+        McpManager mcp = new McpManager(store);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, mcp);
+        SessionHandle h = m.createSession(null);
+        // 连接后台异步：轮询等待 MCP 工具注册进 registry
+        long deadline = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < deadline && h.loop.registry().get("fake_tool") == null) {
+            Thread.sleep(50);
+        }
+        assertNotNull("MCP 工具应注册进会话 registry", h.loop.registry().get("fake_tool"));
+        assertEquals("fake tool desc", h.loop.registry().get("fake_tool").description());
+        mcp.shutdown();
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();
 
         SpyManager(ConfirmUi ui, Config config, Path jar, WorkspaceManager ws,
                    ModelManager models) {
-            super(ui, config, jar, ws, models, new ArrayList<Skill>(), null);
+            super(ui, config, jar, ws, models, new ArrayList<Skill>(), null, null);
         }
 
         @Override

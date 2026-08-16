@@ -42,7 +42,7 @@ public class BenchSwitch extends Application {
         ModelManager models = ModelManager.load(dir);
         List<Skill> skills = new SkillManager(config.skillsDir()).scan();
         SessionManager manager = new SessionManager(new GuiConfirmUi(), config, dir,
-                workspaces, models, skills, null);
+                workspaces, models, skills, null, null);
         // MainWindow 内 InputView 走 MinionApp.config() 静态注入（Main 启动时赋值），基准需反射补上
         try {
             java.lang.reflect.Field f = MinionApp.class.getDeclaredField("config");
