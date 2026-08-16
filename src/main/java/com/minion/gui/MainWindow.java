@@ -211,6 +211,21 @@ public class MainWindow {
                         policy.forceFollow();
                         Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
                     });
+                    // 截断保活补偿：头部段被删 → 内容变矮，vvalue（归一化）不变时视口绝对位置下移。
+                    // 双 runLater 等布局跑完再读高度（layoutBounds 是布局缓存，删除后未布局仍返回旧值）；
+                    // 贴底（v=1）时公式自然收敛 1.0，无需分支。
+                    chatView.setTrimListener(removedH -> Platform.runLater(() -> Platform.runLater(() -> {
+                        Node content = chatScroll.getContent();
+                        double viewport = chatScroll.getViewportBounds().getHeight();
+                        double hNow = content != null ? content.getLayoutBounds().getHeight() : 0;
+                        double hOld = hNow + removedH;              // 截断前内容高度
+                        double scrollableOld = hOld - viewport;     // 截断前可滚动行程
+                        double scrollableNew = hNow - viewport;     // 截断后可滚动行程
+                        if (scrollableOld <= 0 || scrollableNew <= 0) return;
+                        double v = chatScroll.getVvalue();
+                        double v2 = v * scrollableOld / scrollableNew; // 视口顶部绝对位置守恒
+                        chatScroll.setVvalue(Math.max(0.0, Math.min(1.0, v2)));
+                    })));
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
