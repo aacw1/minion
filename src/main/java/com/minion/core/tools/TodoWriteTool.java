@@ -4,7 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.minion.core.agent.TodoList;
 
-/** 任务清单跟踪。参数: action=update|mark, items(update时), index(mark时) */
+/** 任务清单跟踪。参数: action=create|update|mark（可省略，默认 create）, items, index(mark时) */
 public class TodoWriteTool implements Tool {
 
     private final TodoList list;
@@ -15,7 +15,7 @@ public class TodoWriteTool implements Tool {
     public String name() { return "TodoWrite"; }
 
     @Override
-    public String description() { return "维护任务清单：update 整体替换任务列表，mark 勾选完成任务"; }
+    public String description() { return "维护任务清单：create/update 整体替换任务列表，mark 勾选完成任务"; }
 
     @Override
     public JsonObject schema() {
@@ -23,14 +23,17 @@ public class TodoWriteTool implements Tool {
         // 曾把 items 声明为 string，误导模型传字符串数组导致 execute 抛 Not a JSON Object
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "object");
-        schema.addProperty("description", "维护任务清单：update 整体替换任务列表，mark 勾选完成任务");
+        schema.addProperty("description", "维护任务清单：create/update 整体替换任务列表，mark 勾选完成任务");
 
         JsonObject props = new JsonObject();
 
+        // action 可选、默认 create：与 Claude Code 语义一致（省略 action 即创建列表），
+        // 曾设为 required 且枚举缺 create，模型按习惯省略 action 时收到"未知 action: "错误
         JsonObject action = new JsonObject();
         action.addProperty("type", "string");
-        action.addProperty("description", "操作类型：update 替换任务列表，mark 勾选第 index 项");
+        action.addProperty("description", "操作类型（可省略，默认 create）：create/update 替换任务列表，mark 勾选第 index 项");
         JsonArray actionEnum = new JsonArray();
+        actionEnum.add("create");
         actionEnum.add("update");
         actionEnum.add("mark");
         action.add("enum", actionEnum);
@@ -63,16 +66,14 @@ public class TodoWriteTool implements Tool {
         props.add("index", index);
 
         schema.add("properties", props);
-        JsonArray required = new JsonArray();
-        required.add("action");
-        schema.add("required", required);
+        // action 非必填：省略时默认 create
         return schema;
     }
 
     @Override
     public ToolResult execute(JsonObject args) {
         String action = args.has("action") ? args.get("action").getAsString() : "";
-        if (action.equals("update")) {
+        if (action.isEmpty() || action.equals("create") || action.equals("update")) {
             JsonArray arr = args.has("items") && args.get("items").isJsonArray()
                     ? args.getAsJsonArray("items") : new JsonArray();
             java.util.List<TodoList.TodoItem> items = new java.util.ArrayList<TodoList.TodoItem>();
@@ -97,6 +98,6 @@ public class TodoWriteTool implements Tool {
             if (!ok) return ToolResult.error("index 超出范围");
             return ToolResult.success("任务清单:\n" + list.render());
         }
-        return ToolResult.error("未知 action: " + action + "（应为 update 或 mark）");
+        return ToolResult.error("未知 action: " + action + "（应为 create、update 或 mark）");
     }
 }

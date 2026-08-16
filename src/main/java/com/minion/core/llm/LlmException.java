@@ -21,7 +21,12 @@ public class LlmException extends Exception {
             return new LlmException(Type.RATE_LIMIT, "请求过于频繁(" + httpCode + ")，请稍后重试或检查余额", true);
         }
         if (httpCode == 400) {
-            return new LlmException(Type.BAD_REQUEST, "请求被拒绝(400)，可能是消息格式或思考内容回传问题", false);
+            // 带 body：400 根因（如上下文超限、tool_call 配对）只在响应体里，
+            // 曾只给通用文案导致无法诊断
+            String detail = truncate(body);
+            String msg = "请求被拒绝(400)";
+            if (!detail.isEmpty()) msg += "：\n" + detail;
+            return new LlmException(Type.BAD_REQUEST, msg, false);
         }
         return new LlmException(Type.OTHER, "API 错误(" + httpCode + "): " + truncate(body), httpCode >= 500);
     }
