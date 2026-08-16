@@ -17,6 +17,8 @@ public class Message {
     public String toolCallId;         // 仅 tool
     public String name;               // 仅 tool（工具名）
     public boolean summary;           // true = 压缩摘要消息，不再参与压缩
+    /** true = 技能加载消息（<skill> 正文），上下文压缩豁免（常驻）。本地标记，toApiJson 不输出 */
+    public boolean pinned;
     /** 图片 parts（仅 user 消息使用，其他角色忽略）；null = 无图 */
     public List<ImagePart> images;
     /** true = 运行中用户补充消息（仅 user 角色使用）。标识只在本地历史与 UI 层，
@@ -59,6 +61,13 @@ public class Message {
     public static Message userSupplement(String content, List<ImagePart> images) {
         Message m = userWithImages(content, images);
         m.supplement = true;
+        return m;
+    }
+
+    /** 技能加载消息：USER 角色 + pinned=true（正文常驻、压缩豁免） */
+    public static Message skill(String content) {
+        Message m = user(content);
+        m.pinned = true;
         return m;
     }
 

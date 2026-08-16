@@ -143,4 +143,15 @@ public class MessageTest {
         assertTrue(sup.supplement);
         assertFalse(sup.toApiJson().has("supplement"));
     }
+
+    /** 技能加载消息：USER 角色 + pinned 标记（上下文压缩豁免）；toApiJson 不输出 pinned（本地标记，与 supplement 同理） */
+    @Test
+    public void skillMessage_isUserRoleAndPinned() {
+        Message m = Message.skill("<skill name=\"review\">\n审查指令\n</skill>");
+        assertEquals(Message.Role.USER, m.role);
+        assertTrue(m.pinned);
+        assertFalse(m.toApiJson().has("pinned"));
+        assertEquals("审查指令", m.content.substring(m.content.indexOf("审查指令"),
+                m.content.indexOf("审查指令") + 4));
+    }
 }
