@@ -25,6 +25,12 @@
       <artifactId>okhttp</artifactId>
       <version>3.14.9</version>
     </dependency>
+    <!-- MCP SSE/HTTP 传输：EventSource 事件流解析（与 okhttp 同族 3.14.9，JDK8 兼容） -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>okhttp-sse</artifactId>
+      <version>3.14.9</version>
+    </dependency>
     <dependency>
       <groupId>org.yaml</groupId>
       <artifactId>snakeyaml</artifactId>
