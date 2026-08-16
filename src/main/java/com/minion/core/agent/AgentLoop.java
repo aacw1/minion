@@ -127,8 +127,12 @@ public class AgentLoop {
             pendingSkillLoads.clear();
         }
         for (Skill s : queue) {
-            session.messages.add(Message.skill(
-                    "<skill name=\"" + s.name + "\">\n" + s.instructions + "\n</skill>"));
+            // I-1：注入即发 UI 事件——技能正文整条 content 渲染为一条用户消息（透明可审计，
+            // 与 runUserTurn 发用户输入同一语义：session 工作线程调用，事件驱动 live 渲染）
+            Message msg = Message.skill(
+                    "<skill name=\"" + s.name + "\">\n" + s.instructions + "\n</skill>");
+            session.messages.add(msg);
+            ui.onUserMessage(msg.content);
         }
     }
 

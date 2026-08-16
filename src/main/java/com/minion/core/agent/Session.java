@@ -77,6 +77,8 @@ public class Session {
     public String preview() {
         for (int i = messages.size() - 1; i >= 0; i--) {
             Message m = messages.get(i);
+            // M-9：技能消息（pinned）不作为会话预览——轮内注入点在用户输入之后，否则污染预览
+            if (m.pinned) continue;
             if (m.role == Message.Role.USER) {
                 String text = m.content == null ? "" : m.content.replace('\n', ' ');
                 return text.length() > 50 ? text.substring(0, 50) + "..." : text;

@@ -1094,4 +1094,29 @@ public class AgentLoopTest {
         // 子 agent 复用 buildSystemPrompt：目录段可见
         assertTrue(loop.buildSystemPrompt().contains("brainstorming — 头脑风暴"));
     }
+
+    /** I-1 回归：技能注入时发 UI 事件——live 会话消息区照常渲染为一条用户消息（透明可审计）。
+     *  与 runUserTurn 发用户输入同一语义：整条 <skill> 正文内容渲染，不加前缀后缀 */
+    @Test
+    public void skillInjection_emitsUiEvent() {
+        AgentLoop loop = newLoop();
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"));
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        assertTrue("技能注入未发 UI 事件",
+                ui.userMessages.stream().anyMatch(m ->
+                        m.startsWith("<skill name=\"brainstorming\">")
+                                && m.contains("正文：先澄清需求")));
+    }
+
+    /** M-9 回归：会话预览跳过 pinned 技能消息——技能消息在用户输入之后注入（轮内检查点），
+     *  不得污染预览；预览仍取最后一条真实用户消息 */
+    @Test
+    public void preview_skipsPinnedSkillMessage() {
+        Session s = Session.create(tmp.getRoot().getPath(), "test-model");
+        s.messages.add(Message.user("真正的用户消息"));
+        s.messages.add(Message.skill("<skill name=\"review\">\n审查正文\n</skill>"));
+        assertTrue(s.preview().contains("真正的用户消息"));
+        assertFalse(s.preview().contains("审查正文"));
+    }
 }
