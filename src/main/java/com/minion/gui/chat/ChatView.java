@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.DoubleConsumer;
 
 /**
  * 会话消息区（纯控制台输出流）：订阅 EventList（事件来自后台线程，Listener 内 Platform.runLater 包装）。
@@ -28,6 +29,9 @@ public class ChatView extends VBox {
     /** 空会话占位文本（只读 TextArea 不显示 promptText，用文本代替） */
     private static final String EMPTY_HINT = "输入消息开始新的会话";
 
+    /** 截断保活上限：段数超限即移除头部旧段（200 段 ≈ 2000+ 行，长会话滚动不卡） */
+    private static final int MAX_SEGS = 200;
+
     private final EventList events;
     private final SessionHandle handle;
     /** 流式缓冲：THINKING/CONTENT 增量累积，轮次边界重置（纯逻辑，见 StreamBuffer） */
@@ -38,6 +42,12 @@ public class ChatView extends VBox {
 
     /** MainWindow 注入：USER_MESSAGE 事件时请求滚动到底 */
     public void setScrollBottomRequest(Runnable r) { this.scrollBottomRequest = r; }
+
+    /** 截断回调（MainWindow 注入：vvalue 补偿防历史区视口跳动；null 表示不补偿） */
+    private DoubleConsumer trimListener;
+
+    /** MainWindow 注入：头部段被截断时回调，参数 = 被删段高度合计（像素，补偿 vvalue 用） */
+    public void setTrimListener(DoubleConsumer listener) { this.trimListener = listener; }
 
     /** 流身份：THINK=思考流、REPLY=回复流（流式就地更新末段正文），NONE=静态行（永不参与就地更新） */
     private enum StreamKind { THINK, REPLY, NONE }
@@ -202,6 +212,22 @@ public class ChatView extends VBox {
         });
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.body));
+        trimHead();
+    }
+
+    /** 截断保活：段数超 MAX_SEGS 时移除头部多余段（segs 与节点树同步删），并回调注入的 trim 监听。
+     *  只动头部——流式段（THINK/REPLY）恒在尾部就地更新，不会被误删。 */
+    private void trimHead() {
+        int excess = segs.size() - MAX_SEGS;
+        if (excess <= 0) return;
+        double removedH = 0;
+        for (int i = 0; i < excess; i++) {
+            // 头部段早已布局（新段只加在尾部），layoutBounds 高度准确
+            removedH += getChildren().get(i).getLayoutBounds().getHeight();
+        }
+        segs.subList(0, excess).clear();
+        getChildren().remove(0, excess); // ObservableList.remove(from, to)：与 segs 同步删
+        if (trimListener != null) trimListener.accept(removedH);
     }
 
     /** 流式增量：末段是同一流（THINK/REPLY）→ 就地更新正文不重建节点；NONE 静态行永不参与就地更新，恒新起一段 */
