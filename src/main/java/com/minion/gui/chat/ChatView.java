@@ -183,7 +183,8 @@ public class ChatView extends VBox {
                 String data = e.data == null ? "" : e.data.toString();
                 boolean ok = data.startsWith("ok");
                 if (ok) append("【工具】", "log-tool", "✅ " + e.text + " 成功", StreamKind.NONE);
-                else append("【系统】", "log-error", "❌ " + e.text + " 失败", StreamKind.NONE);
+                // 失败行追加原因（error: 前缀后的内容首行截断）：排查无需翻工具结果即可看到失败原因
+                else append("【系统】", "log-error", "❌ " + e.text + " 失败" + toolFailureDetail(data), StreamKind.NONE);
                 break;
             }
             case ERROR:
@@ -263,6 +264,22 @@ public class ChatView extends VBox {
             return;
         }
         append(tagText, tagColorClass, text, kind);
+    }
+
+    /** TOOL_RESULT 失败行追加原因：data（SessionController 的 "error:" 前缀 + 原因）→ "：原因首行截断"；
+     *  非 error 数据/空原因回空串（保持原「❌ 名称 失败」显示）；package-private 供单测 */
+    static String toolFailureDetail(String data) {
+        if (data == null || !data.startsWith("error:")) return "";
+        String detail = data.substring("error:".length()).trim();
+        if (detail.isEmpty()) return "";
+        String[] lines = detail.split("\\r?\\n");
+        for (String line : lines) {
+            if (!line.trim().isEmpty()) {
+                detail = line.trim();
+                break;
+            }
+        }
+        return "：" + shorten(detail, 120);
     }
 
     private static String shorten(String s, int max) {
