@@ -1082,4 +1082,16 @@ public class AgentLoopTest {
         List<Message> req2 = llm.requests.get(1).messages;
         assertTrue(req2.get(req2.size() - 1).content.contains("正文：先澄清需求"));
     }
+
+    /** setAllSkills 接线：技能目录进 loop（Skill 工具可访问、子 agent 系统提示词含目录段） */
+    @Test
+    public void setAllSkills_catalogVisibleInSystemPrompt() {
+        AgentLoop loop = newLoop();
+        assertEquals(0, loop.allSkills().size());
+        loop.setAllSkills(Collections.singletonList(
+                new Skill("brainstorming", "头脑风暴", "正文", "SKILL.md")));
+        assertEquals(1, loop.allSkills().size());
+        // 子 agent 复用 buildSystemPrompt：目录段可见
+        assertTrue(loop.buildSystemPrompt().contains("brainstorming — 头脑风暴"));
+    }
 }
