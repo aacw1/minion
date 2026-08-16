@@ -48,7 +48,7 @@ public class AgentLoop {
     private List<Skill> allSkills = new ArrayList<Skill>();
     /** 待注入的技能加载队列（FX 线程 /skill 与工具线程 Skill 工具入队；主循环检查点 drain 后注入历史）。
      *  队列级去重：同名已在队列 → 跳过（同轮防重复插入）；历史级幂等由 Skill 工具报告、模型判断 */
-    private final List<Skill> pendingSkillLoads = new ArrayList<Skill>();
+    private final List<SkillLoad> pendingSkillLoads = new ArrayList<SkillLoad>();
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
@@ -110,27 +110,44 @@ public class AgentLoop {
     public void setAllSkills(List<Skill> skills) { this.allSkills = skills; }
 
     /** 技能加载入队（手动 /skill 与 Skill 工具共用）；同名已在队列 → 跳过（同轮防重复插入） */
-    public synchronized void offerSkillLoad(Skill skill) {
-        for (Skill s : pendingSkillLoads) {
-            if (s.name.equals(skill.name)) return;
+    public void offerSkillLoad(Skill skill) { offerSkillLoad(skill, null); }
+
+    /** 技能加载入队（带参数）：参数以「用户参数: <文本>」附加在技能正文后注入；
+     *  去重按技能名——同名不同参数连调，第二次跳过（参数以第一次为准） */
+    public synchronized void offerSkillLoad(Skill skill, String args) {
+        for (SkillLoad q : pendingSkillLoads) {
+            if (q.skill.name.equals(skill.name)) return;
         }
-        pendingSkillLoads.add(skill);
+        pendingSkillLoads.add(new SkillLoad(skill, args));
+    }
+
+    /** 待加载技能与调用参数（JDK8 无 record，私有小类承载） */
+    private static class SkillLoad {
+        final Skill skill;
+        final String args;
+        SkillLoad(Skill skill, String args) { this.skill = skill; this.args = args; }
     }
 
     /** 检查点注入：待加载技能以 <skill> 用户消息（pinned）入历史——同轮下一请求生效；
      *  与补充注入同一语义（中断轮不注入，防半轮 tool_call 未配对时插入 user 消息破坏契约） */
     private void drainPendingSkillLoads() {
-        List<Skill> queue;
+        List<SkillLoad> queue;
         synchronized (this) {
             if (pendingSkillLoads.isEmpty()) return;
-            queue = new ArrayList<Skill>(pendingSkillLoads);
+            queue = new ArrayList<SkillLoad>(pendingSkillLoads);
             pendingSkillLoads.clear();
         }
-        for (Skill s : queue) {
+        for (SkillLoad q : queue) {
             // I-1：注入即发 UI 事件——技能正文整条 content 渲染为一条用户消息（透明可审计，
             // 与 runUserTurn 发用户输入同一语义：session 工作线程调用，事件驱动 live 渲染）
-            Message msg = Message.skill(
-                    "<skill name=\"" + s.name + "\">\n" + s.instructions + "\n</skill>");
+            // 用户参数放 <skill> 标签外：标签内严格等于 SKILL.md 正文（技能定义不变量，
+            // 幂等/判重/正文独立处理均不受参数干扰）；参数属调用上下文，紧邻技能块注入
+            String content = "<skill name=\"" + q.skill.name + "\">\n"
+                    + q.skill.instructions + "\n</skill>";
+            if (q.args != null && !q.args.isEmpty()) {
+                content += "\n\n用户参数: " + q.args;
+            }
+            Message msg = Message.skill(content);
             session.messages.add(msg);
             ui.onUserMessage(msg.content);
         }

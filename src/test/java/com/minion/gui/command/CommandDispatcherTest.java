@@ -5,6 +5,7 @@ import com.minion.core.agent.Session;
 import com.minion.core.agent.SystemPromptBuilder;
 import com.minion.core.config.Config;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.Message;
 import com.minion.core.skills.Skill;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.Workspace;
@@ -35,6 +36,7 @@ public class CommandDispatcherTest {
     private CommandDispatcher dispatcher;
     private SessionHandle h;
     private SessionController controller;
+    private FakeLlmClient llm;
 
     @Before
     public void setUp() {
@@ -43,7 +45,7 @@ public class CommandDispatcherTest {
                 new Skill("writing-plans", "编写实施计划", "指令正文", "/skills/writing-plans/SKILL.md"));
         dispatcher = new CommandDispatcher(skills);
         Config config = Config.load(tmp.getRoot().toPath());
-        FakeLlmClient llm = new FakeLlmClient();
+        llm = new FakeLlmClient();
         ToolRegistry registry = new ToolRegistry();
         controller = new SessionController();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
@@ -89,6 +91,30 @@ public class CommandDispatcherTest {
     @Test public void skill_caseInsensitive() {
         String r = dispatcher.dispatch(h, "/SKILL BRAINSTORMING");
         assertTrue(r.contains("已加载技能: brainstorming"));
+    }
+
+    @Test public void skill_withArgs_parsesTrailingText() {
+        String r = dispatcher.dispatch(h, "/skill brainstorming 帮我设计一个设置页");
+        assertTrue(r.contains("已加载技能: brainstorming"));
+        assertTrue(r.contains("帮我设计一个设置页"));
+    }
+
+    @Test public void skill_multiWordArgs_joinedWithSpaces() {
+        String r = dispatcher.dispatch(h, "/skill brainstorming 设计 设置页 组件");
+        assertTrue(r.contains("设计 设置页 组件"));
+    }
+
+    /** 尾随参数随 <skill> 消息注入，下一轮请求可见（/skill <名> 参数…） */
+    @Test public void skill_withArgs_injectsArgsIntoNextTurn() {
+        dispatcher.dispatch(h, "/skill brainstorming 帮我设计一个设置页");
+        llm.addTurn("好的");
+        h.loop.runUserTurn("开始");
+        List<Message> msgs = h.loop.messages();
+        assertEquals(3, msgs.size());
+        assertTrue(msgs.get(0).content.contains("<skill name=\"brainstorming\">"));
+        assertTrue(msgs.get(0).content.contains("用户参数: 帮我设计一个设置页"));
+        // 参数在 <skill> 标签外（闭合之后）
+        assertTrue(msgs.get(0).content.indexOf("</skill>") < msgs.get(0).content.indexOf("用户参数:"));
     }
 
     @Test public void skill_missingArgShowsUsage() {

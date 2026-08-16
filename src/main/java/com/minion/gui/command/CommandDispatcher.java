@@ -28,11 +28,11 @@ public class CommandDispatcher {
 
     private String helpText() {
         return "可用命令：\n"
-                + "/help        显示本帮助\n"
-                + "/skills      列出可用技能\n"
-                + "/skill <名>  加载技能到当前会话（下一轮请求生效）\n"
-                + "/compact     立即压缩上下文\n"
-                + "/tokens      显示 token 用量统计";
+                + "/help            显示本帮助\n"
+                + "/skills          列出可用技能\n"
+                + "/skill <名> [参数]  加载技能到当前会话（可附参数，下一轮请求生效）\n"
+                + "/compact         立即压缩上下文\n"
+                + "/tokens          显示 token 用量统计";
     }
 
     private String skillsText() {
@@ -45,14 +45,28 @@ public class CommandDispatcher {
     }
 
     private String dispatchSkill(SessionHandle h, String[] parts) {
-        if (parts.length < 2) return "用法: /skill <技能名>（/skills 查看列表）";
+        if (parts.length < 2) return "用法: /skill <技能名> [参数]（/skills 查看列表）";
         for (Skill s : skills) {
             if (s.name.equalsIgnoreCase(parts[1])) {
-                h.loop.offerSkillLoad(s);
-                return "已加载技能: " + s.name + "（正文将注入，下一轮请求生效）";
+                String args = joinTail(parts, 2);
+                h.loop.offerSkillLoad(s, args);
+                if (args.isEmpty()) {
+                    return "已加载技能: " + s.name + "（正文将注入，下一轮请求生效）";
+                }
+                return "已加载技能: " + s.name + "（含参数: " + args + "，下一轮请求生效）";
             }
         }
         return "未找到技能: " + parts[1] + "（/skills 查看列表）";
+    }
+
+    /** 尾随文字拼接为技能参数（split 已折叠连续空白，此处以单空格还原） */
+    private static String joinTail(String[] parts, int from) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = from; i < parts.length; i++) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(parts[i]);
+        }
+        return sb.toString();
     }
 
     private String tokensText(SessionHandle h) {

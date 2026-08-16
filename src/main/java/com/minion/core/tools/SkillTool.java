@@ -23,6 +23,7 @@ public class SkillTool implements Tool {
     @Override
     public String description() {
         return "按名称加载技能到当前会话，技能正文将作为一条用户消息注入（立即生效）。"
+                + "可附 args 参数（自由文本，随正文一起注入，如任务说明）。"
                 + "当任务与可用技能描述匹配时调用；同一技能不要重复加载。";
     }
 
@@ -36,6 +37,10 @@ public class SkillTool implements Tool {
         name.addProperty("type", "string");
         name.addProperty("description", "技能名（与技能列表中的 name 一致）");
         props.add("name", name);
+        JsonObject args = new JsonObject();
+        args.addProperty("type", "string");
+        args.addProperty("description", "可选：附带给技能的参数/说明（自由文本，随技能正文注入）");
+        props.add("args", args);
         schema.add("properties", props);
         JsonArray required = new JsonArray();
         required.add("name");
@@ -77,7 +82,13 @@ public class SkillTool implements Tool {
             return ToolResult.success("技能 " + skill.name + " 的正文已在上下文中（此前已注入），"
                     + "无需重复加载；如你判断正文已失效可再次调用");
         }
-        loop.offerSkillLoad(skill);
-        return ToolResult.success("已加载技能 " + skill.name + "（" + skill.description + "），正文将注入当前会话");
+        String argsText = args.has("args") && !args.get("args").isJsonNull()
+                ? args.get("args").getAsString() : null;
+        if (argsText != null && argsText.trim().isEmpty()) argsText = null;
+        loop.offerSkillLoad(skill, argsText);
+        if (argsText == null) {
+            return ToolResult.success("已加载技能 " + skill.name + "（" + skill.description + "），正文将注入当前会话");
+        }
+        return ToolResult.success("已加载技能 " + skill.name + "（含参数: " + argsText + "），正文与参数将注入当前会话");
     }
 }

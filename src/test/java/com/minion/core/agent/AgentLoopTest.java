@@ -502,6 +502,40 @@ public class AgentLoopTest {
         assertEquals(1, pinnedCount);
     }
 
+    /** 技能带参数加载：args 以「用户参数: 」附加在技能正文后注入，下轮请求生效 */
+    @Test
+    public void offerSkillLoad_withArgs_injectsArgsIntoSkillMessage() {
+        AgentLoop loop = newLoop();
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"), "帮我设计一个设置页");
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        List<Message> msgs = loop.messages();
+        assertEquals(3, msgs.size());
+        assertTrue(msgs.get(0).content.contains("<skill name=\"brainstorming\">"));
+        assertTrue(msgs.get(0).content.contains("正文：先澄清需求"));
+        assertTrue(msgs.get(0).content.contains("用户参数: 帮我设计一个设置页"));
+        // 参数在 <skill> 标签外（闭合之后），标签内严格等于技能正文
+        assertTrue(msgs.get(0).content.indexOf("</skill>") < msgs.get(0).content.indexOf("用户参数:"));
+        // 首轮请求即携带技能正文与参数（请求 = system + 全部历史）
+        assertEquals(3, llm.requests.get(0).messages.size());
+        assertTrue(llm.requests.get(0).messages.get(1).content.contains("用户参数: 帮我设计一个设置页"));
+    }
+
+    /** 同名不同参连续入队：仍按技能名去重（参数以第一次为准） */
+    @Test
+    public void offerSkillLoad_deduplicatesByNameEvenWithDifferentArgs() {
+        AgentLoop loop = newLoop();
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"), "参数A");
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"), "参数B");
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        long pinnedCount = loop.messages().stream()
+                .filter(m -> m.pinned && m.content.contains("<skill name=\"review\">")).count();
+        assertEquals(1, pinnedCount);
+        assertTrue(loop.messages().get(0).content.contains("用户参数: 参数A"));
+        assertFalse(loop.messages().get(0).content.contains("参数B"));
+    }
+
     /** S5：restoreSession 恢复 usage 与 todos（T21 M6） */
     @Test
     public void restoreSession_restoresUsageAndTodos() {

@@ -78,6 +78,22 @@ public class SkillToolTest {
     }
 
     @Test
+    public void loadsSkill_withArgs_injectsArgsIntoSkillMessage() {
+        ToolResult r = exec(newTool(), "{\"name\":\"brainstorming\",\"args\":\"帮我设计一个设置页\"}");
+        assertTrue(r.ok);
+        assertTrue(r.output.contains("含参数: 帮我设计一个设置页"));
+        // 触发注入：args 以「用户参数: 」附加在技能正文后
+        llm.addTurn("好的");
+        loop.runUserTurn("开始");
+        List<Message> msgs = loop.messages();
+        assertTrue(msgs.get(0).pinned);
+        assertTrue(msgs.get(0).content.contains("<skill name=\"brainstorming\">"));
+        assertTrue(msgs.get(0).content.contains("用户参数: 帮我设计一个设置页"));
+        // 参数在 <skill> 标签外（闭合之后）
+        assertTrue(msgs.get(0).content.indexOf("</skill>") < msgs.get(0).content.indexOf("用户参数:"));
+    }
+
+    @Test
     public void repeatLoad_reportsAlreadyInContext_noDuplicate() {
         llm.addTurn("好的");
         loop.offerSkillLoad(SKILL); // 前置入队：runUserTurn 开头 drain 注入 <skill> 消息
