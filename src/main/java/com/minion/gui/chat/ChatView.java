@@ -1,5 +1,6 @@
 package com.minion.gui.chat;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.gui.session.EventList;
@@ -301,12 +302,30 @@ public class ChatView extends VBox {
         String thinking() { return thinking.toString(); }
     }
 
-    /** AskUserQuestion 工具调用的 question 参数（解析失败回空串） */
-    private static String askQuestionOf(Object data) {
+    /** AskUserQuestion 工具调用参数 → 展示文本：问题 + 选项列表（解析失败回空串；package-private 供单测） */
+    static String askQuestionOf(Object data) {
         try {
             JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString())
                     .getAsJsonObject();
-            return o.has("question") ? o.get("question").getAsString() : "";
+            StringBuilder sb = new StringBuilder();
+            if (o.has("question") && !o.get("question").isJsonNull()) {
+                sb.append(o.get("question").getAsString());
+            }
+            // options 逐项渲染 "[N] label — description"（每项一行；description 缺失只显示 label）
+            if (o.has("options") && o.get("options").isJsonArray()) {
+                JsonArray arr = o.getAsJsonArray("options");
+                for (int i = 0; i < arr.size(); i++) {
+                    if (!arr.get(i).isJsonObject()) continue; // 非对象元素跳过（畸形参数防御）
+                    JsonObject opt = arr.get(i).getAsJsonObject();
+                    String label = opt.has("label") && !opt.get("label").isJsonNull()
+                            ? opt.get("label").getAsString() : "";
+                    String desc = opt.has("description") && !opt.get("description").isJsonNull()
+                            ? opt.get("description").getAsString() : "";
+                    sb.append('\n').append('[').append(i + 1).append("] ").append(label);
+                    if (!desc.isEmpty()) sb.append(" — ").append(desc);
+                }
+            }
+            return sb.toString();
         } catch (Exception e) {
             return "";
         }
