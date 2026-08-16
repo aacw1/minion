@@ -4,16 +4,17 @@
 
 ## 启动（GUI）
 
-    minion.bat                # 推荐：自动探测含 JavaFX 的 JDK 8 并启动
-    java -jar minion-0.1.0.jar   # 直接运行（须用含 JavaFX 的 JDK 8 的 java）
+    java -jar minion-0.1.0.jar   # 双击 jar 或命令行运行；jar 自举，无需 bat
 
-图形界面为唯一界面（CLI 已移除）。需要 JDK 8 且自带 JavaFX：Oracle JDK 8 或 Zulu/AdoptOpenJDK 8 含 OpenJFX 的发行版；Win7 用户注意 Win7 只支持到 8u251 之前的 Oracle 版本。若 PATH 里的 `java` 不是含 JavaFX 的 JDK 8（会报 `NoClassDefFoundError: javafx/application/Application`），请用 `minion.bat` 启动——它按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测，全部落空时给出清晰错误提示。
+图形界面为唯一界面（CLI 已移除）。需要 JDK 8 且自带 JavaFX：Oracle JDK 8 或 Zulu/AdoptOpenJDK 8 含 OpenJFX 的发行版；Win7 用户注意 Win7 只支持到 8u251 之前的 Oracle 版本。
 
-minion.bat 默认以 JavaFX 软件渲染启动（`-Dprism.order=sw`）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证）。想用硬件渲染：`set MINION_PRISM=d3d` 再启动。
+jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 
-注意：**双击 jar 走 Windows 文件关联的 javaw.exe，可能与 bat 探测的 JDK 不同**（如关联到 JDK 9/10 的 JavaFX 时文字渲染异常——正文模糊，2026-08-15 实证）。务必保证文件关联指向含 JavaFX 的 JDK 8，或在管理员 cmd 下执行（把路径换成自己的 JDK 8）：
-
-    reg add "HKEY_CLASSES_ROOT\jarfile\shell\open\command" /ve /t REG_SZ /d "\"E:\javame\jdk8\jre\bin\javaw.exe\" -jar \"%1\" %*" /f
+- 双击 jar（javaw、无控制台）自动开启控制台窗口，日志可见
+- 当前 JVM 非 JDK 8 时自动切换：按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测含 JavaFX 的 JDK 8 并重启，全程无感
+- 找不到 JDK 8 但当前 JVM 能运行 → 照常启动并弹窗提示建议安装 JDK 8（可关闭，不影响使用）；当前 JVM 连 JavaFX 都没有 → 错误弹窗并退出
+- 默认软件渲染（`prism.order=sw`）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证）。想用硬件渲染：`set MINION_PRISM=d3d` 再启动
+- 环境变量 `MINION_JAVA`（java.exe 全路径）优先于一切探测，显式指定即信任
 
 首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`。
 

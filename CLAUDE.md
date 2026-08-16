@@ -7,11 +7,12 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
 
     JAVA_HOME="E:/javame/jdk8" mvn clean package   # 构建（产物 target/minion-0.1.0.jar，含依赖；必须 JDK8 含 JavaFX）
     JAVA_HOME="E:/javame/jdk8" mvn test            # 运行测试
-    minion.bat                                       # 启动 GUI（自动探测含 JavaFX 的 JDK 8；PATH 的 java 须是 JDK 8）
+    java -jar target/minion-0.1.0.jar                # 启动 GUI（jar 自举：自动开控制台、自动探测/切换 JDK 8；双击 jar 亦可）
 
 ## 包结构（详见 docs/ARCHITECTURE.md）
 
     com.minion
+    ├── Boot        自举入口（shade mainClass）：PRISM/控制台/JDK8 探测与自动切换 → Main
     ├── Main         入口：装配配置/技能/浏览器/确认 UI → SessionManager → MinionApp；退出钩子统一收口（manager.shutdown + chrome.stop）
     ├── gui/         JavaFX 界面
     │   ├── MainWindow        主窗口（无边框自绘标题栏 TitleBar、GridPane 25%/75% 不可拖拽、ResizeHelper 缩放、状态点呼吸动画 StatusDot）
