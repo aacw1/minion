@@ -1058,4 +1058,28 @@ public class AgentLoopTest {
             assertTrue("残留未配对 toolCalls", m.toolCalls == null || m.toolCalls.isEmpty());
         }
     }
+
+    /** Skill 工具调用 → 工具结果入历史 → 检查点注入 <skill> 消息 → 下一轮请求携带（同轮生效，链式衔接） */
+    @Test
+    public void skillTool_sameTurnEffect() {
+        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md");
+        AgentLoop loop = newLoop();
+        loop.setAllSkills(Collections.singletonList(skill));
+        ToolCall tc = new ToolCall();
+        tc.id = "s1";
+        tc.name = "Skill";
+        tc.arguments = "{\"name\":\"brainstorming\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("按技能继续");
+        loop.runUserTurn("开始");
+        // 0:user 1:assistant(tool_calls) 2:tool(已加载) 3:user(skill pinned) 4:assistant(最终)
+        List<Message> msgs = loop.messages();
+        assertEquals(5, msgs.size());
+        assertEquals(Message.Role.USER, msgs.get(3).role);
+        assertTrue(msgs.get(3).pinned);
+        assertTrue(msgs.get(3).content.contains("<skill name=\"brainstorming\">"));
+        // 第二轮请求已携带技能正文（最后一条消息）
+        List<Message> req2 = llm.requests.get(1).messages;
+        assertTrue(req2.get(req2.size() - 1).content.contains("正文：先澄清需求"));
+    }
 }
