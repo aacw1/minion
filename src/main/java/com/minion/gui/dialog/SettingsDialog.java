@@ -364,6 +364,14 @@ public class SettingsDialog {
         TextArea envArea = new TextArea(s == null ? "" : pairLines(s.env));
         TextField url = new TextField(s == null ? "" : s.url);
         TextArea headerArea = new TextArea(s == null ? "" : pairLines(s.headers));
+        // TextArea 默认 pref 高 231px/宽 683px，3 个会把表单撑到 ~900px 超屏；
+        // 与基础设置页白名单一致压到 2 行 20 列（表单高 ~400px 放得下）
+        argsArea.setPrefRowCount(2);
+        argsArea.setPrefColumnCount(20);
+        envArea.setPrefRowCount(2);
+        envArea.setPrefColumnCount(20);
+        headerArea.setPrefRowCount(2);
+        headerArea.setPrefColumnCount(20);
         // 传输为 sse 时命令/参数区禁用（命令只对 stdio 有意义）
         transport.valueProperty().addListener((obs, ov, nv) -> {
             boolean stdio = "stdio".equals(nv);
