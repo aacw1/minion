@@ -14,7 +14,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 - 终端 `java -jar` 启动：命令行窗口不隐藏（启动器只在无控制台场景才改用 javaw；mintty/Git Bash 因 `System.console()==null` 误判为无控制台，`boot.console=true` 时仍会额外开窗——真实 Windows 控制台 cmd/PowerShell 无此问题）
 - 当前 JVM 非 JDK 8 时自动切换：按 `MINION_JAVA` → `JAVA_HOME` → 常见 JDK 8 安装位置的顺序探测含 JavaFX 的 JDK 8 并重启，全程无感
 - 找不到 JDK 8 但当前 JVM 能运行 → 照常启动并弹窗提示建议安装 JDK 8（可关闭，不影响使用）；当前 JVM 连 JavaFX 都没有 → 错误弹窗并退出
-- 默认软件渲染（`prism.order=sw`）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证）。想用硬件渲染：`set MINION_PRISM=d3d` 再启动
+- 渲染管线默认 `es2,sw`（OpenGL 硬件加速优先，失败自动回退软件渲染）：JDK 8 的 D3D 管线在 VM/低端显卡上，消息区切页签等节点突发后设备状态损坏，渲染线程每帧抛 `D3DTexture.getContext` NPE（刷屏+界面卡死，2026-08-16 实证），故默认候选**不含 d3d**；旧默认纯软件渲染（`prism.order=sw`）在 4K 屏上全局卡顿（悬停/打字慢 1 秒，2026-08-17 实测），es2 在集成显卡上不可用时自动回退 sw 与旧行为一致（候选列表须逗号分隔，空格会被当作单一管线名导致启动崩溃）。手动覆盖：`set MINION_PRISM=d3d|es2|sw` 再启动
 - 环境变量 `MINION_JAVA`（java.exe 全路径）优先于一切探测，显式指定即信任
 
 首次运行在 jar 同目录自动生成 `config.properties`、`workspace.json`、`model.json`（MCP 服务器配置 `mcp.json` 在设置窗首次保存时生成）。

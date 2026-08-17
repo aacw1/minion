@@ -91,6 +91,11 @@ currentJavaExe, consoleAttached)` → Plan）：
 `System.setProperty("prism.order", MINION_PRISM ?? "sw")`，在 JavaFX 工具链初始化前
 设置（Boot 分派前统一执行），直启与 `--relaunched` 子进程一律生效，派生命令不再带 -D。
 
+> 2026-08-17 修正：默认改为 `es2 sw`（OpenGL 硬件加速优先，失败自动回退软件渲染）。
+> 旧默认 sw 在 4K 屏上全局卡顿（悬停/打字慢 1 秒，用户实测降 1080p 不卡）；d3d 因
+> 2026-08-16 实证的 D3DTexture NPE（VM/低端显卡）禁用，故默认候选不含 d3d。优先级
+> 不变：显式 -Dprism.order > MINION_PRISM > "es2 sw"。
+
 ### 5. 需求 1 弹窗（兜底 RUN_WITH_WARN）
 
 - 触发条件唯一：当前非 JDK8 + 当前有 JavaFX 能运行 + 系统找不到 JDK8。

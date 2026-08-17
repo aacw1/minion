@@ -52,13 +52,18 @@ public class Boot {
     }
 
     /**
-     * 软件渲染默认（bat 的 -Dprism.order=sw 迁移）；优先级：显式 -Dprism.order > MINION_PRISM > sw 默认。
-     * 须在 JavaFX 初始化前调用。
+     * 渲染管线选择：默认 es2（OpenGL 硬件加速）优先、sw 软件渲染兜底，失败自动回退。
+     * 历史：旧默认 sw（bat 迁移）在 4K/独立显卡机器上强制软件光栅化，全局界面卡顿
+     * （悬停变色/打字慢 1 秒，用户实测 1080p 不卡、探针实测 es2 管线初始化成功）；
+     * d3d 曾出问题被禁用（用户明确不能开），故默认候选不含 d3d。
+     * 注意：候选列表必须逗号分隔（JavaFX 按 split(",") 解析，空格分隔会被当作单一管线名
+     * → ClassNotFoundException → QuantumRenderer 无管线启动崩溃，2026-08-17 实证）。
+     * 优先级：显式 -Dprism.order > MINION_PRISM > "es2,sw" 默认。须在 JavaFX 初始化前调用。
      */
     private static void setPrismOrder() {
         if (System.getProperty("prism.order") != null) return;   // 尊重用户显式 -Dprism.order
         String p = System.getenv("MINION_PRISM");
-        System.setProperty("prism.order", (p == null || p.isEmpty()) ? "sw" : p);
+        System.setProperty("prism.order", (p == null || p.isEmpty()) ? "es2,sw" : p);
     }
 
     /** 以目标 java.exe 派生子进程（--relaunched + 原 args 透传），父进程退出 */
