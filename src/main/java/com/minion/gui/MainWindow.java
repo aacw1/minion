@@ -1,5 +1,6 @@
 package com.minion.gui;
 
+import com.minion.core.config.ModelConfig;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.ConfirmSheet;
@@ -96,7 +97,7 @@ public class MainWindow {
         frame.getChildren().add(root);
 
         // 自绘标题栏：应用名 | 模型标签 | 留白 | ⚙ | 窗口按钮
-        Label modelLabel = new Label("模型: " + manager.models().currentName());
+        Label modelLabel = new Label(modelLabelText());
         modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
         // 需求：标题栏页签点击激活对应会话（userData 存会话 id；删除竞态找不到则忽略）
@@ -287,12 +288,20 @@ public class MainWindow {
         stage.show();
     }
 
+    /** 顶部模型标签文本：显示当前模型的模型名（modelName），缺失时回退标识名（displayName） */
+    private String modelLabelText() {
+        ModelConfig c = manager.models().current();
+        String name = (c != null && c.modelName != null && !c.modelName.trim().isEmpty())
+                ? c.modelName.trim() : manager.models().currentName();
+        return "模型: " + name;
+    }
+
     /** 右上角 ⚙：打开设置窗，关闭后刷新顶部模型名（TitleBar.modelLabel() 持有引用） */
     private void openSettings() {
         SettingsDialog.show(stage, manager.models(), manager, MinionApp.config(),
                 manager.mcpManager());
         if (titleBar != null) {
-            titleBar.modelLabel().setText("模型: " + manager.models().currentName());
+            titleBar.modelLabel().setText(modelLabelText());
         }
     }
 
