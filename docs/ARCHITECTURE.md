@@ -41,7 +41,7 @@ com.minion
 | chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
 | input/InputView | 输入区 0.618 黄金比例宽居中大框（占正文面板宽 61.8%，上=块行+输入框、下=底部操作行：上传按钮左+发送按钮右，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层/终止运行；键盘经 capture 过滤器处理（弹层 ↑↓/Enter/Tab 选择优先于 TextArea 默认行为）；按钮状态机（提问挂起空输入=变淡回答箭头），发送/补充/回答/终止统一 btn-danger 红底；回形针上传按钮（FileChooser 选图→5MB/3 张校验→base64 建 IMAGE 块），带图消息跳过斜杠命令直发 send，回答模式带图拦截提示；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
-| input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 ≥100 字符变块阈值、弹层模式→块类型映射） |
+| input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
 | dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点●绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |

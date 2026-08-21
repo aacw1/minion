@@ -29,7 +29,10 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）；
@@ -53,6 +56,12 @@ public class InputView extends VBox {
     /** 块行与块列表：模型 List<InputChip> 与视图 FlowPane 同步维护（增删块后须 refreshChipRow + updateButton） */
     private final List<InputChip> chips = new ArrayList<InputChip>();
     private final FlowPane chipRow = new FlowPane();
+    /** 粘贴块占位符序号：保证同框内占位符唯一（[粘贴块N]） */
+    private int pasteSeq;
+    /** 占位符 → 最近被移除的粘贴块：文本撤销（Ctrl+Z）使占位符重现时恢复块，避免占位文本原样发出 */
+    private final Map<String, InputChip> droppedPastes = new LinkedHashMap<String, InputChip>();
+    /** reconcile 重入锁：清理占位残片改文本会再触发文本监听 */
+    private boolean reconciling;
     private VBox frame; // 大框（弹层锚点）
     private CompletionParser.Token lastToken; // 弹层可见时待替换的词
     private volatile SessionHandle current;
@@ -71,7 +80,8 @@ public class InputView extends VBox {
         input.setWrapText(true);
         input.setPrefRowCount(2); // 加一行
         input.setMaxHeight(6 * 24);
-        input.textProperty().addListener((obs, ov, nv) -> { updateButton(); onTextChanged(); });
+        // reconcile 先于补全解析：占位符增删同步粘贴块后再解析，弹层与发送按钮基于最终文本
+        input.textProperty().addListener((obs, ov, nv) -> { updateButton(); reconcilePasteChips(); onTextChanged(); });
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
         // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关；
         // 焦点进入时刷新文案——设置窗勾选发送键后点回输入框，提示与 tooltip 立即正确
@@ -128,12 +138,15 @@ public class InputView extends VBox {
                 input.replaceSelection("\n");
                 return;
             }
-            // 长文本粘贴（Ctrl+V / Shift+Insert）→ 变块；短文本不拦截走默认粘贴
+            // 长文本粘贴（Ctrl+V / Shift+Insert）→ 变块：块进块行，占位符插在光标处（有选区则替换选区），
+            // 发送时占位符原位展开为全文，保证落位 = 光标位置；短文本不拦截走默认粘贴
             if ((e.isControlDown() && e.getCode() == KeyCode.V)
                     || (e.isShiftDown() && e.getCode() == KeyCode.INSERT)) {
                 String clip = Clipboard.getSystemClipboard().getString();
                 if (InputChip.shouldChipPaste(clip)) {
-                    addChip(InputChip.pasteChip(clip));
+                    InputChip chip = InputChip.pasteChip(clip, "[粘贴块" + (++pasteSeq) + "]");
+                    addChip(chip);
+                    input.replaceSelection(chip.placeholder);
                     e.consume();
                     return;
                 }
@@ -229,6 +242,64 @@ public class InputView extends VBox {
         return true;
     }
 
+    /** 文本变化同步粘贴块（占位符是块在输入文本中的锚点）：
+     *  占位符消失 → 删块并清理残留碎片（Backspace 逐字删占位符时整块移除）；
+     *  占位符重现（Ctrl+Z 撤销删除）→ 从 droppedPastes 恢复块，避免占位文本原样发出。
+     *  reconciling 防重入：清理碎片改文本会再次触发文本监听 */
+    private void reconcilePasteChips() {
+        if (reconciling) return;
+        reconciling = true;
+        try {
+            String text = input.getText() == null ? "" : input.getText();
+            for (int i = chips.size() - 1; i >= 0; i--) {
+                InputChip c = chips.get(i);
+                if (c.type != InputChip.Type.PASTE || c.placeholder == null || text.contains(c.placeholder)) continue;
+                removeChipAt(i);
+                droppedPastes.put(c.placeholder, c);
+                removePlaceholderRemnants(c.placeholder);
+            }
+            String now = input.getText() == null ? "" : input.getText();
+            Iterator<Map.Entry<String, InputChip>> it = droppedPastes.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, InputChip> en = it.next();
+                if (now.contains(en.getKey())) {
+                    addChip(en.getValue());
+                    it.remove();
+                }
+            }
+        } finally {
+            reconciling = false;
+        }
+    }
+
+    /** 占位符整体消失后清理残留碎片（用户逐字删除占位符的场景）：
+     *  逐次查找文本中仍存在的最长前缀/后缀碎片（≥3 字符）并 deleteText 移除（光标留在删除点）。
+     *  碎片若同时是其他在用占位符的子串（如「[粘贴块1」之于「[粘贴块12]」）则跳过，防止误伤整块 */
+    private void removePlaceholderRemnants(String placeholder) {
+        while (true) {
+            String hit = null;
+            for (int k = placeholder.length() - 1; k >= 3 && hit == null; k--) {
+                String frag = placeholder.substring(0, k);
+                if (input.getText().contains(frag) && !fragmentInOtherPlaceholder(frag)) hit = frag;
+            }
+            for (int k = 1; k <= placeholder.length() - 3 && hit == null; k++) {
+                String frag = placeholder.substring(k);
+                if (input.getText().contains(frag) && !fragmentInOtherPlaceholder(frag)) hit = frag;
+            }
+            if (hit == null) return;
+            int idx = input.getText().indexOf(hit);
+            input.deleteText(idx, idx + hit.length());
+        }
+    }
+
+    /** 碎片是否仍属于其他在用块的占位符（防清理碎片误删其他块的占位符） */
+    private boolean fragmentInOtherPlaceholder(String frag) {
+        for (InputChip c : chips) {
+            if (c != null && c.placeholder != null && c.placeholder.contains(frag)) return true;
+        }
+        return false;
+    }
+
     /** 渲染单个块：Label + ✕ 按钮；✕ 点击删除并还焦输入框；COMMAND/SKILL/FILE 超 40 字符挂完整内容 tooltip */
     private Node chipView(InputChip chip) {
         Label label = new Label(chip.display);
@@ -237,6 +308,12 @@ public class InputView extends VBox {
         close.getStyleClass().add("chip-close");
         close.setOnAction(e -> {
             removeChipAt(chips.indexOf(chip));
+            // 粘贴块联动删除光标处占位符；记入 droppedPastes 使 Ctrl+Z 恢复占位文本时块一同恢复
+            if (chip.type == InputChip.Type.PASTE && chip.placeholder != null) {
+                droppedPastes.put(chip.placeholder, chip);
+                int idx = input.getText().indexOf(chip.placeholder);
+                if (idx >= 0) input.deleteText(idx, idx + chip.placeholder.length());
+            }
             input.requestFocus();
         });
         HBox box = new HBox(6);
@@ -367,10 +444,12 @@ public class InputView extends VBox {
         return InputChip.compose(chips, input.getText());
     }
 
-    /** 发送后清空：块 + 文本区 + 弹层（块行 unmanaged 自动归位） */
+    /** 发送后清空：块 + 文本区 + 弹层（块行 unmanaged 自动归位）；占位符状态一并重置 */
     private void clearComposer() {
         chips.clear();
         chipRow.getChildren().clear();
+        droppedPastes.clear();
+        pasteSeq = 0;
         refreshChipRow();
         popup.hide();
         input.clear();

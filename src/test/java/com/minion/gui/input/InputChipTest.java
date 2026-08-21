@@ -48,15 +48,15 @@ public class InputChipTest {
     }
 
     @Test public void shouldChipPaste_threshold() {
-        assertFalse(InputChip.shouldChipPaste(repeat('a', 99)));
-        assertTrue(InputChip.shouldChipPaste(repeat('a', 100)));
+        assertFalse(InputChip.shouldChipPaste(repeat('a', 1000))); // 等于阈值不变块
+        assertTrue(InputChip.shouldChipPaste(repeat('a', 1001)));  // 大于阈值才变块
         assertFalse(InputChip.shouldChipPaste(null));
     }
 
     @Test public void shouldChipPaste_newlinesCount() {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 50; i++) sb.append("ab\n"); // 50 行 × 3 字符（含换行）= 150
-        assertEquals(150, sb.toString().length());
+        for (int i = 0; i < 500; i++) sb.append("ab\n"); // 500 行 × 3 字符（含换行）= 1500
+        assertEquals(1500, sb.toString().length());
         assertTrue(InputChip.shouldChipPaste(sb.toString()));
     }
 
@@ -85,6 +85,51 @@ public class InputChipTest {
         InputChip img = InputChip.imageChip("image/png", "QUJD", "截图.png");
         assertEquals("文字", InputChip.compose(listOf(img), "文字"));
         assertEquals("/help 文字", InputChip.compose(listOf(cmd("/help"), img), "文字"));
+    }
+
+    private static InputChip paste(String content, String placeholder) {
+        return InputChip.pasteChip(content, placeholder);
+    }
+
+    @Test public void compose_pastePlaceholderExpandsAtEnd() {
+        assertEquals("请看LONG", InputChip.compose(listOf(paste("LONG", "[粘贴块1]")), "请看[粘贴块1]"));
+    }
+
+    @Test public void compose_pastePlaceholderExpandsAtStart() {
+        assertEquals("LONG谢谢", InputChip.compose(listOf(paste("LONG", "[粘贴块1]")), "[粘贴块1]谢谢"));
+    }
+
+    @Test public void compose_pastePlaceholderExpandsInMiddle() {
+        assertEquals("aLONGb", InputChip.compose(listOf(paste("LONG", "[粘贴块1]")), "a[粘贴块1]b"));
+    }
+
+    @Test public void compose_multiplePastePlaceholdersKeepPositions() {
+        assertEquals("一LONG1二LONG2三", InputChip.compose(
+                listOf(paste("LONG1", "[粘贴块1]"), paste("LONG2", "[粘贴块2]")),
+                "一[粘贴块1]二[粘贴块2]三"));
+    }
+
+    @Test public void compose_pastePlaceholderWithCommandChip() {
+        // 命令块仍前置，粘贴块在占位处原位展开
+        assertEquals("/help 请看LONG", InputChip.compose(
+                listOf(cmd("/help"), paste("LONG", "[粘贴块1]")), "请看[粘贴块1]"));
+    }
+
+    @Test public void compose_pastePlaceholderMissingFromTextSkipped() {
+        // 占位符已不在文本中（reconcile 兜底场景）：不前置、不重复
+        assertEquals("abc", InputChip.compose(listOf(paste("LONG", "[粘贴块1]")), "abc"));
+    }
+
+    @Test public void compose_pasteWithoutPlaceholderKeepsPrefixBehavior() {
+        assertEquals("LONG abc", InputChip.compose(listOf(InputChip.pasteChip("LONG")), "abc"));
+    }
+
+    @Test public void pasteChip_holdsPlaceholder() {
+        InputChip c = InputChip.pasteChip(repeat('x', 1001), "[粘贴块3]");
+        assertEquals(InputChip.Type.PASTE, c.type);
+        assertEquals("[粘贴块3]", c.placeholder);
+        assertEquals("粘贴内容，1001 字符", c.display);
+        assertNull(InputChip.pasteChip("y").placeholder);
     }
 
     private static String repeat(char ch, int n) {
