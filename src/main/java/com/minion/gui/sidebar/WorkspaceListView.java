@@ -183,8 +183,30 @@ public class WorkspaceListView extends ListView<String> {
         grid.addRow(0, new Label("名称:"), nameField);
         grid.addRow(1, new Label("work.dir:"), workDirBox);
         grid.addRow(2, new Label("project.md:"), pmBox);
+        // 重命名预校验（同 WorkspaceManager.isValidName）：排除自身后的名称快照，非法时 OK 禁用 + 行内红字，
+        // 不再"先提交后弹错"；未改名（与原值相同）合法。模态弹窗期间 UI 无法改列表，快照足够
+        final java.util.List<String> existingExcept = new java.util.ArrayList<String>();
+        for (WorkspaceConfig wc : workspaces.list()) {
+            if (!name.equals(wc.workSpaceName)) existingExcept.add(wc.workSpaceName);
+        }
+        Label nameErr = new Label();
+        nameErr.getStyleClass().add("log-error"); // 红字提示（theme.css 已挂载）
+        nameErr.setVisible(false);
+        grid.add(nameErr, 1, 3);
         d.getDialogPane().setContent(grid);
-
+        Button okBtn = (Button) d.getDialogPane().lookupButton(ButtonType.OK);
+        okBtn.disableProperty().bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                () -> !com.minion.core.config.WorkspaceManager.isValidName(nameField.getText().trim(), existingExcept),
+                nameField.textProperty()));
+        nameField.textProperty().addListener((obs, ov, nv) -> nameErr.setVisible(false)); // 继续编辑即清旧提示
+        // 兜底：校验不过不关弹窗（正常路径 OK 已禁用，此处防绕过与快照过期竞态）
+        okBtn.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
+            if (!com.minion.core.config.WorkspaceManager.isValidName(nameField.getText().trim(), existingExcept)) {
+                e.consume();
+                nameErr.setText("名称非法或已存在");
+                nameErr.setVisible(true);
+            }
+        });
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
             WorkspaceConfig out = new WorkspaceConfig();

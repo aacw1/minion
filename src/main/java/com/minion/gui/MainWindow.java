@@ -405,7 +405,28 @@ public class MainWindow {
         g.addRow(0, new Label("名称:"), n);
         g.addRow(1, new Label("work.dir:"), wdBox);
         g.addRow(2, new Label("project.md:"), pmBox);
+        // 名称预校验（同 WorkspaceManager.isValidName：非空/无非法字符/不重名）：非法时 OK 禁用 + 行内红字提示，
+        // 不再"先提交后弹错"。existing 为打开弹窗时的名称快照（模态弹窗期间 UI 无法改列表，快照足够）
+        final java.util.List<String> existing = new java.util.ArrayList<String>();
+        for (WorkspaceConfig w : manager.workspaces().list()) existing.add(w.workSpaceName);
+        Label nameErr = new Label();
+        nameErr.getStyleClass().add("log-error"); // 红字提示（theme.css 已挂载）
+        nameErr.setVisible(false);
+        g.add(nameErr, 1, 3);
         d.getDialogPane().setContent(g);
+        Button okBtn = (Button) d.getDialogPane().lookupButton(ButtonType.OK);
+        okBtn.disableProperty().bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                () -> !com.minion.core.config.WorkspaceManager.isValidName(n.getText().trim(), existing),
+                n.textProperty()));
+        n.textProperty().addListener((obs, ov, nv) -> nameErr.setVisible(false)); // 继续编辑即清旧提示
+        // 兜底：校验不过不关弹窗（正常路径 OK 已禁用，此处防绕过与快照过期竞态）
+        okBtn.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
+            if (!com.minion.core.config.WorkspaceManager.isValidName(n.getText().trim(), existing)) {
+                e.consume();
+                nameErr.setText("名称非法或已存在");
+                nameErr.setVisible(true);
+            }
+        });
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
             WorkspaceConfig out = new WorkspaceConfig();

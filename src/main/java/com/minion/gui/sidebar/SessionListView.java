@@ -6,9 +6,7 @@ import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -152,23 +150,11 @@ public class SessionListView extends ListView<SessionHandle> {
         d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
     }
 
-    /** 删除确认弹窗（复用原右键菜单逻辑） */
+    /** 删除会话：点击 ✕ 直接删除，不再弹窗确认（需求变更） */
     private void doDelete(SessionHandle h) {
-        Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                "删除会话「" + (h.title == null ? h.id : h.title) + "」？",
-                ButtonType.OK, ButtonType.CANCEL);
-        a.setTitle("删除会话");
-        a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
-        a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
-        a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
-        Theme.style(a); // 弹窗深色
-        a.showAndWait().ifPresent(bt -> {
-            if (bt == ButtonType.OK) {
-                manager.deleteSession(h);
-                onDeleted.accept(h); // 页签联动清理（MainWindow.removeTabById）
-                refresh();
-            }
-        });
+        manager.deleteSession(h);
+        onDeleted.accept(h); // 页签联动清理（MainWindow.removeTabById）
+        refresh();
     }
 
     /** 最后一条非 TOOL 消息的创建时间戳（毫秒；无消息/全 TOOL/旧数据 → 0） */
