@@ -263,6 +263,12 @@ public class ChatView extends VBox {
         });
     }
 
+    /** 折叠段默认展开判定：长内容（≥阈值）默认折叠、短内容默认展开；
+     *  与 shouldCollapse 语义相反（package-private 供单测） */
+    static boolean defaultExpanded(String text) {
+        return !CollapsibleText.shouldCollapse(text);
+    }
+
     /** 追加可折叠段：正文为空则只追加摘要行；否则 CollapsibleText（≥阈值默认折叠，短内容默认展开） */
     private void appendCollapsible(String tagText, String tagColorClass, String summary, String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -274,7 +280,7 @@ public class ChatView extends VBox {
             empty = false;
         }
         Seg seg = new Seg(tagText, tagColorClass, summary, text,
-                CollapsibleText.shouldCollapse(text), StreamKind.NONE);
+                defaultExpanded(text), StreamKind.NONE);
         attachFocusGovernance(seg);
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.node()));

@@ -76,4 +76,24 @@ public class ChatViewToolBodyTest {
         assertEquals("", ChatView.toolResultBody("ok"));
         assertEquals("", ChatView.toolResultBody(null));
     }
+
+    // ---- defaultExpanded（折叠语义：长内容默认折叠、短内容默认展开）----
+
+    @Test
+    public void defaultExpanded_longText_false() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < CollapsibleText.COLLAPSE_THRESHOLD + 100; i++) sb.append('x');
+        assertFalse("长内容应默认折叠", ChatView.defaultExpanded(sb.toString()));
+    }
+
+    @Test
+    public void defaultExpanded_shortText_true() {
+        assertTrue("短内容应默认展开", ChatView.defaultExpanded("短内容"));
+    }
+
+    @Test
+    public void defaultExpanded_nullOrEmpty_true() {
+        assertTrue(ChatView.defaultExpanded(null));
+        assertTrue(ChatView.defaultExpanded(""));
+    }
 }
