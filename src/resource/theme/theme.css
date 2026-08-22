@@ -369,3 +369,8 @@
 
 /* ===== 聊天正文显式 LCD：ScrollPane 裁剪下 JavaFX 8 默认回退灰阶 AA（正文发虚根因），显式指定优先 ===== */
 .chat-content { -fx-font-smoothing-type: lcd; }
+
+/* ===== 折叠文本（CollapsibleText）：摘要行可点击切换，hover 提亮 ===== */
+.log-collapsible { -fx-padding: 0; }
+.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; }
+.log-collapse-toggle:hover { -fx-text-fill: #f0f2f6; }
