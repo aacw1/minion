@@ -47,6 +47,11 @@ public class ConfirmSheet {
     /** MainWindow 注册右侧面板栈（遮罩与卡片的挂载点） */
     public static void setHost(StackPane h) { host = h; }
 
+    private static Consumer<Boolean> visibilityListener;
+
+    /** 注册弹窗可见性回调：true=显示，false=完全关闭（淡出完成）；MainWindow 用于挂起/恢复运行状态指示器 */
+    public static void setVisibilityListener(Consumer<Boolean> listener) { visibilityListener = listener; }
+
     public static void show(String message, Consumer<ConfirmUi.Decision> callback) {
         if (host == null) {
             System.err.println("[minion] ConfirmSheet host 未注册，确认请求自动拒绝");
@@ -83,6 +88,7 @@ public class ConfirmSheet {
 
     private static void display(String message, final Consumer<ConfirmUi.Decision> callback) {
         showing = true;
+        if (visibilityListener != null) visibilityListener.accept(true);
 
         final Region scrim = new Region();
         scrim.getStyleClass().add("sheet-scrim");
@@ -178,6 +184,7 @@ public class ConfirmSheet {
             @Override public void handle(ActionEvent e) {
                 host.getChildren().removeAll(scrim, card);
                 showing = false;
+                if (visibilityListener != null) visibilityListener.accept(false);
                 callback.accept(d);
                 Runnable next = pending.poll();
                 if (next != null) next.run();
