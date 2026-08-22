@@ -661,6 +661,122 @@ public class SessionManagerTest {
         mcp.shutdown();
     }
 
+    /** 页签关闭语义：deactivateSession 取消激活（currentSession 置空），再次 activate 可重新激活 */
+    @Test
+    public void deactivateSession_clearsCurrentAndAllowsReactivate() throws Exception {
+        SessionManager m = newManager();
+        final List<SessionHandle> activated = new ArrayList<SessionHandle>();
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { activated.add(h); }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+        });
+        SessionHandle h = m.createSession(null);
+        m.activateSession(h);
+        assertEquals(h, m.currentSession());
+
+        m.deactivateSession(h);
+
+        assertNull("取消激活后 currentSession 应置空", m.currentSession());
+        m.activateSession(h); // 幂等守卫不再拦截：UI 关闭页签后左侧可重新打开
+        assertEquals(h, m.currentSession());
+        assertEquals(2, activated.size());
+    }
+
+    /** deactivateSession 只取消目标会话：非当前会话调用不误伤 */
+    @Test
+    public void deactivateSession_nonCurrentNoop() throws Exception {
+        SessionManager m = newManager();
+        SessionHandle h1 = m.createSession(null);
+        SessionHandle h2 = m.createSession(null);
+        m.activateSession(h1);
+
+        m.deactivateSession(h2);
+
+        assertEquals(h1, m.currentSession());
+    }
+
+    /** deactivateSession 幂等：连续调用无异常、状态不变 */
+    @Test
+    public void deactivateSession_idempotent() throws Exception {
+        SessionManager m = newManager();
+        SessionHandle h = m.createSession(null);
+        m.activateSession(h);
+        m.deactivateSession(h);
+        m.deactivateSession(h); // 二次调用不抛异常
+        assertNull(m.currentSession());
+    }
+
+    /** 删除会话：发 onSessionDeleted 通知（UI 清理页签/缓存） */
+    @Test
+    public void deleteSession_notifiesDeleted() throws Exception {
+        SessionManager m = newManager();
+        final List<SessionHandle> deleted = new ArrayList<SessionHandle>();
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+            @Override public void onSessionDeleted(SessionHandle h) { deleted.add(h); }
+        });
+        SessionHandle h = m.createSession(null);
+        m.deleteSession(h);
+        assertEquals(1, deleted.size());
+        assertEquals(h, deleted.get(0));
+    }
+
+    /** 删除非当前工作空间：同样发 onSessionDeleted 通知（跨空间死页签清理依赖） */
+    @Test
+    public void deleteWorkspace_nonCurrent_notifiesDeletedForAll() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        m.switchWorkspace("projA");
+        SessionHandle h = m.createSession(null);
+        m.switchWorkspace("projB"); // 当前空间切走：projA 会话处于「页签保留」状态
+        final List<SessionHandle> deleted = new ArrayList<SessionHandle>();
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+            @Override public void onSessionDeleted(SessionHandle h) { deleted.add(h); }
+        });
+
+        assertTrue(m.deleteWorkspace("projA")); // 非当前空间删除：无 onWorkspaceChanged，须靠通知清页签
+
+        assertEquals(1, deleted.size());
+        assertEquals(h, deleted.get(0));
+        assertNull(ws.get("projA"));
+    }
+
+    /** findSession：跨工作空间按 id 查找（页签点击路径——页签与工作空间无关） */
+    @Test
+    public void findSession_acrossWorkspaces() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        m.switchWorkspace("projA");
+        SessionHandle h = m.createSession(null);
+        m.switchWorkspace("default");
+
+        assertNull("查不到应返回 null", m.findSession("不存在"));
+        assertEquals(h, m.findSession(h.id)); // 跨空间可查
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();

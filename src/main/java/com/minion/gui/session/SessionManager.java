@@ -62,6 +62,8 @@ public class SessionManager {
         void onError(String message);
         /** AskUserQuestion 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
         default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
+        /** 会话被删除（deleteSession / deleteWorkspace 均通知，含非当前空间）：UI 清理页签与缓存 */
+        default void onSessionDeleted(SessionHandle h) { }
     }
 
     /** 删除工作空间时等待会话退出的总超时（秒）：AgentLoop 中断后走退出落盘路径，正常远快于此 */
@@ -153,6 +155,9 @@ public class SessionManager {
     }
     private void notifyAskChanged(SessionHandle h, boolean asking) {
         for (Listener l : listeners) l.onSessionAskChanged(h, asking, asking ? h.askQuestion : null);
+    }
+    private void notifySessionDeleted(SessionHandle h) {
+        for (Listener l : listeners) l.onSessionDeleted(h);
     }
 
     /** 装配所有工作空间上下文（对照 Main 现有注册代码），并恢复历史会话 */
@@ -371,6 +376,16 @@ public class SessionManager {
         return ctx == null ? new ArrayList<SessionHandle>() : new ArrayList<SessionHandle>(ctx.sessions);
     }
 
+    /** 按 id 查找会话（跨所有工作空间）：页签点击路径——页签与工作空间无关 */
+    public SessionHandle findSession(String id) {
+        for (WorkspaceCtx ctx : ctxByName.values()) {
+            for (SessionHandle h : ctx.sessions) {
+                if (h.id.equals(id)) return h;
+            }
+        }
+        return null;
+    }
+
     public SessionHandle currentSession() { return currentSession; }
 
     public void renameSession(SessionHandle h, String newTitle) {
@@ -382,6 +397,7 @@ public class SessionManager {
 
     public void deleteSession(SessionHandle h) {
         h.deleted = true; // 先置位：send 中据此中止，防已删除会话的文件/事件复活
+        notifySessionDeleted(h);
         WorkspaceCtx ctx = ctxByName.get(h.workspaceName);
         if (ctx == null) return;
         if (h.running) stop(h);
@@ -406,6 +422,16 @@ public class SessionManager {
         currentSession = h;
         h.controller.eventList().setActive(true, null);
         notifyActivated(h);
+    }
+
+    /** 取消激活态（关闭激活中会话的页签时调用）：
+     *  UI 已卸载该会话视图但 currentSession 仍指向它——activateSession 的幂等守卫
+     *  （currentSession == h 直接 return）会挡住用户从左侧再次打开，故须置空。 */
+    public void deactivateSession(SessionHandle h) {
+        if (currentSession == h) {
+            currentSession.controller.eventList().setActive(false, null);
+            currentSession = null;
+        }
     }
 
     /** 工作空间切换（UI 层负责换绑视图；此处切上下文与激活态） */
@@ -476,6 +502,7 @@ public class SessionManager {
         boolean hasRunning = false;
         for (SessionHandle h : ctx.sessions) {
             h.deleted = true; // 先置位：send 中据此中止，防已删除会话的文件/事件复活
+            notifySessionDeleted(h);
             if (h.running) { h.loop.interrupt(); hasRunning = true; } // 终止运行中循环（stop 语义）
             h.loop.shutdown();
             h.pool.shutdownNow();
