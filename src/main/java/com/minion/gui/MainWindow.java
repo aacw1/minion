@@ -44,8 +44,10 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /** 主窗口：自绘标题栏（无边框）/ 左侧 1/4 侧栏（上会话下工作空间）/ 右侧 3/4（页签栏 + 消息区 + 输入区），GridPane 固定 25%/75% 不可拖拽 */
 public class MainWindow {
@@ -64,7 +66,8 @@ public class MainWindow {
     private InputView inputView;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
     private HBox tabsBar; // 右侧顶部页签栏（无会话时整行隐藏）
-    private boolean suppressingTabSelect; // rebuildTabs 期间不触发页签选中激活
+    /** 已打开会话 id 集合：页签存在性的唯一权威（页签 ⇔ openedIds 含 id）；切工作空间保留 */
+    private final Set<String> openedIds = new HashSet<String>();
 
     public MainWindow(Stage stage, SessionManager manager) {
         this.stage = stage;
@@ -100,17 +103,17 @@ public class MainWindow {
         Label modelLabel = new Label(modelLabelText());
         modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
-        // 需求：标题栏页签点击激活对应会话（userData 存会话 id；删除竞态找不到则忽略）
+        // 需求：标题栏页签点击激活对应会话（userData 存会话 id）；跨工作空间的页签点击先自动切回该空间
         tabs.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> {
             if (nv == null) return;
             Object id = nv.getUserData();
             if (id == null) return;
-            for (SessionHandle h : manager.sessions()) {
-                if (h.id.equals(id)) {
-                    manager.activateSession(h);
-                    return;
-                }
+            SessionHandle h = manager.findSession((String) id); // 跨所有工作空间查找
+            if (h == null) return; // 已删会话的残留页签（理论上 onSessionDeleted 已清理）：忽略
+            if (!manager.workspaces().currentName().equals(h.workspaceName)) {
+                manager.switchWorkspace(h.workspaceName); // 页签与工作空间无关：自动切回所属空间
             }
+            manager.activateSession(h); // deleted/空间守卫由 activateSession 内部处理
         });
         titleBar = new TitleBar(stage, modelLabel, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
@@ -122,6 +125,7 @@ public class MainWindow {
         sessionList = new SessionListView(manager,
                 h -> {
                     removeTabById(h.id);
+                    openedIds.remove(h.id); // 删除会话：打开标记一并清除
                     viewCache.remove(h.id); // 删除会话：缓存视图一并释放
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh();
@@ -173,7 +177,7 @@ public class MainWindow {
             tabsBar.setVisible(!empty);
             tabsBar.setManaged(!empty);
         });
-        // 首启 rebuildTabs 空列表不触发变更事件，注册后立即同步一次初始可见性
+        // 启动时无页签（懒加载）；注册监听后立即同步一次初始可见性
         tabsBar.setVisible(!tabs.getTabs().isEmpty());
         tabsBar.setManaged(!tabs.getTabs().isEmpty());
         right.getChildren().setAll(tabsBar, chatScroll, inputView);
@@ -213,6 +217,10 @@ public class MainWindow {
             }
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
+                    if (!openedIds.contains(h.id)) {
+                        openedIds.add(h.id); // 打开过的会话才有页签（懒加载）；titlePending 等标题生成后由 updateTab 补建
+                        addTab(h); // addTab 内部有 title 非空守卫
+                    }
                     selectTab(h);
                     if (chatView != null) chatView.rememberVvalue(chatScroll.getVvalue()); // 切走前记滚动位置
                     ChatView cached = viewCache.get(h.id);
@@ -256,10 +264,17 @@ public class MainWindow {
             @Override public void onWorkspaceChanged() {
                 Platform.runLater(() -> {
                     clearChatPane();
-                    viewCache.clear(); // 工作空间切换：不跨空间残留缓存视图
+                    viewCache.clear(); // 工作空间切换：不跨空间残留缓存视图；openedIds 保留（页签与空间无关）
                     wsList.refresh();
                     sessionList.refresh();
-                    rebuildTabs();
+                });
+            }
+            @Override public void onSessionDeleted(SessionHandle h) {
+                Platform.runLater(() -> {
+                    removeTabById(h.id);
+                    openedIds.remove(h.id);
+                    viewCache.remove(h.id); // 死页签清理（幂等：与 SessionListView.onDeleted 回调共存）
+                    if (chatView != null && chatView.handle() == h) clearChatPane();
                 });
             }
             @Override public void onError(String message) {
@@ -282,8 +297,6 @@ public class MainWindow {
         });
 
         ResizeHelper.attach(stage, frame); // 无边框窗口边缘/四角缩放
-
-        rebuildTabs(); // 启动补齐历史会话页签（需求 2：启动后历史会话即有页签）
 
         stage.show();
     }
@@ -475,7 +488,7 @@ public class MainWindow {
                 return;
             }
         }
-        if (h.title != null) addTab(h); // 标题生成后才建页签
+        if (h.title != null && openedIds.contains(h.id)) addTab(h); // 标题生成后才建页签；已关闭页签的不复活
     }
 
     private void addTab(SessionHandle h) {
@@ -486,25 +499,32 @@ public class MainWindow {
         t.setGraphic(runningIndicator(h));
         t.setClosable(true);
         t.setOnCloseRequest(e -> {
-            e.consume();
-            Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                    "删除会话「" + h.title + "」？", ButtonType.OK, ButtonType.CANCEL);
-            a.setHeaderText(null);                 // 去掉左边的"确认"文字（header 行移除 → 弹窗高度减一行）
-            a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
-            a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
-            Theme.style(a); // 需求 6：所有弹窗深色（会话删除确认是全代码库唯一漏配的一处）
-            a.showAndWait().ifPresent(bt -> {
-                if (bt == ButtonType.OK) {
-                    manager.deleteSession(h);
-                    tabs.getTabs().remove(t);
-                    viewCache.remove(h.id); // 删除会话：缓存视图一并释放
-                    if (chatView != null && chatView.handle() == h) clearChatPane();
-                    sessionList.refresh(); // 页签关闭路径同样联动刷新列表
-                }
-            });
+            e.consume(); // 不触发 TabPane 默认移除，由本流程显式移除
+            if (h.running) {
+                // 运行中：确认才关（关闭 = 中断运行，会话不删除）
+                Alert a = new Alert(Alert.AlertType.CONFIRMATION,
+                        "会话「" + h.title + "」正在运行，关闭将中断运行，确认关闭？",
+                        ButtonType.OK, ButtonType.CANCEL);
+                a.setHeaderText(null);                 // 去掉左边的"确认"文字
+                a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
+                a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
+                Theme.style(a);
+                a.setTitle("关闭会话");
+                a.showAndWait();
+                if (a.getResult() != ButtonType.OK) return; // 取消：页签保留、运行继续
+                manager.stop(h); // 中断运行（会话不删除，保留在列表）
+            }
+            // 关闭流程：卸载视图缓存（再次从左侧打开时重新加载）+ 移除页签
+            openedIds.remove(h.id);
+            viewCache.remove(h.id);
+            tabs.getTabs().remove(t);
+            if (chatView != null && chatView.handle() == h) {
+                manager.deactivateSession(h); // 幂等守卫不再拦截再次激活
+                clearChatPane();
+            }
         });
         tabs.getTabs().add(t);
-        if (!suppressingTabSelect) tabs.getSelectionModel().select(t);
+        tabs.getSelectionModel().select(t);
     }
 
     /** 按会话 id 移除页签（删除联动；侧栏删除按钮回调与页签关闭共用） */
@@ -529,16 +549,5 @@ public class MainWindow {
     private Node runningIndicator(SessionHandle h) {
         // 呼吸动画由 StatusDot Timeline 驱动（CSS keyframe JavaFX 8 不支持）
         return StatusDot.create(h.running);
-    }
-
-    private void rebuildTabs() {
-        for (Tab t : tabs.getTabs()) StatusDot.stopPulseIn(t.getGraphic()); // 回收呼吸动画
-        tabs.getTabs().clear();
-        suppressingTabSelect = true; // 启动/切空间补齐不触发激活；结束后恢复当前会话选中
-        for (SessionHandle h : manager.sessions()) {
-            if (h.title != null) addTab(h);
-        }
-        suppressingTabSelect = false;
-        if (manager.currentSession() != null) selectTab(manager.currentSession());
     }
 }
