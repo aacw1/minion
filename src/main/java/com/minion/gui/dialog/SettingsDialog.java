@@ -169,6 +169,7 @@ public class SettingsDialog {
             list.getItems().add(m.displayName);
         }
         int idx = list.getItems().indexOf(models.currentName());
+        // 重选当前模型：「激活」按钮的置灰联动依赖此次选中变化触发监听，勿改为不重选/增量刷新
         list.getSelectionModel().select(idx < 0 ? 0 : idx);
     }
 
