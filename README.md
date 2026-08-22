@@ -110,7 +110,7 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
 
 说明：
 
-- `thinking=true` 时按供应商翻译思考参数：deepseek → `thinking`/`reasoning_effort`；qwen → `enable_thinking`（qwen3 混合模型默认开思考，关闭时同样显式传 `enable_thinking:false`）
+- `thinking=true` 时按供应商翻译思考参数：deepseek → `thinking`/`reasoning_effort`（档位至 max）；qwen → `enable_thinking` + `reasoning_effort`（档位至 xhigh，qwen3 混合模型默认开思考，关闭时显式传 `enable_thinking:false` 且不带 effort）
 - qwen 下请求自动带 `stream_options: {include_usage: true}`（token 统计准确）
 - `provider` 为未知值时回退 deepseek 行为
 - `model.json` 缺失/为空/损坏时自动生成 deepseek + 千问两套配置（除 key 外按各自调用参数预填，key 留空待填）
