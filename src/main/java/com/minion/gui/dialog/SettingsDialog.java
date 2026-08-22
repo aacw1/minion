@@ -197,11 +197,23 @@ public class SettingsDialog {
         TextField apiKey = new TextField(mc == null ? "" : mc.apiKey);
         apiKey.setPromptText("sk-...");
         TextField modelName = new TextField(mc == null ? "" : mc.modelName);
-        TextField provider = new TextField(mc == null ? "deepseek" : mc.provider);
+        ComboBox<String> provider = new ComboBox<String>();
+        provider.getItems().addAll("qwen", "deepseek");
+        if (mc == null) {
+            provider.setValue("deepseek");
+        } else {
+            // 编辑旧配置：按原值忽略大小写回填，匹配不到取 deepseek
+            String p = mc.provider == null ? "deepseek" : mc.provider;
+            boolean hit = false;
+            for (String opt : provider.getItems()) {
+                if (opt.equalsIgnoreCase(p)) { provider.setValue(opt); hit = true; break; }
+            }
+            if (!hit) provider.setValue("deepseek");
+        }
         CheckBox thinking = new CheckBox("深度思考");
         thinking.setSelected(mc != null && mc.thinking);
         ComboBox<String> effort = new ComboBox<String>();
-        effort.getItems().addAll("low", "medium", "high", "max");
+        effort.getItems().addAll("low", "medium", "high", "xhigh", "max");
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
         TextField maxCtx = new TextField(mc == null ? "900000" : String.valueOf(mc.maxContextTokens));
         TextField thr = new TextField(mc == null ? "0.8" : String.valueOf(mc.compressThreshold));
@@ -226,7 +238,7 @@ public class SettingsDialog {
             out.url = url.getText().trim();
             out.apiKey = apiKey.getText().trim();
             out.modelName = modelName.getText().trim();
-            out.provider = provider.getText().trim();
+            out.provider = provider.getValue() == null ? "deepseek" : provider.getValue();
             out.thinking = thinking.isSelected();
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
             out.maxContextTokens = parseInt(maxCtx.getText(), 900000);
