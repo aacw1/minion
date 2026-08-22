@@ -134,6 +134,10 @@
     -fx-border-color: #2a2f3a;
     -fx-border-radius: 8;
     -fx-font-smoothing-type: lcd;
+    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
+       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
+       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
+    -fx-padding: 0;
 }
 .suggest-list .list-cell { -fx-background-color: transparent; -fx-padding: 6 10 6 10; }
 .suggest-list .list-cell:hover { -fx-background-color: #20242e; }

@@ -23,8 +23,12 @@ public class SuggestionPopup {
 
     /** 行高估算（首帧校准前的初始定位用；校准后按实际行高取整） */
     private static final double ROW_HEIGHT = 30;
-    /** 可见条目上限（约 200px） */
+    /** 可见条目上限（初始窗口/首帧估算用） */
     private static final int MAX_VISIBLE = 8;
+    /** 内容行数：光标可到达的条目数（固定 6，不足按实际项数）。弹窗总高 = 内容行 + 1 行
+     *  余量（第 7 行显示窗口下一项作预览，同时容纳水平滚动条）；到第 6 位（内容行末行）
+     *  按下即触发窗口滑动。行高变化不改变内容行数——弹窗高度随行高伸缩 */
+    private static final int VISIBLE_ITEMS = 6;
 
     /** 弹层：重建时换新实例（强制新 scene+skin；hide+show 复用旧 scene，
      *  行高变化时残留旧 cell 高度会错乱——见 rebuild()） */
@@ -38,7 +42,7 @@ public class SuggestionPopup {
     private ListView<Suggestion> createList() {
         ListView<Suggestion> l = new ListView<Suggestion>();
         l.getStyleClass().add("suggest-list");
-        l.setMaxHeight(MAX_VISIBLE * ROW_HEIGHT * 2); // 校准高度（按实际行高取整）会超出估算值，留余量
+        l.setMaxHeight(2000); // 高度保险（防校准异常撑爆弹窗）；正常校准高度 ≤ 内容行上限 6 + 余量 1 = 7 行，行高再高也够
         l.setPrefHeight(MAX_VISIBLE * ROW_HEIGHT);
         // 不可聚焦：鼠标点击条目后焦点不得落入 ListView——否则后续键盘事件全被列表吞掉
         // （↑↓ 由列表内置导航响应、Enter/Tab 无默认动作），输入框的补全键处理全部失效
@@ -119,9 +123,8 @@ public class SuggestionPopup {
         if (items.isEmpty()) { hide(); return; }
         this.all = items;
         viewTop = 0; // 新会话：窗口从列表头开始
-        // 初始窗口：前 MAX_VISIBLE 项（可见行数首帧渲染后才测得）
+        // 初始窗口：前 MAX_VISIBLE 项（内容行数校准后才收缩为 VISIBLE_ITEMS+1）
         list.getItems().setAll(new ArrayList<Suggestion>(items.subList(0, Math.min(items.size(), MAX_VISIBLE))));
-        cachedRows = -1; // 重新打开：视口行数可能变化，重新测量
         list.getSelectionModel().select(0);
         Bounds b = anchor.localToScreen(anchor.getBoundsInLocal());
         double w = anchor.getBoundsInLocal().getWidth();
@@ -184,49 +187,45 @@ public class SuggestionPopup {
                     if (++tries < 5) { Platform.runLater(this); return; } // 尚未布局，下一帧重试
                     return;
                 }
-                double estH = Math.min(all.size(), MAX_VISIBLE) * ROW_HEIGHT;
-                int rows = Math.min(list.getItems().size(), (int) Math.ceil(estH / rowH));
-                double h = rows * rowH;
-                // 非整高才减半像素：防窗口向上取整后多出残行（整高如 240.0 保持精确，不裁剪末行）
+                // 收缩窗口到内容行 + 1 项：初始窗口按 MAX_VISIBLE 估算（最多 8 项）超出
+                // 视口行数，底部多出半截项并触发垂直滚动条；首帧实测行高后收缩
+                list.getItems().setAll(window());
+                list.getSelectionModel().select(0);
+                // 弹窗高度 = 内容行 + 1 行余量：第 7 行显示窗口下一项作预览（光标不可达），
+                // 同时容纳超长名称撑出的水平滚动条（占约 19px）——不再挡末行内容；
+                // 窗口滑动到第 6 位（内容行末行）触发。
+                // +3：ListView 上下边框各 1px（theme.css border），VirtualFlow 视口 =
+                // 弹窗高 - 2；再 +1 保险——items 总高恰好等于视口高时 VirtualFlow 的
+                // 浮点比较仍判溢出，残留垂直滚动条（实测 280=280 时 vis=true）
+                double h = (visibleRows() + 1) * rowH + 3;
+                // 非整高才减半像素：防窗口向上取整后多出残行（整高如 280.0 保持精确，不裁剪末行）
                 if (Math.abs(h - Math.rint(h)) > 0.05) h -= 0.5;
-                if (Math.abs(h - list.getPrefHeight()) < 0.6) return; // 已是整行高度（半像素内差异忽略）
-                list.setPrefHeight(h);
-                calibratedH = h;
-                Bounds b = anchor.localToScreen(anchor.getBoundsInLocal());
-                double y = b.getMinY() - h; // 上方优先
-                if (y < 0) y = b.getMaxY(); // 屏幕顶部空间不足时放下方
-                lastY = y;
-                cachedRows = -1; // 重建后 VirtualFlow 全新，可见行数需重新测量
-                rebuild(); // 新 Popup 实例重建，行高与高度一致
+                if (Math.abs(h - list.getPrefHeight()) >= 0.6) {
+                    list.setPrefHeight(h);
+                    calibratedH = h;
+                    Bounds b = anchor.localToScreen(anchor.getBoundsInLocal());
+                    double y = b.getMinY() - h; // 上方优先
+                    if (y < 0) y = b.getMaxY(); // 屏幕顶部空间不足时放下方
+                    lastY = y;
+                }
+                // 收缩后强制重建：换新 ListView 清除 items 收缩（8→6）残留的旧 cell——
+                // VirtualFlow 复用 cell 池不移除多余 cell，行高变化时出现混合高度/行距错位
+                rebuild();
             }
         };
         Platform.runLater(task[0]);
     }
 
-    /** 视口可见行数（按首次测量缓存：VirtualFlow 实际渲染的 cell 数，
-     *  兼容 DPI 缩放/行高差异；只数完整可见的行，半截行/半像素残行不计，
-     *  使窗口逻辑与实际显示一致） */
-    private int cachedRows = -1;
+    /** 内容行数：固定 VISIBLE_ITEMS（不足按实际项数）。行高变化不改变内容行数——
+     *  弹窗高度随之伸缩（高行如 slash 得到更高的弹窗）；不按视口高度换算——
+     *  水平滚动条占掉视口约 19px 会导致换算少算一行 */
+    private int visibleRows() { return Math.min(VISIBLE_ITEMS, all.size()); }
 
-    private int visibleRows() {
-        if (cachedRows > 0) return cachedRows;
-        int rendered = 0;
-        double vh = list.getHeight();
-        for (javafx.scene.Node c : list.lookupAll(".list-cell")) {
-            ListCell<?> cell = (ListCell<?>) c;
-            if (cell.getIndex() >= 0 && cell.getLayoutY() + cell.getLayoutBounds().getHeight() <= vh + 0.5) {
-                rendered++;
-            }
-        }
-        cachedRows = rendered > 0 ? rendered : MAX_VISIBLE;
-        return cachedRows;
-    }
-
-    /** 当前窗口切片：首行 viewTop 起，至多可见行数项（首帧未测时按 MAX_VISIBLE）。
+    /** 当前窗口切片：首行 viewTop 起，内容行 + 1 项（第 7 行显示窗口最后一项作预览，
+     *  光标不可达——到第 6 位按下即触发滑动；列表不足 7 项时为全部）。
      *  拷贝防迭代中修改（直接传 subList 给 setAll 会 ConcurrentModificationException） */
     private List<Suggestion> window() {
-        int w = Math.min(visibleRows(), all.size());
-        int end = Math.min(viewTop + w, all.size());
+        int end = Math.min(viewTop + visibleRows() + 1, all.size());
         return new ArrayList<Suggestion>(all.subList(viewTop, end));
     }
 
@@ -254,8 +253,8 @@ public class SuggestionPopup {
         }
         if (slide) {
             list.getItems().setAll(window());
-            // 重建弹层（新 Popup + 新 ListView，VirtualFlow 从零布局）；弹层尺寸/行高
-            // 未变，可见行数不变，沿用缓存——避免按键连发时重测到尚未布局的新窗口
+            // 重建弹层（新 Popup + 新 ListView，VirtualFlow 从零布局）；内容行数固定，
+            // 不随按键连发重测，窗口始终 = 内容行 + 1 项
             rebuild();
         }
         list.getSelectionModel().select(Math.min(cur - viewTop, list.getItems().size() - 1));
