@@ -14,7 +14,7 @@ public class CollapsibleText extends VBox {
     private final MessageTextArea content;
     private final Label toggle;
     private final String summary;
-    private final String text;
+    private String text; // 流式思考段需更新，不可 final
     private boolean expanded;
 
     public CollapsibleText(String summary, String text, boolean defaultExpanded) {
@@ -45,10 +45,22 @@ public class CollapsibleText extends VBox {
         update();
     }
 
+    /** 流式内容更新（思考段）：更新正文并强制展开——流式过程内容持续增长，
+     *  折叠会遮挡实时输出；定稿折叠由 finalizeLength 按最终长度决定 */
+    public void setStreamText(String t) {
+        this.text = t == null ? "" : t;
+        content.setStreamText(this.text);
+        setExpanded(true);
+    }
+
+    /** 内容定稿：按最终长度决定折叠态（≥阈值折叠、短内容展开），流式结束后调用一次 */
+    public void finalizeLength() {
+        setExpanded(!shouldCollapse(text));
+    }
+
     private void update() {
-        toggle.setText(expanded
-                ? summary + "   ▾ 收起"
-                : summary + "   ▸ 展开（" + text.length() + " 字符）");
+        String prefix = summary.isEmpty() ? "" : summary + "   ";
+        toggle.setText(expanded ? prefix + "▾ 收起" : prefix + "▸ 展开（" + text.length() + " 字符）");
         content.setVisible(expanded);
         content.setManaged(expanded);
     }

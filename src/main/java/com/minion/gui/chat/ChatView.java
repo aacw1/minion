@@ -69,6 +69,7 @@ public class ChatView extends VBox {
         final MessageTextArea body;      // 焦点治理目标（collapsible 段 = 内部内容体）
         final CollapsibleText collapsible; // null = 普通段
         final StreamKind kind;
+        boolean thinkFinalized; // THINK 段已按最终长度定稿（防 CONTENT 增量重复折叠覆盖手动展开）
         Seg(String tagText, String tagColorClass, String text, StreamKind kind) {
             this(tagText, tagColorClass, null, text, false, kind);
         }
@@ -163,6 +164,8 @@ public class ChatView extends VBox {
         // 多轮 agent 回合间无 USER_MESSAGE，若不清零则多轮回复文本跨轮累积进同一段，
         // 每轮内容越滚越长，表现为"一直在回复同一段内容"（线上实证，用户误判上下文错乱）
         if (StreamBuffer.isRoundBoundary(e.kind)) stream.onRoundBoundary();
+        // 思考段定稿：任何非思考事件到达即思考结束，按最终长度折叠（≥阈值折叠、短展开）
+        if (e.kind != EventList.Kind.THINKING) finalizeThinking();
         switch (e.kind) {
             case USER_MESSAGE:
                 append("【输入】", "log-input", e.text, StreamKind.NONE);
@@ -271,6 +274,12 @@ public class ChatView extends VBox {
 
     /** 追加可折叠段：正文为空则只追加摘要行；否则 CollapsibleText（≥阈值默认折叠，短内容默认展开） */
     private void appendCollapsible(String tagText, String tagColorClass, String summary, String text) {
+        appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE);
+    }
+
+    /** 追加可折叠段（含流式身份）：THINK 流式段未知最终长度，先默认展开，定稿时按长度折叠 */
+    private void appendCollapsible(String tagText, String tagColorClass, String summary, String text,
+                                   StreamKind kind) {
         if (text == null || text.trim().isEmpty()) {
             append(tagText, tagColorClass, summary, StreamKind.NONE);
             return;
@@ -279,12 +288,28 @@ public class ChatView extends VBox {
             getChildren().clear();
             empty = false;
         }
-        Seg seg = new Seg(tagText, tagColorClass, summary, text,
-                defaultExpanded(text), StreamKind.NONE);
+        boolean expanded = kind == StreamKind.THINK ? true : defaultExpanded(text);
+        Seg seg = new Seg(tagText, tagColorClass, summary, text, expanded, kind);
         attachFocusGovernance(seg);
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
+    }
+
+    /** 思考段定稿：从尾部找最后一个 THINK 段，未定稿则按最终长度设置折叠态（≥阈值折叠、短展开）。
+     *  只定稿一次——CONTENT 流式增量重复到达不会覆盖用户手动展开状态；
+     *  新一轮思考流式更新（setStreamText）会重置标志，结束后重新定稿 */
+    private void finalizeThinking() {
+        for (int i = segs.size() - 1; i >= 0; i--) {
+            Seg s = segs.get(i);
+            if (s.kind == StreamKind.THINK && s.collapsible != null) {
+                if (!s.thinkFinalized) {
+                    s.collapsible.finalizeLength();
+                    s.thinkFinalized = true;
+                }
+                return;
+            }
+        }
     }
 
     /** 截断保活：段数超 MAX_SEGS 时移除头部多余段（segs 与节点树同步删），并回调注入的 trim 监听。
@@ -306,10 +331,22 @@ public class ChatView extends VBox {
     private void stream(String tagText, String tagColorClass, String text, StreamKind kind) {
         Seg last = segs.isEmpty() ? null : segs.get(segs.size() - 1);
         if (last != null && last.kind == kind && kind != StreamKind.NONE) {
-            last.body.setStreamText(text);
+            if (last.collapsible != null) {
+                // 思考段：流式更新强制展开（内容增长需实时可见），并重置定稿标志——
+                // 新一轮思考复用同一段时，结束后需按新长度重新定稿折叠
+                last.collapsible.setStreamText(text);
+                last.thinkFinalized = false;
+            } else {
+                last.body.setStreamText(text);
+            }
             return;
         }
-        append(tagText, tagColorClass, text, kind);
+        // 思考段用可折叠结构：流式未知最终长度先默认展开，结束定稿（finalizeThinking）按长度折叠
+        if (kind == StreamKind.THINK) {
+            appendCollapsible(tagText, tagColorClass, "", text, kind);
+        } else {
+            append(tagText, tagColorClass, text, kind);
+        }
     }
 
     /** 工具调用参数 → 展示正文：Edit/Write 生成行级 diff（仅变更行），其余完整参数 JSON；
