@@ -246,6 +246,14 @@ public class MainWindow {
             }
             @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
                 if (inputView != null) inputView.onAskChanged(h, asking, question);
+                // AskUserQuestion 挂起等待回答期间会话 running 仍为 true（AgentLoop 阻塞等待），
+                // 齿轮指示器会误显示"正在加载"；挂起时隐藏（保留运行态），回答完成/中断后恢复（同 ConfirmSheet 先例）
+                Platform.runLater(() -> {
+                    if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
+                        if (asking) runningIndicator.suspend();
+                        else runningIndicator.resume();
+                    }
+                });
             }
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
