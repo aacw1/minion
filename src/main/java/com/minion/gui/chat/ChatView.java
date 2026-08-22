@@ -85,7 +85,10 @@ public class ChatView extends VBox {
             }
             // 正文 = 默认白（.log-body）+ 浅色调类别色（log-body-* 定义于 CSS；四类消息着色，系统行无定义自动回退白）
             body.getStyleClass().addAll("log-body", "log-body-" + tagColorClass.substring(4));
-            HBox.setHgrow(body, Priority.ALWAYS); // 正文吃满剩余宽度，wrap 换行正常
+            // 段节点吃满剩余宽度：普通段 = 正文 body；折叠段 = CollapsibleText（VBox）整体——
+            // 只对 body 设 Hgrow 无效（body 是 VBox 内部子节点，不直接参与 HBox 布局），
+            // 折叠段会停在 prefWidth 不铺满、窗口窄时被压扁（P1 审查缺陷）
+            HBox.setHgrow(node(), Priority.ALWAYS);
             this.kind = kind;
         }
         /** 加入段行的节点：折叠段为 CollapsibleText 整体，普通段为正文 */

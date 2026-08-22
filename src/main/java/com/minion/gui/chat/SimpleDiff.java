@@ -4,7 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 行级 diff（LCS 动态规划）：输入两段文本，输出逐行前缀标记。
- *  纯逻辑无 JavaFX 依赖，可单测。规模（工具调用参数几百行内）O(n×m) 足够，不引入 Myers。 */
+ *  纯逻辑无 JavaFX 依赖，可单测。适用规模：工具调用参数几百行内（O(n×m) int DP 表，
+ *  数千行整文件替换场景内存可达数十 MB，勿用于超大输入），不引入 Myers。 */
 public class SimpleDiff {
 
     /** 仅存在于旧文本 */

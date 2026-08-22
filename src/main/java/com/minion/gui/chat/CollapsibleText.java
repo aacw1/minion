@@ -1,8 +1,6 @@
 package com.minion.gui.chat;
 
 import javafx.scene.control.Label;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 /** 可折叠文本段：摘要行（可点击切换）+ 内容体（MessageTextArea 高度自适应）。
@@ -31,8 +29,7 @@ public class CollapsibleText extends VBox {
         toggle.setOnMouseClicked(e -> setExpanded(!expanded));
 
         content = new MessageTextArea(this.text);
-        content.getStyleClass().addAll("log-body", "log-collapse-content");
-        HBox.setHgrow(content, Priority.ALWAYS);
+        content.getStyleClass().add("log-body");
 
         getChildren().addAll(toggle, content);
         update();
