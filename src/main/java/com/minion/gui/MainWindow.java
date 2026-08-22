@@ -111,6 +111,10 @@ public class MainWindow {
             if (nv == null) return;
             Object id = nv.getUserData();
             if (id == null) return;
+            // JavaFX 8 幽灵选中防御：TabPaneSkin 移除页签时执行 clearSelection()+select(旧选中项)，
+            // 旧选中项已不在 tabs 列表 → SingleSelectionModel 走 setSelectedItem 分支产生幽灵选中，
+            // 若不拦截会 activateSession 已关闭会话 → onSessionActivated 复活页签（点 X 关不掉）
+            if (!tabs.getTabs().contains(nv)) return;
             SessionHandle h = manager.findSession((String) id); // 跨所有工作空间查找
             if (h == null) return; // 已删会话的残留页签（理论上 onSessionDeleted 已清理）：忽略
             if (!manager.workspaces().currentName().equals(h.workspaceName)) {
