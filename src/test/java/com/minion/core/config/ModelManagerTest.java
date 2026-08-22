@@ -38,6 +38,7 @@ public class ModelManagerTest {
         assertEquals("qwen3-max", q.modelName);
         assertEquals("qwen", q.provider);
         assertTrue(q.thinking);
+        assertEquals("xhigh", q.reasoningEffort);
         assertEquals(131072, q.maxContextTokens);
         assertEquals(0.8, q.compressThreshold, 1e-9);
         assertEquals(10, q.keepRecentMessages);

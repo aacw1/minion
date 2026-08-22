@@ -74,7 +74,7 @@ public class ModelManager {
         return c;
     }
 
-    /** 千问（阿里百炼 DashScope OpenAI 兼容模式）；reasoningEffort 对 qwen 无效，客户端仅发 enable_thinking */
+    /** 千问（阿里百炼 DashScope OpenAI 兼容模式）；effort 档位至 xhigh（平台默认 xhigh） */
     public static ModelConfig createQwen() {
         ModelConfig c = new ModelConfig();
         c.displayName = "qwen3-max";
@@ -83,7 +83,7 @@ public class ModelManager {
         c.modelName = "qwen3-max";
         c.provider = "qwen";
         c.thinking = true;
-        c.reasoningEffort = "max";
+        c.reasoningEffort = "xhigh";
         c.maxContextTokens = 131072;
         c.compressThreshold = 0.8;
         c.keepRecentMessages = 10;
