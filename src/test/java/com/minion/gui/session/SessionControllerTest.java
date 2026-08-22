@@ -3,6 +3,7 @@ package com.minion.gui.session;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
+import com.minion.core.tools.ToolResult;
 import com.minion.gui.session.EventList.Ev;
 import org.junit.Test;
 
@@ -103,7 +104,7 @@ public class SessionControllerTest {
         assertEquals("{\"path\":\"a.txt\"}", evs.get(0).data);
         assertEquals(EventList.Kind.TOOL_RESULT, evs.get(1).kind);
         assertEquals("ReadTool", evs.get(1).text);
-        assertEquals("ok", evs.get(1).data);
+        assertEquals("ok\nfile content", evs.get(1).data);
     }
 
     @Test
@@ -181,5 +182,80 @@ public class SessionControllerTest {
         assertEquals(2, states.size());
         assertEquals("选哪个？", states.get(0));
         assertNull(states.get(1));
+    }
+
+    // ===== 完整输出携带与重演（设计 2026-08-22 工具详情完整展示，Task 3）=====
+
+    private static List<Ev> replay(Message... messages) {
+        SessionController c = new SessionController();
+        c.replayHistory(java.util.Arrays.asList(messages));
+        return c.eventList().snapshot();
+    }
+
+    /** 运行时成功结果：TOOL_RESULT data 携带完整输出（"ok\n"+output），不再只有 "ok" 标记 */
+    @Test
+    public void onToolResult_success_carriesFullOutput() {
+        SessionController c = new SessionController();
+        c.onToolResult("Bash", ToolResult.success("line1\nline2\nline3"));
+        Ev ev = c.eventList().snapshot().get(0);
+        assertEquals(EventList.Kind.TOOL_RESULT, ev.kind);
+        assertEquals("Bash", ev.text);
+        assertEquals("ok\nline1\nline2\nline3", ev.data);
+    }
+
+    /** 运行时失败结果：data 为 "error:"+完整原因（多行不截断） */
+    @Test
+    public void onToolResult_error_carriesFullReason() {
+        SessionController c = new SessionController();
+        c.onToolResult("Edit", ToolResult.error("第一行原因\n第二行原因"));
+        Ev ev = c.eventList().snapshot().get(0);
+        assertEquals("error:第一行原因\n第二行原因", ev.data);
+    }
+
+    /** null 结果（异常路径）降级为成功态 "ok"，不抛 NPE */
+    @Test
+    public void onToolResult_nullResult_okOnly() {
+        SessionController c = new SessionController();
+        c.onToolResult("Bash", null);
+        Ev ev = c.eventList().snapshot().get(0);
+        assertEquals("ok", ev.data);
+    }
+
+    /** 成功但输出为空串：保留 "ok\n" 前缀（换行后空串），渲染层按成功态解析 */
+    @Test
+    public void onToolResult_success_emptyOutput_okPrefix() {
+        SessionController c = new SessionController();
+        c.onToolResult("Bash", ToolResult.success(""));
+        Ev ev = c.eventList().snapshot().get(0);
+        assertEquals("ok\n", ev.data);
+    }
+
+    /** 历史 TOOL 消息重演：输出携带存储的完整内容（"ok\n"+content） */
+    @Test
+    public void replayHistory_toolMessage_carriesStoredOutput() {
+        List<Ev> evs = replay(Message.toolResult("id1", "Bash", "pwd 输出内容"));
+        assertEquals(1, evs.size());
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(0).kind);
+        assertEquals("Bash", evs.get(0).text);
+        assertEquals("ok\npwd 输出内容", evs.get(0).data);
+    }
+
+    /** 历史 AskUserQuestion 回答：先重演回答行（USER_SUPPLEMENT）再 ✅ 行，✅ 行携带完整输出 */
+    @Test
+    public void replayHistory_askUserQuestion_answerThenOkLine() {
+        List<Ev> evs = replay(Message.toolResult("id2", "AskUserQuestion", "用户回答文本"));
+        assertEquals(2, evs.size()); // 回答行（USER_SUPPLEMENT）+ ✅ 行
+        assertEquals(EventList.Kind.USER_SUPPLEMENT, evs.get(0).kind);
+        assertEquals("用户回答文本", evs.get(0).text);
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(1).kind);
+        assertEquals("ok\n用户回答文本", evs.get(1).data);
+    }
+
+    /** 历史 TOOL 消息内容为空：统一成功态且不产生多余换行（data="ok"） */
+    @Test
+    public void replayHistory_toolMessage_emptyContent_okOnly() {
+        List<Ev> evs = replay(Message.toolResult("id3", "Bash", ""));
+        assertEquals(1, evs.size());
+        assertEquals("ok", evs.get(0).data);
     }
 }

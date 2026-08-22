@@ -54,8 +54,9 @@ public class SessionController implements AgentUi {
                 if ("AskUserQuestion".equals(m.name) && m.content != null && !m.content.trim().isEmpty()) {
                     events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, m.content, null));
                 }
-                // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演（与运行时 ✅ 格式一致）
-                events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, m.name, "ok"));
+                // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演，携带完整输出
+                String out = (m.content == null || m.content.trim().isEmpty()) ? "ok" : "ok\n" + m.content;
+                events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, m.name, out));
             }
         }
     }
@@ -74,8 +75,16 @@ public class SessionController implements AgentUi {
                 args == null ? "{}" : args.toString()));
     }
     @Override public void onToolResult(String name, ToolResult result) {
-        events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name,
-                result == null ? "" : (result.ok ? "ok" : "error:" + result.output)));
+        if (result == null) {
+            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name, "ok"));
+        } else if (result.ok) {
+            // "ok" 前缀保持 ChatView 现有 ok 判断兼容；换行后接完整输出（可能为空串）
+            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name,
+                    "ok\n" + (result.output == null ? "" : result.output)));
+        } else {
+            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name,
+                    "error:" + (result.output == null ? "" : result.output)));
+        }
     }
     @Override public void onSubAgentStart(String description) {
         events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_START, description, null));
