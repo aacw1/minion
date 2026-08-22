@@ -32,6 +32,10 @@ public class ModelManager {
                     for (ModelConfig c : h.models) {
                         // 过滤 null / displayName 缺失条目，保证列表无不可用元素
                         if (c != null && c.displayName != null && !c.displayName.trim().isEmpty()) {
+                            // reasoningEffort 缺失兜底：qwen 默认 xhigh（平台档位最高），其余默认 max
+                            if (c.reasoningEffort == null || c.reasoningEffort.trim().isEmpty()) {
+                                c.reasoningEffort = "qwen".equalsIgnoreCase(c.provider) ? "xhigh" : "max";
+                            }
                             m.models.add(c);
                         }
                     }

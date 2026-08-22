@@ -31,6 +31,7 @@ public class ModelManagerTest {
         assertEquals("deepseek-v4-flash", c.displayName);
         assertEquals(900000, c.maxContextTokens);
         assertEquals("", c.apiKey);
+        assertEquals("max", c.reasoningEffort);
         ModelConfig q = m.get("qwen3-max");
         assertNotNull(q);
         assertEquals("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", q.url);
@@ -137,6 +138,20 @@ public class ModelManagerTest {
         assertFalse(Files.exists(dir.resolve("model.json.bak")));
     }
 
+    /** 旧 model.json 缺 reasoningEffort：按 provider 归一化（qwen→xhigh，其余→max） */
+    @Test
+    public void load_missingReasoningEffortNormalized() throws IOException {
+        Path dir = jarDir();
+        String json = "{\"models\":["
+                + "{\"displayName\":\"q\",\"url\":\"http://q\",\"modelName\":\"qwen3-max\",\"provider\":\"qwen\",\"maxContextTokens\":131072},"
+                + "{\"displayName\":\"d\",\"url\":\"http://d\",\"modelName\":\"deepseek-v4-flash\",\"provider\":\"deepseek\",\"maxContextTokens\":900000}"
+                + "],\"currentModelName\":\"q\"}";
+        Files.write(dir.resolve("model.json"), json.getBytes(StandardCharsets.UTF_8));
+        ModelManager m = ModelManager.load(dir);
+        assertEquals("xhigh", m.get("q").reasoningEffort);
+        assertEquals("max", m.get("d").reasoningEffort);
+    }
+
     /** 原子写：save 后无 .tmp 残留，文件内容可被 Gson 重新解析 */
     @Test
     public void save_atomicWriteNoTmpAndReparsable() throws IOException {
@@ -153,3 +168,4 @@ public class ModelManagerTest {
         assertEquals(3, models.size());
     }
 }
+
