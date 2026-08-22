@@ -8,6 +8,8 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     JAVA_HOME="E:/javame/jdk8" mvn clean package   # 构建（产物 target/minion-0.1.0.jar，含依赖；必须 JDK8 含 JavaFX）
     JAVA_HOME="E:/javame/jdk8" mvn test            # 运行测试
     java -jar target/minion-0.1.0.jar                # 启动 GUI（jar 自举：自动开控制台、自动探测/切换 JDK 8；双击 jar 亦可）
+    软件运行位置: E:\javame\code\run\minion-0.1.0.jar
+    代码位置为工作空间
 
 ## 包结构（详见 docs/ARCHITECTURE.md）
 
