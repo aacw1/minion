@@ -69,4 +69,19 @@ public class SettingsDialogTest {
         assertEquals(41, s.length()); // 40 字符 + …
         assertTrue(s.endsWith("…"));
     }
+
+    // ===== 模型页激活判定（纯逻辑，无 JavaFX） =====
+
+    /** 无选中（null）或选中的就是当前模型 → 不可激活 */
+    @Test
+    public void canActivate_rejectsNullOrCurrent() {
+        assertFalse(SettingsDialog.canActivate(null, "deepseek-v4-flash"));
+        assertFalse(SettingsDialog.canActivate("deepseek-v4-flash", "deepseek-v4-flash"));
+    }
+
+    /** 选中了其它模型 → 可激活 */
+    @Test
+    public void canActivate_allowsDifferentModel() {
+        assertTrue(SettingsDialog.canActivate("qwen3-max", "deepseek-v4-flash"));
+    }
 }

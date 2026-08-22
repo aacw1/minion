@@ -168,6 +168,11 @@ public class SettingsDialog {
         list.getSelectionModel().select(idx < 0 ? 0 : idx);
     }
 
+    /** 选中项可激活：非空且不同于当前模型（模型页「激活」按钮启用/置灰判定） */
+    static boolean canActivate(String selectedName, String currentName) {
+        return selectedName != null && !selectedName.equals(currentName);
+    }
+
     /** 新建（mc==null 带默认值）/ 修改（mc!=null 预填）表单；OK 返回配置，取消返回 null（迁移自 ModelDialog） */
     private static ModelConfig form(ModelConfig mc) {
         Dialog<ModelConfig> d = new Dialog<ModelConfig>();
