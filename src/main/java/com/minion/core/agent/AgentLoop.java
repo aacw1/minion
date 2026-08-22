@@ -242,12 +242,17 @@ public class AgentLoop {
             ui.onWarning("未启用上下文压缩");
             return;
         }
-        int before = session.messages.size();
-        session.messages = contextManager.compress(session.messages);
-        if (session.messages.size() < before) {
-            ui.onWarning("已压缩上下文（历史摘要已置前）");
-        } else {
-            ui.onWarning("暂无可压缩内容");
+        ui.onCompressingChanged(true);
+        try {
+            int before = session.messages.size();
+            session.messages = contextManager.compress(session.messages);
+            if (session.messages.size() < before) {
+                ui.onWarning("已压缩上下文（历史摘要已置前）");
+            } else {
+                ui.onWarning("暂无可压缩内容");
+            }
+        } finally {
+            ui.onCompressingChanged(false);
         }
     }
 
@@ -342,12 +347,17 @@ public class AgentLoop {
                     break;
                 }
                 if (contextManager != null && contextManager.shouldCompress(session.messages)) {
-                    int before = session.messages.size();
-                    session.messages = contextManager.compress(session.messages);
-                    if (session.messages.size() < before) {
-                        int pct = (int) (contextManager.estimate(session.messages) * 100
-                                / contextManager.maxTokens());
-                        ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
+                    ui.onCompressingChanged(true);
+                    try {
+                        int before = session.messages.size();
+                        session.messages = contextManager.compress(session.messages);
+                        if (session.messages.size() < before) {
+                            int pct = (int) (contextManager.estimate(session.messages) * 100
+                                    / contextManager.maxTokens());
+                            ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
+                        }
+                    } finally {
+                        ui.onCompressingChanged(false);
                     }
                 }
                 String system = promptBuilder.build(allSkills);

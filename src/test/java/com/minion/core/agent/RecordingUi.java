@@ -33,4 +33,10 @@ public class RecordingUi implements AgentUi {
     @Override public synchronized void onAskUserStart(String question) { asksStarted.add(question); }
     @Override public synchronized void onAskUserDone(String answer) { asksDone.add(answer); }
     @Override public synchronized void onUserSupplement(String text) { supplements.add(text); }
+
+    public final List<Boolean> compressing = new ArrayList<Boolean>();
+
+    @Override public synchronized void onCompressingChanged(boolean compressing) {
+        this.compressing.add(compressing);
+    }
 }

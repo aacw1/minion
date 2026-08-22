@@ -18,4 +18,6 @@ public interface AgentUi {
     default void onAskUserStart(String question) { }
     /** AskUserQuestion 收到回答（answer 为回答文本；中断路径不回调，由运行态复位兜底） */
     default void onAskUserDone(String answer) { }
+    /** 上下文压缩进行中（true=开始，false=结束；同步阻塞压缩前后成对发出） */
+    default void onCompressingChanged(boolean compressing) { }
 }
