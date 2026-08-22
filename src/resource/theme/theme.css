@@ -255,6 +255,11 @@
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
 .status-dot-running { -fx-background-color: #3fb950; }
 
+/* ===== 运行状态指示器（正文区左下角齿轮+文案） ===== */
+.running-indicator { -fx-spacing: 8; }
+.running-indicator-gear { -fx-fill: #8a8f98; }
+.running-indicator-text { -fx-text-fill: #8a8f98; -fx-font-size: 12px; }
+
 /* 滚动条 */
 .scroll-pane { -fx-background-color: transparent; }
 .scroll-pane > .viewport { -fx-background-color: transparent; }

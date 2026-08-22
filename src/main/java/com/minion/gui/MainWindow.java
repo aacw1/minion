@@ -15,6 +15,7 @@ import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -64,6 +65,8 @@ public class MainWindow {
     /** 无活动会话时的空白占位（clearChatPane 后 setContent 用；视图内容保留在缓存中不销毁） */
     private final Region placeholder = new Region();
     private InputView inputView;
+    /** 运行状态指示器（正文区左下角悬浮齿轮+动态文案；仅当前激活会话运行时显示） */
+    private RunningIndicator runningIndicator;
     private TitleBar titleBar; // 自绘标题栏（openSettings 刷新顶部模型名用）
     private HBox tabsBar; // 右侧顶部页签栏（无会话时整行隐藏）
     /** 已打开会话 id 集合：页签存在性的唯一权威（页签 ⇔ openedIds 含 id）；切工作空间保留 */
@@ -165,10 +168,17 @@ public class MainWindow {
         chatScroll.setFitToHeight(true); // 消息区铺满正文窗口：内容少时 ChatView 拉伸到视口高（背景 #121314 铺满）
         chatScroll.setPrefHeight(200); // 固定 pref：否则 prefHeight 随消息内容增长，挤压右侧 VBox 把页签行压扁（探针验证）
         chatScroll.setContent(placeholder); // 激活会话后换 ChatView
-        VBox.setVgrow(chatScroll, Priority.ALWAYS);
         setupAutoScroll();
         WheelScrollAccelerator.attach(chatScroll); // 滚轮加速：每格固定像素滚动（替换 JavaFX 8 默认慢速比例滚动）
         inputView = new InputView(manager, MinionApp.config());
+        // 运行状态指示器：正文区左下角悬浮（齿轮+动态文案），StackPane 叠加于消息区之上，不占布局
+        runningIndicator = new RunningIndicator();
+        StackPane chatHost = new StackPane(chatScroll, runningIndicator);
+        StackPane.setAlignment(runningIndicator, Pos.BOTTOM_LEFT);
+        StackPane.setMargin(runningIndicator, new Insets(0, 0, 10, 14));
+        // JavaFX 8 无 StackPane.setFillWidth/Height（12+ 才有）：用 max 钳制防默认 fill 拉伸铺满
+        runningIndicator.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        VBox.setVgrow(chatHost, Priority.ALWAYS); // 原 chatScroll 的 vgrow 约束移交 chatHost
         // 页签栏（右侧顶部，下带 1px 分隔线；页签为空时整行隐藏）
         tabsBar = new HBox(tabs);
         tabsBar.getStyleClass().add("tabs-bar");
@@ -180,7 +190,7 @@ public class MainWindow {
         // 启动时无页签（懒加载）；注册监听后立即同步一次初始可见性
         tabsBar.setVisible(!tabs.getTabs().isEmpty());
         tabsBar.setManaged(!tabs.getTabs().isEmpty());
-        right.getChildren().setAll(tabsBar, chatScroll, inputView);
+        right.getChildren().setAll(tabsBar, chatHost, inputView);
 
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
         StackPane rightStack = new StackPane(right);
@@ -211,6 +221,20 @@ public class MainWindow {
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
                 Platform.runLater(() -> updateTab(h));
                 if (inputView != null) inputView.onRunningChanged(h, running);
+                // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写，统一 runLater 访问）
+                Platform.runLater(() -> {
+                    if (chatView != null && chatView.handle() == h) {
+                        runningIndicator.setRunning(running);
+                        runningIndicator.setCompressing(false); // 运行结束复位压缩态
+                    }
+                });
+            }
+            @Override public void onCompressingChanged(SessionHandle h, boolean compressing) {
+                Platform.runLater(() -> {
+                    if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
+                        runningIndicator.setCompressing(compressing);
+                    }
+                });
             }
             @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
                 if (inputView != null) inputView.onAskChanged(h, asking, question);
@@ -232,6 +256,8 @@ public class MainWindow {
                         chatScroll.setVvalue(chatView.savedVvalue());
                         if (inputView != null) inputView.bindSession(h);
                         sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
+                        runningIndicator.setRunning(h.running); // 切会话：按新会话运行态刷新指示器
+                        runningIndicator.setCompressing(false); // 切会话复位压缩态（压缩事件按会话隔离）
                         return;
                     }
                     chatView = ChatView.forSession(h);
@@ -259,6 +285,8 @@ public class MainWindow {
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
                     sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
+                    runningIndicator.setRunning(h.running); // 切会话：按新会话运行态刷新指示器
+                    runningIndicator.setCompressing(false); // 切会话复位压缩态（压缩事件按会话隔离）
                 });
             }
             @Override public void onWorkspaceChanged() {
@@ -349,6 +377,8 @@ public class MainWindow {
         chatView = null;
         chatScroll.setContent(placeholder); // 无活动会话：空白占位
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
+        runningIndicator.setRunning(false); // 无活动会话：指示器隐藏并停动画
+        runningIndicator.setCompressing(false);
     }
 
     /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
