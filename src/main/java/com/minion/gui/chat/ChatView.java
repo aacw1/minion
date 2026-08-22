@@ -63,20 +63,33 @@ public class ChatView extends VBox {
     /** 流身份：THINK=思考流、REPLY=回复流（流式就地更新末段正文），NONE=静态行（永不参与就地更新） */
     private enum StreamKind { THINK, REPLY, NONE }
 
-    /** 消息段：彩色加粗标签 + 白色正文 + 流身份 kind（THINK/REPLY 就地更新，NONE 静态行永不覆盖） */
+    /** 消息段：彩色加粗标签 + 正文（普通 MessageTextArea 或 CollapsibleText）+ 流身份 kind */
     private static class Seg {
         final Label tag;
-        final MessageTextArea body;
+        final MessageTextArea body;      // 焦点治理目标（collapsible 段 = 内部内容体）
+        final CollapsibleText collapsible; // null = 普通段
         final StreamKind kind;
         Seg(String tagText, String tagColorClass, String text, StreamKind kind) {
+            this(tagText, tagColorClass, null, text, false, kind);
+        }
+        Seg(String tagText, String tagColorClass, String summary, String text,
+            boolean defaultExpanded, StreamKind kind) {
             tag = new Label(tagText);
             tag.getStyleClass().addAll("log-tag", tagColorClass);
-            body = new MessageTextArea(text);
+            if (summary == null) {
+                collapsible = null;
+                body = new MessageTextArea(text);
+            } else {
+                collapsible = new CollapsibleText(summary, text, defaultExpanded);
+                body = collapsible.contentArea();
+            }
             // 正文 = 默认白（.log-body）+ 浅色调类别色（log-body-* 定义于 CSS；四类消息着色，系统行无定义自动回退白）
             body.getStyleClass().addAll("log-body", "log-body-" + tagColorClass.substring(4));
             HBox.setHgrow(body, Priority.ALWAYS); // 正文吃满剩余宽度，wrap 换行正常
             this.kind = kind;
         }
+        /** 加入段行的节点：折叠段为 CollapsibleText 整体，普通段为正文 */
+        Node node() { return collapsible != null ? collapsible : body; }
     }
 
     private final List<Seg> segs = new ArrayList<Seg>();
@@ -173,18 +186,20 @@ public class ChatView extends VBox {
                 stream("【回复】", "log-reply", plain, StreamKind.REPLY);
                 break;
             case TOOL_CALL: {
-                String body = "AskUserQuestion".equals(e.text)
-                        ? "❓ 模型向你提问\n" + askQuestionOf(e.data)
-                        : "⛭ " + e.text + "\n" + shorten(e.data == null ? "{}" : e.data.toString(), 120);
-                append("【工具】", "log-tool", body, StreamKind.NONE);
+                if ("AskUserQuestion".equals(e.text)) {
+                    appendCollapsible("【工具】", "log-tool", "❓ 模型向你提问", askQuestionOf(e.data));
+                } else {
+                    appendCollapsible("【工具】", "log-tool",
+                            toolCallSummary(e.text, e.data), toolCallBody(e.text, e.data));
+                }
                 break;
             }
             case TOOL_RESULT: {
                 String data = e.data == null ? "" : e.data.toString();
                 boolean ok = data.startsWith("ok");
-                if (ok) append("【工具】", "log-tool", "✅ " + e.text + " 成功", StreamKind.NONE);
-                // 失败行追加原因（error: 前缀后的内容首行截断）：排查无需翻工具结果即可看到失败原因
-                else append("【系统】", "log-error", "❌ " + e.text + " 失败" + toolFailureDetail(data), StreamKind.NONE);
+                String summary = ok ? "✅ " + e.text + " 成功" : "❌ " + e.text + " 失败";
+                appendCollapsible(ok ? "【工具】" : "【系统】", ok ? "log-tool" : "log-error",
+                        summary, toolResultBody(data));
                 break;
             }
             case ERROR:
@@ -228,16 +243,38 @@ public class ChatView extends VBox {
             empty = false;
         }
         Seg seg = new Seg(tagText, tagColorClass, text, kind);
-        // 焦点治理：任一段获得焦点即清除其他段选区——选区是 TextInputControl 私有状态，多块同时显示选中
-        // 但 Ctrl+C 只复制焦点块（用户反馈"只有最后的块选中才有复制效果"）；排除自身保留本段选区
+        attachFocusGovernance(seg);
+        segs.add(seg);
+        getChildren().add(new HBox(seg.tag, seg.node()));
+        trimHead();
+    }
+
+    /** 焦点治理：任一段获得焦点即清除其他段选区（选区是 TextInputControl 私有状态，多块同时显示选中
+     *  但 Ctrl+C 只复制焦点块——用户反馈"只有最后的块选中才有复制效果"）；排除自身保留本段选区 */
+    private void attachFocusGovernance(Seg seg) {
         seg.body.focusedProperty().addListener((obs, ov, nv) -> {
             if (!Boolean.TRUE.equals(nv)) return;
             for (Seg other : segs) {
                 if (other != seg) other.body.deselect();
             }
         });
+    }
+
+    /** 追加可折叠段：正文为空则只追加摘要行；否则 CollapsibleText（≥阈值默认折叠，短内容默认展开） */
+    private void appendCollapsible(String tagText, String tagColorClass, String summary, String text) {
+        if (text == null || text.trim().isEmpty()) {
+            append(tagText, tagColorClass, summary, StreamKind.NONE);
+            return;
+        }
+        if (empty) {
+            getChildren().clear();
+            empty = false;
+        }
+        Seg seg = new Seg(tagText, tagColorClass, summary, text,
+                CollapsibleText.shouldCollapse(text), StreamKind.NONE);
+        attachFocusGovernance(seg);
         segs.add(seg);
-        getChildren().add(new HBox(seg.tag, seg.body));
+        getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
     }
 
@@ -266,25 +303,49 @@ public class ChatView extends VBox {
         append(tagText, tagColorClass, text, kind);
     }
 
-    /** TOOL_RESULT 失败行追加原因：data（SessionController 的 "error:" 前缀 + 原因）→ "：原因首行截断"；
-     *  非 error 数据/空原因回空串（保持原「❌ 名称 失败」显示）；package-private 供单测 */
-    static String toolFailureDetail(String data) {
-        if (data == null || !data.startsWith("error:")) return "";
-        String detail = data.substring("error:".length()).trim();
-        if (detail.isEmpty()) return "";
-        String[] lines = detail.split("\\r?\\n");
-        for (String line : lines) {
-            if (!line.trim().isEmpty()) {
-                detail = line.trim();
-                break;
+    /** 工具调用参数 → 展示正文：Edit/Write 生成行级 diff（仅变更行），其余完整参数 JSON；
+     *  解析失败回退原 JSON（package-private 供单测） */
+    static String toolCallBody(String name, Object data) {
+        String json = data == null ? "{}" : data.toString();
+        if (!"Edit".equals(name) && !"Write".equals(name)) return json;
+        try {
+            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+            String oldS = o.has("oldString") && !o.get("oldString").isJsonNull()
+                    ? o.get("oldString").getAsString() : "";
+            String newS = o.has("newString") && !o.get("newString").isJsonNull()
+                    ? o.get("newString").getAsString() : "";
+            StringBuilder sb = new StringBuilder();
+            for (SimpleDiff.Line ln : SimpleDiff.diff(oldS, newS)) {
+                if (ln.mark == SimpleDiff.COMMON) continue; // 只显示变更行
+                sb.append(ln.mark).append(' ').append(ln.text).append('\n');
             }
+            String body = sb.toString().trim();
+            return body.isEmpty() ? json : body; // 无变更（如 newString==oldString）回退原 JSON
+        } catch (Exception e) {
+            return json;
         }
-        return "：" + shorten(detail, 120);
     }
 
-    private static String shorten(String s, int max) {
-        if (s == null) return "";
-        return s.length() > max ? s.substring(0, max) + "…" : s;
+    /** 工具调用摘要行：Edit/Write 附带路径，其余仅名称（package-private 供单测） */
+    static String toolCallSummary(String name, Object data) {
+        if ("Edit".equals(name) || "Write".equals(name)) {
+            try {
+                JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString()).getAsJsonObject();
+                if (o.has("path") && !o.get("path").isJsonNull()) {
+                    return "⛭ " + name + " → " + o.get("path").getAsString();
+                }
+            } catch (Exception ignored) { }
+        }
+        return "⛭ " + name;
+    }
+
+    /** TOOL_RESULT 数据 → 展示正文："ok\n" 前缀后为成功输出，"error:" 前缀后为失败原因；
+     *  旧格式裸 "ok"（无输出）返回空串（package-private 供单测） */
+    static String toolResultBody(String data) {
+        if (data == null) return "";
+        if (data.startsWith("ok\n")) return data.substring(3);
+        if (data.startsWith("error:")) return data.substring("error:".length());
+        return "";
     }
 
     /**
