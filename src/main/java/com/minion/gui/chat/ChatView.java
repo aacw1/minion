@@ -104,7 +104,7 @@ public class ChatView extends VBox {
         this.handle = handle;
         getStyleClass().add("panel-dark"); // 背景 rgb(18,19,20)，随 ScrollPane fitToHeight 铺满正文窗口
         setSpacing(0); // 段间无缝紧贴（控制台连续输出）
-        setStyle("-fx-padding: 16 16 12 16;"); // 底部 12px + 右栏 VBox spacing 8 = 距输入框约 1 行
+        setStyle("-fx-padding: 16 16 40 16;"); // 底部 40px：为左下角运行状态指示器让位（覆盖距底 10~27px），滚动到底不遮挡最后一行
         clear();
     }
 

@@ -195,6 +195,10 @@ public class MainWindow {
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
         StackPane rightStack = new StackPane(right);
         ConfirmSheet.setHost(rightStack);
+        // 工具提问弹窗显示期间隐藏运行状态指示器（防"等待用户操作"被误判为卡死），关闭后恢复
+        ConfirmSheet.setVisibilityListener(showing -> Platform.runLater(() -> {
+            if (showing) runningIndicator.suspend(); else runningIndicator.resume();
+        }));
 
         // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
         GridPane center = new GridPane();
