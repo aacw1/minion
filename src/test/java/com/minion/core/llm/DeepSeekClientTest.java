@@ -335,7 +335,15 @@ public class DeepSeekClientTest {
         assertNotNull(p);
         assertTrue(p.get("enable_thinking").getAsBoolean());
         assertFalse(p.has("thinking"));
-        assertFalse(p.has("reasoning_effort"));
+        assertEquals("max", p.get("reasoning_effort").getAsString());
+    }
+
+    @Test
+    public void thinkingParams_qwenEnabled_xhigh() {
+        JsonObject p = DeepSeekClient.thinkingParams("qwen", true, "xhigh");
+        assertNotNull(p);
+        assertTrue(p.get("enable_thinking").getAsBoolean());
+        assertEquals("xhigh", p.get("reasoning_effort").getAsString());
     }
 
     @Test
@@ -370,7 +378,7 @@ public class DeepSeekClientTest {
         JsonObject json = JsonParser.parseString(req.getBody().readUtf8()).getAsJsonObject();
         assertTrue(json.get("enable_thinking").getAsBoolean());
         assertFalse(json.has("thinking"));
-        assertFalse(json.has("reasoning_effort"));
+        assertEquals("max", json.get("reasoning_effort").getAsString());
         assertTrue(json.getAsJsonObject("stream_options").get("include_usage").getAsBoolean());
     }
 

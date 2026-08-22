@@ -85,6 +85,9 @@ public class DeepSeekClient implements LlmClient {
         if ("qwen".equalsIgnoreCase(provider)) {
             JsonObject o = new JsonObject();
             o.addProperty("enable_thinking", thinking);
+            if (thinking) {
+                o.addProperty("reasoning_effort", reasoningEffort);
+            }
             return o;
         }
         if (!thinking) return null;
