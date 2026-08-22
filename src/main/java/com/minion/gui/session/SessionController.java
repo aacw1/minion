@@ -19,6 +19,11 @@ public class SessionController implements AgentUi {
 
     public void setAskStateListener(java.util.function.Consumer<String> l) { this.askStateListener = l; }
 
+    /** 上下文压缩状态回调（true=开始，false=结束），SessionManager 注入 */
+    private volatile java.util.function.Consumer<Boolean> compressingStateListener;
+
+    public void setCompressingStateListener(java.util.function.Consumer<Boolean> l) { this.compressingStateListener = l; }
+
     public EventList eventList() { return events; }
 
     /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT→THINKING/CONTENT/TOOL_CALL、
@@ -119,5 +124,8 @@ public class SessionController implements AgentUi {
         // 回答入事件流（USER_SUPPLEMENT 渲染为【输入】段）：消息区提问「❓ 模型向你提问」与回答成对显示；
         // 空回答不投递，与「输入为空不发」一致
         if (answer != null && !answer.isEmpty()) onUserSupplement(answer);
+    }
+    @Override public void onCompressingChanged(boolean compressing) {
+        if (compressingStateListener != null) compressingStateListener.accept(compressing);
     }
 }

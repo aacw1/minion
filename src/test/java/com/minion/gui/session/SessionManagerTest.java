@@ -777,6 +777,30 @@ public class SessionManagerTest {
         assertEquals(h, m.findSession(h.id)); // 跨空间可查
     }
 
+    /** 压缩状态：会话控制器事件 → Listener.onCompressingChanged（携带会话句柄） */
+    @Test
+    public void compressingChanged_notifiesListener() throws Exception {
+        SessionManager m = newManager();
+        final java.util.List<Boolean> got = new java.util.ArrayList<Boolean>();
+        final SessionHandle[] gotH = new SessionHandle[1];
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { }
+            @Override public void onCompressingChanged(SessionHandle h, boolean compressing) {
+                gotH[0] = h;
+                got.add(compressing);
+            }
+        });
+        SessionHandle h = m.createSession(null);
+        h.controller.onCompressingChanged(true);
+        h.controller.onCompressingChanged(false);
+        assertSame(h, gotH[0]);
+        assertEquals(java.util.Arrays.asList(true, false), got);
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();

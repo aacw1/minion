@@ -258,4 +258,17 @@ public class SessionControllerTest {
         assertEquals(1, evs.size());
         assertEquals("ok", evs.get(0).data);
     }
+
+    /** 压缩状态回调：onCompressingChanged 转发到 compressingStateListener */
+    @Test
+    public void onCompressingChanged_forwardsToListener() {
+        SessionController c = new SessionController();
+        final java.util.List<Boolean> got = new java.util.ArrayList<Boolean>();
+        c.setCompressingStateListener(new java.util.function.Consumer<Boolean>() {
+            @Override public void accept(Boolean b) { got.add(b); }
+        });
+        c.onCompressingChanged(true);
+        c.onCompressingChanged(false);
+        assertEquals(java.util.Arrays.asList(true, false), got);
+    }
 }

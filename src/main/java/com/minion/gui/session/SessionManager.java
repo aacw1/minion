@@ -62,6 +62,8 @@ public class SessionManager {
         void onError(String message);
         /** AskUserQuestion 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
         default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
+        /** 上下文压缩状态变化（true=压缩中；仅当前激活会话时 GUI 显示） */
+        default void onCompressingChanged(SessionHandle h, boolean compressing) { }
         /** 会话被删除（deleteSession / deleteWorkspace 均通知，含非当前空间）：UI 清理页签与缓存 */
         default void onSessionDeleted(SessionHandle h) { }
     }
@@ -156,6 +158,9 @@ public class SessionManager {
     private void notifyAskChanged(SessionHandle h, boolean asking) {
         for (Listener l : listeners) l.onSessionAskChanged(h, asking, asking ? h.askQuestion : null);
     }
+    private void notifyCompressingChanged(SessionHandle h, boolean compressing) {
+        for (Listener l : listeners) l.onCompressingChanged(h, compressing);
+    }
     private void notifySessionDeleted(SessionHandle h) {
         for (Listener l : listeners) l.onSessionDeleted(h);
     }
@@ -205,6 +210,12 @@ public class SessionManager {
                         h.askQuestion = question;
                         h.askPending = question != null;
                         notifyAskChanged(h, question != null);
+                    }
+                });
+                // 恢复会话也接线压缩状态转发（压缩回调随 AgentLoop 驱动，与新建会话一致）
+                controller.setCompressingStateListener(new java.util.function.Consumer<Boolean>() {
+                    @Override public void accept(Boolean compressing) {
+                        notifyCompressingChanged(h, compressing);
                     }
                 });
                 ctx.sessions.add(h);
@@ -323,6 +334,12 @@ public class SessionManager {
                 h.askQuestion = question;
                 h.askPending = question != null;
                 notifyAskChanged(h, question != null);
+            }
+        });
+        // 压缩状态接线：AgentLoop.onCompressingChanged → 控制器 → Listener（Task 4 MainWindow 显示指示器）
+        controller.setCompressingStateListener(new java.util.function.Consumer<Boolean>() {
+            @Override public void accept(Boolean compressing) {
+                notifyCompressingChanged(h, compressing);
             }
         });
         ctx.sessions.add(h);
