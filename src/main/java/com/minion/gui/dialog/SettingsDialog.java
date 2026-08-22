@@ -100,24 +100,28 @@ public class SettingsDialog {
         refresh(list, models);
         list.setPrefSize(360, 240);
 
-        list.setOnMouseClicked(e -> {
-            int idx = list.getSelectionModel().getSelectedIndex();
-            if (idx < 0 || e.getClickCount() != 1) return;
-            String name = list.getItems().get(idx);
-            if (!name.equals(models.currentName())) {
-                models.setCurrent(name);
-                manager.applyModelChanged(); // 需求 13：切换模型全量生效
-            }
-            refresh(list, models);
-        });
-
         HBox actions = new HBox(8);
+        Button activate = new Button("激活");
         Button add = new Button("新建");
         Button edit = new Button("修改");
         Button del = new Button("删除");
+        activate.getStyleClass().add("btn-ghost");
         add.getStyleClass().add("btn-ghost");
         edit.getStyleClass().add("btn-ghost");
         del.getStyleClass().add("btn-ghost");
+        activate.setDisable(true); // 初始置灰：首次 refresh 已选中当前模型（监听注册在后，首次选中不触发）
+        activate.setOnAction(e -> {
+            int idx = list.getSelectionModel().getSelectedIndex();
+            if (idx < 0) return;
+            String name = list.getItems().get(idx);
+            if (!canActivate(name, models.currentName())) return; // 双保险：已激活不可重复激活
+            models.setCurrent(name);
+            manager.applyModelChanged(); // 需求 13：切换模型全量生效
+            refresh(list, models);
+        });
+        // 选中项变化（鼠标点击/键盘导航/refresh 重选）联动按钮状态
+        list.getSelectionModel().selectedItemProperty().addListener(
+                (obs, o, n) -> activate.setDisable(!canActivate(n, models.currentName())));
         add.setOnAction(e -> {
             ModelConfig mc = form(null);
             if (mc != null) {
@@ -151,7 +155,7 @@ public class SettingsDialog {
             }
             refresh(list, models);
         });
-        actions.getChildren().addAll(add, edit, del);
+        actions.getChildren().addAll(activate, add, edit, del);
 
         VBox box = new VBox(10);
         box.setPadding(new Insets(10));
