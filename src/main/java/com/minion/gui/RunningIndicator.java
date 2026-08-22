@@ -59,6 +59,15 @@ public class RunningIndicator extends HBox {
         text.getStyleClass().add("running-indicator-text");
         getChildren().addAll(gear, text);
         setVisible(false); // 初始隐藏（空闲）；位置由挂载方 StackPane 对齐决定
+        // 可见性自洽：手动隐藏（弹窗遮挡等）时停动画防泄漏；恢复可见且运行中时重启动画
+        visibleProperty().addListener((obs, ov, nv) -> {
+            if (!nv) {
+                stopAnimations();
+            } else if (running) {
+                text.setText(displayText(compressing, pickText(rnd)));
+                startAnimations();
+            }
+        });
     }
 
     /** 从轮换池随机取一个文案（纯静态可单测；允许连续相同，符合"随机"语义） */
@@ -71,7 +80,7 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画 */
+    /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
     public void setRunning(boolean running) {
         this.running = running;
         if (!running) {
@@ -80,9 +89,17 @@ public class RunningIndicator extends HBox {
             setVisible(false);
             return;
         }
-        setVisible(true);
-        text.setText(displayText(compressing, pickText(rnd)));
-        startAnimations();
+        setVisible(true); // 触发 visibleProperty 监听：显示文案 + 启动动画
+    }
+
+    /** 弹窗遮挡期间挂起：仅隐藏（visible 监听自动停动画），保留 running/compressing 状态 */
+    public void suspend() {
+        setVisible(false);
+    }
+
+    /** 弹窗关闭后恢复：会话仍运行则重新显示（visible 监听重启动画）；否则保持隐藏（防弹窗期间会话已结束） */
+    public void resume() {
+        setVisible(running);
     }
 
     /** 压缩状态：true → 固定压缩文案并暂停轮换；false → 恢复轮换（仅运行态生效） */
