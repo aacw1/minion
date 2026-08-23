@@ -391,7 +391,7 @@ public class AgentLoop {
                         if (session.messages.size() < before) {
                             int pct = (int) (contextManager.estimate(session.messages) * 100
                                     / contextManager.maxTokens());
-                            ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
+                            ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
                             pushContextStats(); // 压缩完成：进度圈回落
                         }
                     } finally {
