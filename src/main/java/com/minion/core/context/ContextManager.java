@@ -18,6 +18,8 @@ public class ContextManager {
     private static final int KEEP_MIN = 12;          // 保留区下限（条数）
     private static final double KEEP_RATIO = 0.5;    // 保留区占比目标
 
+    private static final int SEGMENT_MIN = 30; // 段内消息数下限：以下不再递归
+
     // FX 线程 update/setLlm 写入、会话工作线程 shouldCompress/compress 读取——volatile 防 JMM 数据竞争
     private volatile int maxContextTokens;      // final 移除
     private volatile double threshold;
@@ -113,14 +115,100 @@ public class ContextManager {
         return take;
     }
 
-    /** 压缩：链为单位，摘要置前；保留最近 keepRecent 条原文。失败原样返回。 */
+    /** 压缩：链为单位，摘要置前；保留最近 keepRecent 条原文。失败分段递归降级，全部失败原样返回。 */
     public List<Message> compress(List<Message> messages) {
         List<List<Message>> chains = chunkChains(messages);
         int take = takeChains(chains, keepRecent, messages);
         if (take == 0) return messages; // 全部要保留，无需压缩
 
+        SegResult res = compressChains(chains, 0, take, null);
+        if (res == null) {
+            System.err.println("[minion] 压缩失败，跳过本轮");
+            return messages;
+        }
+        // 技能加载消息（pinned）常驻：不入链不参与摘要，原样保留在摘要后
+        List<Message> result = new ArrayList<Message>();
+        for (Message m : messages) {
+            if (m.role == Message.Role.SYSTEM) result.add(m); // system 原样保留，置于最前
+        }
+        result.addAll(res.messages);
+        for (Message m : messages) {
+            if (m.pinned) result.add(m);
+        }
+        for (int i = take; i < chains.size(); i++) {
+            result.addAll(chains.get(i)); // 保留未被压缩的链；旧 summary 由新摘要取代
+        }
+        return result;
+    }
+
+    private static class SegResult {
+        final String summary;         // 本段完全成功时的摘要文本；null = 未完全成功
+        final List<Message> messages; // 本段输出（摘要置前+失败原文）；null = 段整体失败
+        SegResult(String summary, List<Message> messages) {
+            this.summary = summary;
+            this.messages = messages;
+        }
+    }
+
+    /** 压缩 chains[from,to)，prefix 为上游摘要文本（可为 null）。递归降级：
+     *  整体成功 → 单摘要；失败且段 > SEGMENT_MIN → token 均衡二分递归；
+     *  失败且已最小段 → prefix(如有)+原文。返回 null = 本段整体失败。 */
+    private SegResult compressChains(List<List<Message>> chains, int from, int to, String prefix) {
+        String s = callLlm(prefix, buildBatch(chains, from, to));
+        if (s != null && !s.trim().isEmpty()) {
+            String t = s.trim();
+            return new SegResult(t, Collections.singletonList(summaryMsg(t)));
+        }
+        if (countMessages(chains, from, to) <= SEGMENT_MIN) {
+            if (prefix == null) return null; // 无上游摘要且本段失败 → 整体失败
+            List<Message> out = new ArrayList<Message>();
+            out.add(summaryMsg(prefix));
+            for (int i = from; i < to; i++) out.addAll(chains.get(i));
+            return new SegResult(null, out);
+        }
+        int mid = splitByTokens(chains, from, to);
+        SegResult left = compressChains(chains, from, mid, prefix);
+        if (left == null) {
+            // 左段全败：右段带原 prefix 压，左段原文保留在结果尾部
+            SegResult right = compressChains(chains, mid, to, prefix);
+            if (right == null) return null;
+            List<Message> out = new ArrayList<Message>(right.messages);
+            for (int i = from; i < mid; i++) out.addAll(chains.get(i));
+            return new SegResult(right.summary, out);
+        }
+        if (left.summary != null) {
+            // 左段完全成功：摘要A 作 prefix 压右段（合并），左段摘要由右段结果取代
+            SegResult right = compressChains(chains, mid, to, left.summary);
+            if (right == null) return left;
+            return right;
+        }
+        // 左段部分成功（含失败原文）：右段独立压，两侧结果摘要统一置前拼接
+        SegResult right = compressChains(chains, mid, to, null);
+        if (right == null) return left;
+        List<Message> out = new ArrayList<Message>();
+        for (Message m : left.messages) if (m.summary) out.add(m);
+        for (Message m : right.messages) if (m.summary) out.add(m);
+        for (Message m : left.messages) if (!m.summary) out.add(m);
+        for (Message m : right.messages) if (!m.summary) out.add(m);
+        return new SegResult(null, out);
+    }
+
+    /** 拼压缩批次文本；prefix 非空时置于批次前（上游摘要参与下游合并） */
+    private String callLlm(String prefix, String batch) {
+        StringBuilder sb = new StringBuilder();
+        if (prefix != null) sb.append(prefix).append('\n');
+        sb.append(batch);
+        try {
+            return llm.completeChat(
+                    Collections.singletonList(Message.user(sb.toString())), COMPRESS_SYSTEM);
+        } catch (Exception e) {
+            return null; // 失败静默降级，顶层统一告警
+        }
+    }
+
+    private String buildBatch(List<List<Message>> chains, int from, int to) {
         StringBuilder batch = new StringBuilder();
-        for (int i = 0; i < take; i++) {
+        for (int i = from; i < to; i++) {
             for (Message m : chains.get(i)) {
                 batch.append('[').append(m.role).append(']');
                 if (m.content != null) batch.append(' ').append(m.content);
@@ -135,35 +223,37 @@ public class ContextManager {
                 batch.append('\n');
             }
         }
-        String summary;
-        try {
-            summary = llm.completeChat(
-                    Collections.singletonList(Message.user(batch.toString())), COMPRESS_SYSTEM);
-        } catch (Exception e) {
-            System.err.println("[minion] 压缩失败，跳过本轮: " + e.getMessage());
-            return messages;
-        }
-        if (summary == null || summary.trim().isEmpty()) {
-            System.err.println("[minion] 压缩返回空摘要，跳过本轮");
-            return messages;
-        }
+        return batch.toString();
+    }
 
-        // 技能加载消息（pinned）常驻：不入链不参与摘要，原样保留在摘要后
-        List<Message> pinnedMsgs = new ArrayList<Message>();
-        for (Message m : messages) {
-            if (m.pinned) pinnedMsgs.add(m);
+    private int countMessages(List<List<Message>> chains, int from, int to) {
+        int n = 0;
+        for (int i = from; i < to; i++) n += chains.get(i).size();
+        return n;
+    }
+
+    /** 按 token 均衡二分（链为边界），mid 严格落在 (from, to) 内 */
+    private int splitByTokens(List<List<Message>> chains, int from, int to) {
+        int total = 0;
+        for (int i = from; i < to; i++) total += TokenCounter.estimateMessages(chains.get(i));
+        int half = total / 2;
+        int acc = 0;
+        int mid = from + 1;
+        for (int i = from; i < to - 1; i++) {
+            acc += TokenCounter.estimateMessages(chains.get(i));
+            if (acc >= half) {
+                mid = i + 1;
+                break;
+            }
         }
-        List<Message> result = new ArrayList<Message>();
-        for (Message m : messages) {
-            if (m.role == Message.Role.SYSTEM) result.add(m); // system 原样保留，置于最前
-        }
-        Message summaryMsg = Message.user("【历史对话摘要】\n" + summary.trim());
-        summaryMsg.summary = true;
-        result.add(summaryMsg);
-        result.addAll(pinnedMsgs);
-        for (int i = take; i < chains.size(); i++) {
-            result.addAll(chains.get(i)); // 保留未被压缩的链；旧 summary 由新摘要取代
-        }
-        return result;
+        if (mid <= from) mid = from + 1;
+        if (mid >= to) mid = to - 1;
+        return mid;
+    }
+
+    private static Message summaryMsg(String text) {
+        Message m = Message.user("【历史对话摘要】\n" + text);
+        m.summary = true;
+        return m;
     }
 }

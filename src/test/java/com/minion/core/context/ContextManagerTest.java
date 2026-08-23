@@ -288,4 +288,86 @@ public class ContextManagerTest {
         String batch = llm.lastRequestMessages.get(1).content;
         assertFalse(batch.contains("审查指令全文"));
     }
+
+    /** 每链 2 条同内容消息（10 中文字 = 11 token/条、22/链恒定），二分点稳定（19 链 → mid=10） */
+    private static List<Message> longHistory(int chainsCount) {
+        List<Message> msgs = new ArrayList<Message>();
+        String base = "一二三四五六七八九十";
+        for (int i = 0; i < chainsCount; i++) {
+            msgs.add(Message.user(base));
+            msgs.add(Message.assistant(base));
+        }
+        return msgs;
+    }
+
+    private static int countUserTags(String batch) {
+        int n = 0;
+        int idx = 0;
+        while ((idx = batch.indexOf("[USER]", idx)) >= 0) { n++; idx += 6; }
+        return n;
+    }
+
+    /** 整体失败 → 二分：左段(链0..9,20条)成功出摘要A，右段(链10..18)带摘要A 合并成功 → 单个 summary；共 3 次调用 */
+    @Test
+    public void compress_splitsOnFailure_andMerges() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        llm.failAtCompleteChat.add(1); // 整体失败
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> result = cm.compress(longHistory(20)); // 40 条 = 20 链，压 19 链
+        // summary + 保留 2 条
+        assertEquals(3, result.size());
+        assertTrue(result.get(0).summary);
+        assertEquals(3, llm.completeChatRequests.size());
+        // 第 2 次 = 左段 10 链（20 条，其中 [USER] 10 个）；第 3 次 = 摘要A + 右段 9 链（18 条，[USER] 9 个）
+        assertEquals(10, countUserTags(llm.completeChatRequests.get(1)));
+        assertEquals(9, countUserTags(llm.completeChatRequests.get(2))); // 摘要A + 右段 9 链
+        assertTrue(llm.completeChatRequests.get(2).startsWith("【摘要】历史要点"));
+    }
+
+    /** 合并轮失败：左段成功(摘要A)、合并失败 → 降级为「摘要A + 右段18条原文」+ 保留2条 */
+    @Test
+    public void compress_mergeFailure_keepsPrefixSummary() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        llm.failAtCompleteChat.add(1);
+        llm.failAtCompleteChat.add(3); // 整体✗、左✓、合并✗
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> result = cm.compress(longHistory(20));
+        // summary(摘要A) + 右段 18 条原文 + 保留 2 条
+        assertEquals(21, result.size());
+        assertTrue(result.get(0).summary);
+        assertTrue(result.get(0).content.contains("【摘要】历史要点"));
+        assertEquals("一二三四五六七八九十", result.get(1).content); // 右段原文开始
+    }
+
+    /** 左段全败、右段成功：摘要B 置前 + 左段20条原文 + 保留2条 */
+    @Test
+    public void compress_leftFailure_keepsLeftOriginal() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        llm.failAtCompleteChat.add(1);
+        llm.failAtCompleteChat.add(2); // 整体✗、左✗、右✓
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> result = cm.compress(longHistory(20));
+        // summary(摘要B) + 左段 20 条原文 + 保留 2 条
+        assertEquals(23, result.size());
+        assertTrue(result.get(0).summary);
+        assertEquals("一二三四五六七八九十", result.get(1).content);
+        assertEquals("一二三四五六七八九十", result.get(2).content);
+    }
+
+    /** 全部段失败：原样返回（引用相等，最强校验） */
+    @Test
+    public void compress_allSegmentsFail_returnsOriginal() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        llm.failAtCompleteChat.add(1);
+        llm.failAtCompleteChat.add(2);
+        llm.failAtCompleteChat.add(3);
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> input = longHistory(20);
+        List<Message> result = cm.compress(input);
+        assertSame(input, result);
+    }
 }
