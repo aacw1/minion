@@ -3,15 +3,18 @@ package com.minion.gui.chat;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.EventList;
 import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,9 +74,9 @@ public class ChatView extends VBox {
         final StreamKind kind;
         boolean thinkFinalized; // THINK 段已按最终长度定稿（防 CONTENT 增量重复折叠覆盖手动展开）
         Seg(String tagText, String tagColorClass, String text, StreamKind kind) {
-            this(tagText, tagColorClass, null, text, false, kind);
+            this(tagText, tagColorClass, (Node) null, text, false, kind);
         }
-        Seg(String tagText, String tagColorClass, String summary, String text,
+        Seg(String tagText, String tagColorClass, Node summary, String text,
             boolean defaultExpanded, StreamKind kind) {
             tag = new Label(tagText);
             tag.getStyleClass().addAll("log-tag", tagColorClass);
@@ -193,19 +196,20 @@ public class ChatView extends VBox {
                 break;
             case TOOL_CALL: {
                 if ("AskUserQuestion".equals(e.text)) {
-                    appendCollapsible("【工具】", "log-tool", "❓ 模型向你提问", askQuestionOf(e.data));
+                    appendCollapsible("【工具】", "log-tool", questionSummary(), askQuestionOf(e.data));
                 } else {
                     appendCollapsible("【工具】", "log-tool",
-                            toolCallSummary(e.text, e.data), toolCallBody(e.text, e.data));
+                            toolSummary(toolCallSummary(e.text, e.data)), toolCallBody(e.text, e.data));
                 }
                 break;
             }
             case TOOL_RESULT: {
                 String data = e.data == null ? "" : e.data.toString();
                 boolean ok = data.startsWith("ok");
-                String summary = ok ? "✅ " + e.text + " 成功" : "❌ " + e.text + " 失败";
                 appendCollapsible(ok ? "【工具】" : "【系统】", ok ? "log-tool" : "log-error",
-                        summary, toolResultBody(data));
+                        statusSummary(ok ? IconFactory.success() : IconFactory.error(),
+                                e.text + (ok ? " 成功" : " 失败")),
+                        toolResultBody(data));
                 break;
             }
             case ERROR:
@@ -215,16 +219,21 @@ public class ChatView extends VBox {
                 append("【系统】", "log-warn", e.text, StreamKind.NONE);
                 break;
             case STATS:
-                append("【系统】", "log-sys", e.text, StreamKind.NONE);
+                // 统计行 "⏱ " 前缀由 GUI 剥离展示（core StatsLine 保持原样；不匹配则原样展示）
+                String stats = e.text != null && e.text.startsWith("⏱ ") ? e.text.substring(2) : e.text;
+                appendCollapsible("【系统】", "log-sys",
+                        statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE);
                 break;
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
                 append("【系统】", "log-sys", e.text, StreamKind.NONE);
                 break;
             case SUB_AGENT_START:
-                append("【工具】", "log-tool", "▶ 子任务: " + e.text, StreamKind.NONE);
+                appendCollapsible("【工具】", "log-tool",
+                        statusSummary(IconFactory.play(), "子任务: " + e.text), null, StreamKind.NONE);
                 break;
             case SUB_AGENT_DONE:
-                append("【工具】", "log-tool", "✓ 子任务完成: " + e.text, StreamKind.NONE);
+                appendCollapsible("【工具】", "log-tool",
+                        statusSummary(IconFactory.check(), "子任务完成: " + e.text), null, StreamKind.NONE);
                 break;
             default:
                 break;
@@ -272,16 +281,25 @@ public class ChatView extends VBox {
         return !CollapsibleText.shouldCollapse(text);
     }
 
-    /** 追加可折叠段：正文为空则只追加摘要行；否则 CollapsibleText（≥阈值默认折叠，短内容默认展开） */
-    private void appendCollapsible(String tagText, String tagColorClass, String summary, String text) {
+    /** 追加可折叠段（Node 摘要：图标+文本组合行）；正文为空则只渲染摘要行 */
+    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text) {
         appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE);
     }
 
     /** 追加可折叠段（含流式身份）：THINK 流式段未知最终长度，先默认展开，定稿时按长度折叠 */
-    private void appendCollapsible(String tagText, String tagColorClass, String summary, String text,
+    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
                                    StreamKind kind) {
         if (text == null || text.trim().isEmpty()) {
-            append(tagText, tagColorClass, summary, StreamKind.NONE);
+            // 无正文（子任务行/统计行）：CollapsibleText 空内容 → 只渲染摘要行
+            if (empty) {
+                getChildren().clear(); // 占位提示随首段出现清除
+                empty = false;
+            }
+            Seg seg = new Seg(tagText, tagColorClass, summary, "", false, kind);
+            attachFocusGovernance(seg);
+            segs.add(seg);
+            getChildren().add(new HBox(seg.tag, seg.node()));
+            trimHead();
             return;
         }
         if (empty) {
@@ -343,7 +361,7 @@ public class ChatView extends VBox {
         }
         // 思考段用可折叠结构：流式未知最终长度先默认展开，结束定稿（finalizeThinking）按长度折叠
         if (kind == StreamKind.THINK) {
-            appendCollapsible(tagText, tagColorClass, "", text, kind);
+            appendCollapsible(tagText, tagColorClass, new Label(""), text, kind);
         } else {
             append(tagText, tagColorClass, text, kind);
         }
@@ -372,17 +390,39 @@ public class ChatView extends VBox {
         }
     }
 
-    /** 工具调用摘要行：Edit/Write 附带路径，其余仅名称（package-private 供单测） */
+    /** 工具调用摘要行：Edit/Write 附带路径，其余仅名称（package-private 供单测）；
+     *  返回纯文本（无前缀标记——前缀图标由 toolSummary 的 SVG 扳手承担） */
     static String toolCallSummary(String name, Object data) {
         if ("Edit".equals(name) || "Write".equals(name)) {
             try {
                 JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString()).getAsJsonObject();
                 if (o.has("path") && !o.get("path").isJsonNull()) {
-                    return "⛭ " + name + " → " + o.get("path").getAsString();
+                    return name + " → " + o.get("path").getAsString();
                 }
             } catch (Exception ignored) { }
         }
-        return "⛭ " + name;
+        return name;
+    }
+
+    /** 状态摘要行（正文段摘要）：图标(14px) + 文本，左对齐（替代原 ✅/❌/▶/✓ 等 Unicode 前缀，不依赖字体） */
+    private static Node statusSummary(SVGPath icon, String text) {
+        IconFactory.size(icon, 14);
+        Label label = new Label(text);
+        label.getStyleClass().add("log-summary-text");
+        HBox box = new HBox(6);
+        box.setAlignment(Pos.CENTER_LEFT);
+        box.getChildren().addAll(icon, label);
+        return box;
+    }
+
+    /** 提问摘要行：问号图标 + 文案（原 "❓ 模型向你提问"） */
+    private static Node questionSummary() {
+        return statusSummary(IconFactory.help(), "模型向你提问");
+    }
+
+    /** 工具调用摘要行：扳手图标 + 纯文本摘要（原 "⛭ " 前缀） */
+    private static Node toolSummary(String text) {
+        return statusSummary(IconFactory.build(), text);
     }
 
     /** TOOL_RESULT 数据 → 展示正文："ok\n" 前缀后为成功输出，"error:" 前缀后为失败原因；

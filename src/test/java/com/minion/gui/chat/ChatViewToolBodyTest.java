@@ -50,13 +50,13 @@ public class ChatViewToolBodyTest {
 
     @Test
     public void toolCallSummary_edit_includesPath() {
-        assertEquals("⛭ Edit → src/foo.java",
+        assertEquals("Edit → src/foo.java",
                 ChatView.toolCallSummary("Edit", "{\"path\":\"src/foo.java\"}"));
     }
 
     @Test
     public void toolCallSummary_otherTool_nameOnly() {
-        assertEquals("⛭ Bash", ChatView.toolCallSummary("Bash", "{\"command\":\"ls\"}"));
+        assertEquals("Bash", ChatView.toolCallSummary("Bash", "{\"command\":\"ls\"}"));
     }
 
     // ---- toolResultBody ----
