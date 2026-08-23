@@ -1,31 +1,48 @@
 package com.minion.gui.chat;
 
+import com.minion.gui.icon.IconFactory;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 
 /** 可折叠文本段：摘要行（可点击切换）+ 内容体（MessageTextArea 高度自适应）。
  *  内容 ≥COLLAPSE_THRESHOLD 字符时默认折叠，短内容默认展开；均可手动点击切换。
- *  折叠态内容体不参与布局（managed=false），滚动只由外层 ScrollPane 统一负责。 */
+ *  折叠态内容体不参与布局（managed=false），滚动只由外层 ScrollPane 统一负责。
+ *  摘要行 = [chevron 图标][摘要节点][收起/展开（N 字符）]，chevron 随折叠态切换图形（SVG，不依赖字体）。 */
 public class CollapsibleText extends VBox {
 
     /** 默认折叠阈值：内容长度 ≥ 此值默认折叠（常量可调，不设设置项） */
     public static final int COLLAPSE_THRESHOLD = 500;
 
     private final MessageTextArea content;
-    private final Label toggle;
-    private final String summary;
+    private final HBox toggle;          // 摘要行（可点击）
+    private final SVGPath chevron;      // 折叠态指示（expand_more/chevron_right）
+    private final Label state;          // 「收起」/「展开（N 字符）」
+    private final Node summaryNode;     // 摘要（String 构造时 = Label）
     private String text; // 流式思考段需更新，不可 final
     private boolean expanded;
 
     public CollapsibleText(String summary, String text, boolean defaultExpanded) {
-        this.summary = summary == null ? "" : summary;
+        this(new Label(summary == null ? "" : summary), text, defaultExpanded);
+    }
+
+    public CollapsibleText(Node summary, String text, boolean defaultExpanded) {
+        this.summaryNode = summary;
         this.text = text == null ? "" : text;
         this.expanded = defaultExpanded;
         getStyleClass().add("log-collapsible");
         setSpacing(2);
 
-        toggle = new Label();
+        chevron = new SVGPath();
+        chevron.getStyleClass().add("icon-chevron");
+        IconFactory.size(chevron, 12);
+        state = new Label();
+        state.getStyleClass().add("log-collapse-toggle");
+        toggle = new HBox(4);
         toggle.getStyleClass().add("log-collapse-toggle");
+        toggle.getChildren().addAll(chevron, summaryNode, state);
         toggle.setOnMouseClicked(e -> setExpanded(!expanded));
 
         content = new MessageTextArea(this.text);
@@ -59,8 +76,8 @@ public class CollapsibleText extends VBox {
     }
 
     private void update() {
-        String prefix = summary.isEmpty() ? "" : summary + "   ";
-        toggle.setText(expanded ? prefix + "▾ 收起" : prefix + "▸ 展开（" + text.length() + " 字符）");
+        chevron.setContent(expanded ? IconFactory.CHEVRON_DOWN_PATH : IconFactory.CHEVRON_RIGHT_PATH);
+        state.setText(expanded ? "收起" : "展开（" + text.length() + " 字符）");
         content.setVisible(expanded);
         content.setManaged(expanded);
     }
