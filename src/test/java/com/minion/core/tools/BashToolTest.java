@@ -113,6 +113,92 @@ public class BashToolTest {
         assertFalse(r.output.contains("超时"));
     }
 
+    /** 退出清理根因回归：关闭窗口时工具线程被 interrupt（shutdownNow），旧实现
+     *  waitFor 抛 InterruptedException 直接上抛 → killTree 不执行 → bash 子进程成孤儿
+     *  继续运行（占 CPU）；reader 线程（非 daemon）阻塞读管道 → JVM 永不退出。
+     *  修复后：中断同样走进程树清理，execute 快速返回并传播 InterruptedException */
+    @Test
+    public void execute_interrupted_killsProcessAndReturnsPromptly() throws Exception {
+        final java.util.concurrent.ExecutorService ex =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            final java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean(false);
+            final Throwable[] thrown = new Throwable[1];
+            java.util.concurrent.Future<?> f = ex.submit(new Runnable() {
+                @Override public void run() {
+                    try {
+                        bash.execute(args("{\"command\":\"sleep 30\"}"));
+                    } catch (Throwable t) {
+                        thrown[0] = t; // 捕获（含 InterruptedException），finally 置完成标志
+                    } finally {
+                        done.set(true);
+                    }
+                }
+            });
+            Thread.sleep(800); // 等子进程启动（探针文件已写）
+            f.cancel(true);    // 等价于关闭窗口时工具池 shutdownNow 的中断
+            long start = System.currentTimeMillis();
+            while (!done.get() && System.currentTimeMillis() - start < 3000) {
+                Thread.sleep(50);
+            }
+            assertTrue("中断后 execute 仍阻塞（子进程未清理，reader 被拖住）", done.get());
+            assertTrue("应传播 InterruptedException，实际: " + thrown[0],
+                    thrown[0] instanceof InterruptedException);
+            Thread.sleep(1200); // 等 taskkill/组杀在 OS 层生效
+            assertNoProcess("sleep.exe");
+        } finally {
+            ex.shutdownNow();
+        }
+    }
+
+    /** 后台任务回归：`sleep 30 &` 时旧实现 bash 立即退出（waitFor 返回 true 走正常路径），
+     *  sleep 成孤儿继续运行 30 秒（持有 stdout 管道拖住 reader，进程残留占资源）。
+     *  修复：脚本加 `trap 'wait' EXIT`，bash 退出前等待所有后台任务 → 命令保持运行
+     *  直至超时，超时路径组杀整体清杀，无孤儿残留 */
+    @Test
+    public void execute_backgroundChild_blocksUntilTimeoutAndNotLeaked() throws Exception {
+        long start = System.currentTimeMillis();
+        ToolResult r = bash.execute(args("{\"command\":\"sleep 30 &\",\"timeoutSeconds\":3}"));
+        long elapsed = System.currentTimeMillis() - start;
+        assertFalse("后台任务应让命令保持运行直至超时，实际 ok=" + r.ok + " 输出: " + r.output, r.ok);
+        assertTrue("超时后应快速返回（组杀清理），实际耗时 " + elapsed + "ms", elapsed < 6000);
+        assertNoProcess("sleep.exe");
+    }
+
+    /** 子 shell 后台任务回归：`(sleep 30 &)` 时 trap 'wait' EXIT 等不到孙进程（bash 立即
+     *  退出走正常路径），sleep 持有 stdout 管道拖住 reader。修复：内存 pid 组杀兜底——
+     *  killTree 不依赖探针文件（e2e 实测关闭时文件会被提前删除导致 readPid=-1 组杀跳过），
+     *  用启动时读入的 bash pid 组杀清理孙进程，无孤儿残留 */
+    @Test
+    public void execute_subshellBackground_noLeak() throws Exception {
+        long start = System.currentTimeMillis();
+        ToolResult r = bash.execute(args("{\"command\":\"(sleep 30 &)\",\"timeoutSeconds\":3}"));
+        long elapsed = System.currentTimeMillis() - start;
+        // bash 立即退出 = 命令"完成"（子 shell 后台任务不被 trap 等待），但孙进程必须被兜底清杀
+        assertTrue("命令应完成（bash 已退出）: " + r.output, r.ok);
+        assertTrue("返回过慢（reader 被孤儿进程拖住）: " + elapsed, elapsed < 8000);
+        assertNoProcess("sleep.exe");
+    }
+
+    /** Windows 上按进程名查 tasklist，断言无残留进程（子进程树已清杀） */
+    private static void assertNoProcess(String imageName) throws Exception {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (!os.contains("win")) return; // 非 Windows 环境跳过（进程组杀由 kill -9 覆盖）
+        Process p = new ProcessBuilder("tasklist", "/FI", "IMAGENAME eq " + imageName)
+                .redirectErrorStream(true).start();
+        String out = new String(readAll(p.getInputStream()), "GBK");
+        p.waitFor();
+        assertFalse("残留进程: " + imageName + "\n" + out, out.contains(imageName));
+    }
+
+    private static byte[] readAll(java.io.InputStream in) throws Exception {
+        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = in.read(buf)) != -1) b.write(buf, 0, n);
+        return b.toByteArray();
+    }
+
     @Test
     public void execute_negativeTimeout_returnsError() throws Exception {
         ToolResult r = bash.execute(args("{\"command\":\"echo hi\",\"timeoutSeconds\":-1}"));

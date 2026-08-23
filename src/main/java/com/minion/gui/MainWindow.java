@@ -369,11 +369,14 @@ public class MainWindow {
     /**
      * 关闭确认（自绘 ✕ 按钮与 stage.setOnCloseRequest 共用）：
      * 无运行中会话直接退出；有则弹确认再退。stage.close() 不触发 onCloseRequest，须自行调用。
+     * stage.close() 后补 Platform.exit()：即使有残留非模态窗口（如 JDK 版本警告），
+     * 也强制 JavaFX 平台退出——否则 FX 线程不退，StatusDot 等 Timeline 动画持续刷新占 CPU。
      */
     private void confirmClose() {
         if (!manager.hasRunning()) {
             manager.shutdown();
             stage.close();
+            Platform.exit();
             return;
         }
         Alert a = new Alert(Alert.AlertType.CONFIRMATION,
@@ -387,6 +390,7 @@ public class MainWindow {
         if (a.getResult() == ButtonType.OK) {
             manager.shutdown();
             stage.close();
+            Platform.exit();
         }
     }
 

@@ -127,25 +127,62 @@ public class BashTool implements Tool {
                 }
             }
         });
+        reader.setDaemon(true); // 双保险：子进程万一杀不掉（管道不 EOF），也不拖住 JVM 退出（关窗残留根因之一）
         reader.start();
+
+        // bash 启动后立即把 pid 读入内存（轮询等探针写入，一般毫秒级完成）：
+        // killTree 依赖探针文件在 e2e 关闭场景会被提前删除（实测 join 等待期间文件
+        // 丢失 → readPid=-1 → 组杀跳过 → 孤儿逃逸），必须用内存 pid 兜底组杀
+        final int bashPid = awaitPid(pidFile);
 
         // 超时判定：单线程 waitFor(timeout) 权威判定，返回 false 即截止时进程仍存活，
         // 保证"命令超时"报告必然对应真实超时。旧实现用 killer 线程 isAlive() + 共享
-        // boolean[]：跨线程无 happens-before，且未收割的残留进程会让 isAlive 误判
-        boolean finished = process.waitFor(timeout, TimeUnit.SECONDS);
-        int exitCode;
+        // boolean[]：跨线程无 happens-before，且未收割的残留进程会让 isAlive 误判。
+        // 中断（退出清理 shutdownNow）视同截止：同样走进程树清理，绝不留下孤儿子进程——
+        // 旧实现 waitFor 抛 InterruptedException 直接上抛，killTree 不执行，bash 子进程
+        // 变孤儿继续运行（占 CPU），reader 线程阻塞读管道拖住 JVM 无法退出（关窗残留根因）
+        boolean finished = false;
+        boolean interrupted = false;
+        try {
+            finished = process.waitFor(timeout, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            interrupted = true;
+        }
+        int exitCode = -1;
         if (finished) {
             exitCode = process.exitValue();
         } else {
             // 进程树强杀：只杀直接子进程（destroyForcibly）会留下持有 stdout 管道的孤儿
             // 孙进程——reader 的 join 被拖满（实测 +5s），进程本身还继续跑（如 find /）
-            killTree(process, pidFile);
-            process.waitFor();
-            exitCode = process.exitValue();
+            killTree(process, bashPid);
+            try {
+                process.waitFor();
+            } catch (InterruptedException e) {
+                interrupted = true; // 清理等待再被中断：killTree 已尽力，不再等
+            }
+            if (!interrupted) exitCode = process.exitValue();
         }
-        reader.join(5000);
+        try {
+            reader.join(5000);
+        } catch (InterruptedException e) {
+            interrupted = true; // reader 已 daemon，不等也不阻塞 JVM 退出
+        }
+        // 正常完成路径兜底：命令进程已退出但 reader 仍在读 → 有子进程持有 stdout 管道
+        //（trap 'wait' EXIT 之外的特殊退出方式，如子 shell 后台任务）→ 组杀清掉
+        if (reader.isAlive()) {
+            killTree(process, bashPid);
+            try {
+                reader.join(3000);
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
         scriptFile.delete();
         pidFile.delete(); // 正常完成路径清理探针文件（超时路径在 killTree 内已删）
+        if (interrupted) {
+            Thread.currentThread().interrupt(); // 恢复中断位：上层（AgentLoop/会话池）依赖它感知退出
+            throw new InterruptedException("Bash 执行被中断（已清理子进程）: " + command);
+        }
         if (!finished) {
             // 诊断字段：实际耗时 + 退出码（退出码 0 = 命令实际已自然完成，属假超时）
             long elapsedSec = (System.currentTimeMillis() - start) / 1000;
@@ -216,19 +253,22 @@ public class BashTool implements Tool {
         return Arrays.asList("setsid", "/bin/sh", scriptFile.getAbsolutePath());
     }
 
-    /** 命令脚本内容：bash 先写 pid 到探针文件，再执行用户命令。文件路径加引号防空格；
-     *  脚本内容走文件不进 stdout，不污染命令输出 */
+    /** 命令脚本内容：bash 先注册 EXIT trap 等待所有后台任务，再写 pid 到探针文件，
+     *  最后执行用户命令。文件路径加引号防空格；脚本内容走文件不进 stdout，不污染命令输出。
+     *  trap 'wait' EXIT：bash 退出前（含 exit 语句）等待全部后台子进程结束——`sleep 30 &`
+     *  这类后台任务不会在 bash 退出后成孤儿（孤儿持有 stdout 管道拖住 reader、进程残留
+     *  占资源，实测：bash 退出后组杀失效，必须让 bash 保持存活直到任务完成或超时组杀） */
     private static String probe(String command, File pidFile) {
-        return "echo \"$$\" > \"" + pidFile.getAbsolutePath() + "\"\n" + command + "\n";
+        return "trap 'wait' EXIT\n"
+                + "echo \"$$\" > \"" + pidFile.getAbsolutePath() + "\"\n"
+                + command + "\n";
     }
 
     /** 强杀整个进程树：按进程组整体杀（kill -9 -<pid>，负 pid = 进程组）。
      *  Windows 上 taskkill /T 因 MSYS fork 的 Windows 父链断裂找不到孙进程（已实测），
      *  必须用 MSYS 原生的组杀；直接 destroyForcibly 只杀直接子进程，持有 stdout 管道的
      *  孙进程会变孤儿继续运行 */
-    private static void killTree(Process process, File pidFile) {
-        int pid = readPid(pidFile);
-        pidFile.delete();
+    private static void killTree(Process process, int pid) {
         if (pid > 0) {
             String[] cmd = null;
             String os = System.getProperty("os.name", "").toLowerCase();
@@ -246,6 +286,23 @@ public class BashTool implements Tool {
             }
         }
         process.destroyForcibly(); // 兜底：组杀失败或 pid 不可得时至少杀直接子进程
+    }
+
+    /** 轮询读探针文件里的 shell pid（bash 启动后毫秒级写入）；3 秒内读不到返回 -1。
+     *  bash 写的 pid 是执行脚本的最终 bash（MSYS 下即 Windows pid），组杀靠它 */
+    private static int awaitPid(File pidFile) {
+        long end = System.currentTimeMillis() + 3000;
+        while (System.currentTimeMillis() < end) {
+            int pid = readPid(pidFile);
+            if (pid > 0) return pid;
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // 保留中断位：上层依赖它感知退出
+                return readPid(pidFile);
+            }
+        }
+        return -1;
     }
 
     /** 读探针文件里的 shell pid；文件缺失/内容非法返回 -1 */

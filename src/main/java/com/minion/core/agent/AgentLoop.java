@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /** 主 agent 循环：请求 → 工具执行 → 回传，直到模型不再调用工具。 */
 public class AgentLoop {
@@ -248,6 +249,21 @@ public class AgentLoop {
     /** 关闭工具执行池（会话删除/应用退出时调用；daemon 线程，shutdownNow 不等任务完成） */
     public void shutdown() {
         pool.shutdownNow();
+    }
+
+    /**
+     * 等工具池清理完成（应用退出收口用）：interrupt 后正在执行的 Bash 工具会走
+     * killTree 清杀子进程，但工具池是 daemon 线程——JVM 不等 daemon 线程，若此处
+     * 不等待，JVM 退出时 killTree 可能没执行完，bash 子进程变孤儿继续占 CPU
+     * （关窗残留实测根因）。中断后工具任务最多 killTree(5s) + join(5s) 即结束，
+     * 限时等待足够；杀不掉的极端情况限时返回，不拖死退出流程。
+     */
+    public void awaitToolsTerminated(long timeoutMs) {
+        try {
+            pool.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public void compactNow() {

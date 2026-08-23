@@ -691,12 +691,17 @@ public class SessionManager {
         return false;
     }
 
-    /** 关闭：终止所有运行中会话（窗口关闭时调用） */
+    /** 关闭：终止所有运行中会话（窗口关闭时调用）。
+     *  interrupt 后必须等工具池清理完（awaitToolsTerminated）：Bash 工具中断时
+     *  killTree 清杀子进程需要时间，工具池是 daemon 线程，JVM 退出不等它——
+     *  不等就退出会让 killTree 没跑完，bash 子进程变孤儿继续占 CPU（关窗残留实测根因）。
+     *  工具任务中断后最多 killTree(5s)+join(5s) 结束，等 8s 足够；杀不掉的极端情况限时返回。 */
     public void shutdown() {
         for (WorkspaceCtx ctx : ctxByName.values()) {
             for (SessionHandle h : ctx.sessions) {
                 if (h.running) h.loop.interrupt();
                 h.loop.shutdown();
+                h.loop.awaitToolsTerminated(8000); // 等 bash 等子进程清理完成，防孤儿残留
                 h.pool.shutdownNow();
                 h.closeAll(); // 关 okhttp 连接池/线程（当前 + 待回收），防 JVM 残留
             }
