@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 /** 工具超限输出落盘：统一落盘目录/写入/尾部读取/清理。JDK8 兼容，无新依赖。 */
 public final class OutputDump {
@@ -40,20 +41,29 @@ public final class OutputDump {
      *  失败返回 "" */
     public static String tail(Path file, int maxChars) {
         try {
+            if (maxChars <= 0) return "";
             long len = Files.size(file);
-            // 多读 4 字节容错 UTF-8 边界（单字符最多 4 字节）
-            long start = Math.max(0, len - maxChars * 1L - 4);
+            if (len == 0) return "";
+            // UTF-8 单字符最多 4 字节：窗口读 min(len, maxChars*4+4) 字节。
+            // 文件字符数 ≤ maxChars 时字节数必 ≤ maxChars*4，读全量返回；
+            // 超限时窗口可解码出 ≥ maxChars+1 字符（+4 字节容错起点切割的半个字符），
+            // 保证尾部取满 maxChars 且不丢内容。
+            long readLen = Math.min(len, maxChars * 4L + 4);
             byte[] buf;
             try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r")) {
-                raf.seek(start);
-                buf = new byte[(int) (len - start)];
+                raf.seek(len - readLen);
+                buf = new byte[(int) readLen];
                 raf.readFully(buf);
             }
             String s = new String(buf, StandardCharsets.UTF_8);
-            if (s.length() <= maxChars) return s;
-            // 从尾部截到 maxChars；若首字符是不完整多字节则再丢一个字符
-            String cut = s.substring(s.length() - maxChars);
-            if (cut.charAt(0) == '\uFFFD' && cut.length() > 1) cut = cut.substring(1);
+            // 窗口起点切在多字节字符中间时首字符为 U+FFFD，丢弃
+            if (s.charAt(0) == '\uFFFD') s = s.substring(1);
+            String cut = s.length() <= maxChars ? s : s.substring(s.length() - maxChars);
+            // substring 可能切在代理对（如 emoji）中间，丢弃两端孤立代理
+            if (cut.length() > 0 && Character.isLowSurrogate(cut.charAt(0))) cut = cut.substring(1);
+            if (cut.length() > 0 && Character.isHighSurrogate(cut.charAt(cut.length() - 1))) {
+                cut = cut.substring(0, cut.length() - 1);
+            }
             return cut;
         } catch (Exception e) {
             return "";
@@ -66,12 +76,14 @@ public final class OutputDump {
             Path dir = dumpDir(workDir);
             if (!Files.isDirectory(dir)) return;
             long deadline = System.currentTimeMillis() - olderThanMillis;
-            Files.list(dir).forEach(p -> {
-                try {
-                    FileTime t = Files.getLastModifiedTime(p);
-                    if (t.toMillis() < deadline) Files.deleteIfExists(p);
-                } catch (IOException ignored) { }
-            });
+            try (Stream<Path> stream = Files.list(dir)) { // 流须关闭，否则 Windows 目录句柄泄漏
+                stream.forEach(p -> {
+                    try {
+                        FileTime t = Files.getLastModifiedTime(p);
+                        if (t.toMillis() < deadline) Files.deleteIfExists(p);
+                    } catch (IOException ignored) { }
+                });
+            }
         } catch (IOException ignored) { }
     }
 
