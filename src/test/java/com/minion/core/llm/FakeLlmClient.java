@@ -11,6 +11,11 @@ public class FakeLlmClient implements LlmClient {
     public String compressResult = "【摘要】历史对话要点";
     /** 置 true 时 completeChat 抛 LlmException，模拟压缩请求异常（T16 Round1） */
     public boolean throwOnCompleteChat = false;
+    /** 置入序号（1 起）的调用返回空串模拟压缩失败；其余返回 compressResult */
+    public final List<Integer> failAtCompleteChat = new ArrayList<Integer>();
+    /** 每次 completeChat 的 user 消息文本（最后一条），供断言批次内容 */
+    public final List<String> completeChatRequests = new ArrayList<String>();
+    private int completeChatCalls = 0;
     private final List<ScriptedTurn> turns = new ArrayList<ScriptedTurn>();
     private int cursor = 0;
     public List<Message> lastRequestMessages = new ArrayList<Message>();
@@ -97,6 +102,11 @@ public class FakeLlmClient implements LlmClient {
         all.add(Message.system(systemPrompt));
         all.addAll(messages);
         lastRequestMessages = new ArrayList<Message>(all);
+        completeChatCalls++;
+        String batch = messages.isEmpty() ? ""
+                : (messages.get(messages.size() - 1).content == null ? "" : messages.get(messages.size() - 1).content);
+        completeChatRequests.add(batch);
+        if (failAtCompleteChat.contains(completeChatCalls)) return "";
         return compressResult;
     }
 
