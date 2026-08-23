@@ -238,6 +238,32 @@ public class ContextManagerTest {
         assertTrue(result.get(0).summary);
     }
 
+    /** 边界：limit 减半不跌破下限。keepRecent=13（>KEEP_MIN 但 <2×KEEP_MIN），
+     *  保留区 300/500=60% >50% 触发减半：13/2=6 会跌破 12 条下限；
+     *  修复后 max(12, 6)=12 → 保留 12 条（6 长链）即停 */
+    @Test
+    public void compress_keepRegionHalvingNeverBelowMin() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(100000, 0.8, 13, llm, 0);
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 20; i++) { // 40 条短消息（前，每链 10 token）
+            msgs.add(Message.user("短"));
+            msgs.add(Message.assistant("短"));
+        }
+        String longText = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九";
+        for (int i = 0; i < 6; i++) { // 12 条长消息（后，每链 50 token）
+            msgs.add(Message.user(longText));
+            msgs.add(Message.assistant(longText));
+        }
+        List<Message> result = cm.compress(msgs);
+        // 压缩后 = summary + 12 条（6 长链）保留区，不低于 KEEP_MIN
+        assertEquals(13, result.size());
+        assertTrue(result.get(0).summary);
+        // 保留区最后一条是长消息（长链未被打断，仍在保留区内）
+        assertEquals(longText, result.get(result.size() - 1).content);
+    }
+
     /** 压缩后 pinned 技能消息原样保留（摘要后、保留链前），且不进入摘要批次 */
     @Test
     public void compress_keepsPinnedSkillMessages() {

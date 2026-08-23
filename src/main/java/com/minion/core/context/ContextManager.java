@@ -94,7 +94,7 @@ public class ContextManager {
                 keptTokens += TokenCounter.estimateMessages(chains.get(i));
             }
             if ((double) keptTokens / total <= KEEP_RATIO) break;
-            limit = limit / 2;
+            limit = Math.max(KEEP_MIN, limit / 2); // 减半不跌破下限（如 13 → 12，而非 6）
             take = computeTake(chains, limit);
         }
         return take;
