@@ -176,11 +176,16 @@ public class BashTool implements Tool {
         // 落盘失败降级时 head 取内存全量，避免比既有行为再多丢一段
         String head = dump == null || output.length() <= HEAD_MAX
                 ? output.toString() : output.substring(0, HEAD_MAX);
+        // 截断点可能切在代理对（如 emoji）中间，丢弃尾部孤立高代理，避免输出非法字符
+        if (head.length() > 0 && Character.isHighSurrogate(head.charAt(head.length() - 1))) {
+            head = head.substring(0, head.length() - 1);
+        }
         String tailStr = dump == null ? "" : OutputDump.tail(dump, TAIL_MAX);
-        String rel = dump == null ? "" : OutputDump.workDirRelative(
-                Paths.get(workspace.workDir()), dump);
-        String note = "\n... 输出已截断（共 " + totalChars.get() + " 字符，完整输出已保存到 "
-                + rel + "，可用 Read 查看）...\n";
+        String note = dump == null
+                ? "\n... 输出已截断（共 " + totalChars.get() + " 字符，落盘失败未保存完整输出，以上为仅存内容）...\n"
+                : "\n... 输出已截断（共 " + totalChars.get() + " 字符，完整输出已保存到 "
+                        + OutputDump.workDirRelative(Paths.get(workspace.workDir()), dump)
+                        + "，可用 Read 查看）...\n";
         return head + note + tailStr;
     }
 

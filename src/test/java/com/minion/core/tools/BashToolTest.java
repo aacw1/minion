@@ -246,4 +246,51 @@ public class BashToolTest {
         Path dumpDir = Paths.get(workDir, ".minion", "tmp");
         assertFalse("18k-30k 区间不应落盘", Files.exists(dumpDir));
     }
+
+    /** P2 降级文案：落盘失败（.minion/tmp 被占位成文件导致目录创建失败）时，
+     *  不得提示"完整输出已保存到 <空路径>，可用 Read 查看"误导模型去读空路径 */
+    @Test
+    public void longOutput_dumpFailure_honestNote() throws Exception {
+        Path minion = Paths.get(workDir, ".minion");
+        Files.createDirectories(minion);
+        Files.write(minion.resolve("tmp"), "x".getBytes()); // 占位成普通文件 → 落盘失败
+        ToolResult r = bash.execute(args("{\"command\":\"yes 0123456789 | head -c 40000\"}"));
+        assertTrue(r.ok);
+        assertTrue("缺降级说明: " + r.output, r.output.contains("落盘失败未保存完整输出"));
+        assertFalse("不应提示保存到空路径: " + r.output, r.output.contains("完整输出已保存到 "));
+        assertFalse("不应提示可 Read 查看: " + r.output, r.output.contains("可用 Read 查看"));
+        // 降级时 head 取内存全量，仍保留 30k 预算内的内容
+        assertTrue(r.output.contains("0123456789"));
+    }
+
+    /** 一行级：head 截断点（18000）切在代理对（emoji）中间时丢弃孤立高代理。
+     *  行长 41（emoji+38x+\n），18000 = 439×41 + 1 → 边界恰落在 emoji 高代理上 */
+    @Test
+    public void longOutput_headTruncation_noLoneSurrogate() throws Exception {
+        ToolResult r = bash.execute(args(
+                "{\"command\":\"yes '\uD83D\uDE00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -c 60000\"}"));
+        assertTrue(r.ok);
+        assertTrue("应触发截断: " + r.output, r.output.contains("输出已截断"));
+        String headPart = r.output.substring(0, r.output.indexOf("输出已截断"));
+        // headPart = head + note 前缀 "\n... "（5 字符），去掉前缀才是 head 本体
+        String head = headPart.substring(0, headPart.length() - 5);
+        assertNoLoneSurrogate("head 段含孤立代理: " + r.output, head);
+        // 孤立高代理被丢弃后，head 尾部应为完整行尾的换行
+        assertTrue("head 尾部应为换行: " + head.substring(Math.max(0, head.length() - 8)),
+                head.endsWith("\n"));
+    }
+
+    /** 遍历检查字符串无孤立代理（每个高/低代理必须成对出现） */
+    private static void assertNoLoneSurrogate(String msg, String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                assertTrue(msg + "（孤立高代理 @" + i + "）",
+                        i + 1 < s.length() && Character.isLowSurrogate(s.charAt(i + 1)));
+            } else if (Character.isLowSurrogate(c)) {
+                assertTrue(msg + "（孤立低代理 @" + i + "）",
+                        i > 0 && Character.isHighSurrogate(s.charAt(i - 1)));
+            }
+        }
+    }
 }

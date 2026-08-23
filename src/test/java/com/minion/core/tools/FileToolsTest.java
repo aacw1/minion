@@ -433,4 +433,67 @@ public class FileToolsTest {
         assertTrue(shown <= 250);
         assertTrue(r.output.contains("完整结果已保存到"));
     }
+
+    /** 一行级：maxResults=0 时显示 0 条（旧实现先 append 后检查会多显示 1 条），
+     *  全量仍落盘并提示路径 */
+    @Test
+    public void grep_maxZero_showsNothing_dumpWritten() throws Exception {
+        Files.write(Paths.get(work, "m0.txt"), "needle zero-a".getBytes("UTF-8"));
+        Files.write(Paths.get(work, "m1.txt"), "needle zero-b".getBytes("UTF-8"));
+        ToolResult r = grep.execute(args("{\"pattern\":\"needle\",\"maxResults\":0}"));
+        assertTrue(r.ok);
+        assertFalse("max=0 不应显示匹配内容: " + r.output, r.output.contains("needle zero"));
+        assertTrue("应提示全量落盘: " + r.output, r.output.contains("共 2 条"));
+        assertTrue(r.output.contains("完整结果已保存到 .minion/tmp/grep-"));
+        Path dumpDir = Paths.get(work, ".minion", "tmp");
+        java.util.List<Path> files = Files.list(dumpDir).collect(java.util.stream.Collectors.toList());
+        assertEquals(1, files.size());
+        assertEquals(2, Files.readAllLines(files.get(0)).size());
+    }
+
+    /** 一行级：truncateLine 截断点（1000）切在代理对中间时丢弃孤立高代理。
+     *  行 = 999a + emoji + 500b，substring(0,1000) 尾部恰为 emoji 高代理 */
+    @Test
+    public void grep_longLine_surrogateSafe() throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 999; i++) sb.append('a');
+        sb.append("\uD83D\uDE00"); // emoji，UTF-16 双 char
+        for (int i = 0; i < 500; i++) sb.append('b');
+        Files.write(Paths.get(work, "emoji.txt"), sb.toString().getBytes("UTF-8"));
+        ToolResult r = grep.execute(args("{\"pattern\":\"aaaa\"}"));
+        assertTrue(r.ok);
+        assertTrue(r.output.contains("..."));
+        assertNoLoneSurrogate("结果含孤立代理: " + r.output, r.output);
+    }
+
+    /** P2 降级文案：落盘失败（.minion/tmp 被占位成文件导致目录创建失败）时，
+     *  不得提示"完整结果已保存到 <空路径>，可用 Read 查看"误导模型去读空路径 */
+    @Test
+    public void grep_dumpFailure_honestNote() throws Exception {
+        Path minion = Paths.get(work, ".minion");
+        Files.createDirectories(minion);
+        Files.write(minion.resolve("tmp"), "x".getBytes()); // 占位成普通文件 → 落盘失败
+        for (int i = 0; i < 300; i++) {
+            Files.write(Paths.get(work, "h" + i + ".txt"), ("needle line " + i).getBytes("UTF-8"));
+        }
+        ToolResult r = grep.execute(args("{\"pattern\":\"needle\"}"));
+        assertTrue(r.ok);
+        assertTrue("缺降级说明: " + r.output, r.output.contains("落盘失败未保存完整结果"));
+        assertFalse("不应提示保存到空路径: " + r.output, r.output.contains("完整结果已保存到 "));
+        assertFalse("不应提示可 Read 查看: " + r.output, r.output.contains("可用 Read 查看"));
+    }
+
+    /** 遍历检查字符串无孤立代理（每个高/低代理必须成对出现） */
+    private static void assertNoLoneSurrogate(String msg, String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                assertTrue(msg + "（孤立高代理 @" + i + "）",
+                        i + 1 < s.length() && Character.isLowSurrogate(s.charAt(i + 1)));
+            } else if (Character.isLowSurrogate(c)) {
+                assertTrue(msg + "（孤立低代理 @" + i + "）",
+                        i > 0 && Character.isHighSurrogate(s.charAt(i - 1)));
+            }
+        }
+    }
 }

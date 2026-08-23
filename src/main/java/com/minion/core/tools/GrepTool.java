@@ -119,10 +119,12 @@ public class GrepTool implements Tool {
                                 try { dumpWriter.write(entry); } catch (IOException ignored) { }
                             }
                             if (!dispFull[0]) {
-                                disp.append(entry);
-                                dispCount[0]++;
+                                // 先检查后 append：max=0 时显示 0 条（旧实现先 append 后检查会多显示 1 条）
                                 if (dispCount[0] >= max || disp.length() >= DISPLAY_CHARS) {
                                     dispFull[0] = true; // 显示层满了，继续遍历但不再 append
+                                } else {
+                                    disp.append(entry);
+                                    dispCount[0]++;
                                 }
                             }
                         }
@@ -145,16 +147,22 @@ public class GrepTool implements Tool {
             return ToolResult.success(disp.toString().trim().isEmpty()
                     ? "未匹配: " + pattern : disp.toString());
         }
-        String relPath = dumpPath == null ? "" : OutputDump.workDirRelative(
-                Paths.get(workspace.workDir()), dumpPath);
-        String note = "\n... 共 " + totalCount[0] + " 条，完整结果已保存到 " + relPath
-                + "，可用 Read 查看\n";
+        String note = dumpPath == null
+                ? "\n... 共 " + totalCount[0] + " 条，落盘失败未保存完整结果，以上为仅存内容\n"
+                : "\n... 共 " + totalCount[0] + " 条，完整结果已保存到 "
+                        + OutputDump.workDirRelative(Paths.get(workspace.workDir()), dumpPath)
+                        + "，可用 Read 查看\n";
         return ToolResult.success(disp.toString() + note);
     }
 
     /** 单行截断：>1000 字符截断并加省略号（落盘与显示同格式，文件大小可控） */
     private static String truncateLine(String s) {
         if (s.length() <= LINE_MAX) return s;
-        return s.substring(0, LINE_MAX) + "...";
+        String cut = s.substring(0, LINE_MAX);
+        // 截断点可能切在代理对（如 emoji）中间，丢弃尾部孤立高代理，避免输出非法字符
+        if (Character.isHighSurrogate(cut.charAt(cut.length() - 1))) {
+            cut = cut.substring(0, cut.length() - 1);
+        }
+        return cut + "...";
     }
 }
