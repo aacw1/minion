@@ -234,7 +234,7 @@ public class SettingsDialog {
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
         TextField maxCtx = new TextField(mc == null ? "900000" : String.valueOf(mc.maxContextTokens));
         TextField thr = new TextField(mc == null ? "0.8" : String.valueOf(mc.compressThreshold));
-        TextField keep = new TextField(mc == null ? "10" : String.valueOf(mc.keepRecentMessages));
+        TextField keep = new TextField(mc == null ? "50" : String.valueOf(mc.keepRecentMessages));
 
         grid.addRow(0, new Label("标识名:"), displayName);
         grid.addRow(1, new Label("URL:"), url);
@@ -260,7 +260,7 @@ public class SettingsDialog {
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
             out.maxContextTokens = parseInt(maxCtx.getText(), 900000);
             out.compressThreshold = parseDouble(thr.getText(), 0.8);
-            out.keepRecentMessages = parseInt(keep.getText(), 10);
+            out.keepRecentMessages = parseInt(keep.getText(), 50);
             return out;
         });
         Optional<ModelConfig> r = d.showAndWait();

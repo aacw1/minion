@@ -13,7 +13,7 @@ public class ContextManager {
     private static final String COMPRESS_SYSTEM =
             "你是 minion 的上下文压缩器。把用户提供的对话历史压缩成一段中文摘要，保留："
           + "未完成的任务与目标、已做出的关键决策及原因、使用过的工具与结果要点、"
-          + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，500 字以内。";
+          + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，3000 字以内。";
 
     // FX 线程 update/setLlm 写入、会话工作线程 shouldCompress/compress 读取——volatile 防 JMM 数据竞争
     private volatile int maxContextTokens;      // final 移除
