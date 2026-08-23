@@ -15,6 +15,9 @@ public class ContextManager {
           + "未完成的任务与目标、已做出的关键决策及原因、使用过的工具与结果要点、"
           + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，3000 字以内。";
 
+    private static final int KEEP_MIN = 12;          // 保留区下限（条数）
+    private static final double KEEP_RATIO = 0.5;    // 保留区占比目标
+
     // FX 线程 update/setLlm 写入、会话工作线程 shouldCompress/compress 读取——volatile 防 JMM 数据竞争
     private volatile int maxContextTokens;      // final 移除
     private volatile double threshold;
@@ -80,20 +83,40 @@ public class ContextManager {
         }
     }
 
+    /** 保留区动态缩小：keep 条数起步，保留区 token 占比 > KEEP_RATIO 且条数 > KEEP_MIN
+     *  时减半重算。返回要压缩的链数（前 take 个链）。 */
+    private int takeChains(List<List<Message>> chains, int limit, List<Message> messages) {
+        int take = computeTake(chains, limit);
+        int total = TokenCounter.estimateMessages(messages);
+        while (take > 0 && limit > KEEP_MIN) {
+            int keptTokens = 0;
+            for (int i = take; i < chains.size(); i++) {
+                keptTokens += TokenCounter.estimateMessages(chains.get(i));
+            }
+            if ((double) keptTokens / total <= KEEP_RATIO) break;
+            limit = limit / 2;
+            take = computeTake(chains, limit);
+        }
+        return take;
+    }
+
+    /** 从后往前按链累计：保留的完整链条数总和 ≤ limit。返回首个保留链的下标（= 要压缩的链数）。 */
+    private int computeTake(List<List<Message>> chains, int limit) {
+        int kept = 0;
+        int take = chains.size();
+        for (int i = chains.size() - 1; i >= 0; i--) {
+            int size = chains.get(i).size();
+            if (kept + size > limit) break;
+            kept += size;
+            take = i;
+        }
+        return take;
+    }
+
     /** 压缩：链为单位，摘要置前；保留最近 keepRecent 条原文。失败原样返回。 */
     public List<Message> compress(List<Message> messages) {
         List<List<Message>> chains = chunkChains(messages);
-        int keep = 0;
-        int take = 0;
-        for (int i = chains.size() - 1; i >= 0; i--) {
-            int size = chains.get(i).size();
-            if (keep + size <= keepRecent) {
-                keep += size;
-            } else {
-                take = i + 1;
-                break;
-            }
-        }
+        int take = takeChains(chains, keepRecent, messages);
         if (take == 0) return messages; // 全部要保留，无需压缩
 
         StringBuilder batch = new StringBuilder();

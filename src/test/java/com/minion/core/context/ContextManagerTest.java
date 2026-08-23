@@ -193,6 +193,51 @@ public class ContextManagerTest {
         assertEquals(2, chains.get(1).size());
     }
 
+    /** 保留区占比 >50% 时 limit 减半：60 条长消息(每链50token) + 40 条短消息(每链10token)，
+     *  keepRecent=50 → 保留区 1250/1700≈73% → 减半 25 → 24 条(12链) 600/1700≈35% 停 */
+    @Test
+    public void compress_shrinksKeepRegionWhenRatioHigh() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(100000, 0.8, 50, llm, 0);
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 20; i++) { // 40 条短消息（旧）
+            msgs.add(Message.user("短"));
+            msgs.add(Message.assistant("短"));
+        }
+        for (int i = 0; i < 30; i++) { // 60 条长消息（新）
+            msgs.add(Message.user("一二三四五六七八九十一二三四五六七八九十一二三四五六七八九"));
+            msgs.add(Message.assistant("一二三四五六七八九十一二三四五六七八九十一二三四五六七八九"));
+        }
+        List<Message> result = cm.compress(msgs);
+        // 压缩后 = summary + 12 链(24 条)保留区
+        assertEquals(25, result.size());
+        assertTrue(result.get(0).summary);
+    }
+
+    /** 下限 12 条：后 24 条长消息(每链148token) + 前 36 条短消息(每链14token)，
+     *  50 条保留区占 96% → 25 条仍 88% → 12 条(6长链) 44% 达标即停（不再减半） */
+    @Test
+    public void compress_keepRegionStopsAtMin() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(100000, 0.8, 50, llm, 0);
+        String longText = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十";
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 18; i++) { // 36 条短消息（前）
+            msgs.add(Message.user("短消息"));
+            msgs.add(Message.assistant("短消息"));
+        }
+        for (int i = 0; i < 12; i++) { // 24 条长消息（后）
+            msgs.add(Message.user(longText));
+            msgs.add(Message.assistant(longText));
+        }
+        List<Message> result = cm.compress(msgs);
+        // 压缩后 = summary + 6 链(12 条)保留区
+        assertEquals(13, result.size());
+        assertTrue(result.get(0).summary);
+    }
+
     /** 压缩后 pinned 技能消息原样保留（摘要后、保留链前），且不进入摘要批次 */
     @Test
     public void compress_keepsPinnedSkillMessages() {
