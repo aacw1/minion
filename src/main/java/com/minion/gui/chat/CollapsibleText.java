@@ -43,7 +43,9 @@ public class CollapsibleText extends VBox {
         toggle = new HBox(4);
         toggle.getStyleClass().add("log-collapse-toggle");
         toggle.getChildren().addAll(chevron, summaryNode, state);
-        toggle.setOnMouseClicked(e -> setExpanded(!expanded));
+        toggle.setOnMouseClicked(e -> {
+            if (text != null && !text.trim().isEmpty()) setExpanded(!expanded);
+        });
 
         content = new MessageTextArea(this.text);
         content.getStyleClass().add("log-body");
@@ -76,10 +78,18 @@ public class CollapsibleText extends VBox {
     }
 
     private void update() {
-        chevron.setContent(expanded ? IconFactory.CHEVRON_DOWN_PATH : IconFactory.CHEVRON_RIGHT_PATH);
-        state.setText(expanded ? "收起" : "展开（" + text.length() + " 字符）");
-        content.setVisible(expanded);
-        content.setManaged(expanded);
+        boolean hasText = text != null && !text.trim().isEmpty();
+        // 空正文（统计行/子任务行等纯摘要段）：无内容可展开，不渲染展开按钮，直接展示摘要行
+        chevron.setVisible(hasText);
+        chevron.setManaged(hasText);
+        state.setVisible(hasText);
+        state.setManaged(hasText);
+        content.setVisible(hasText && expanded);
+        content.setManaged(hasText && expanded);
+        if (hasText) {
+            chevron.setContent(expanded ? IconFactory.CHEVRON_DOWN_PATH : IconFactory.CHEVRON_RIGHT_PATH);
+            state.setText(expanded ? "收起" : "展开（" + text.length() + " 字符）");
+        }
     }
 
     /** 默认折叠判定（纯逻辑可单测）：null/空不折叠 */
