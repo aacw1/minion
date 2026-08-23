@@ -12,6 +12,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
 
@@ -382,5 +383,54 @@ public class FileToolsTest {
 
     private Path p(String rel) {
         return java.nio.file.Paths.get(work, rel);
+    }
+
+    // ---- Grep 单行截断 + 全量落盘（工具输出截断落盘 Task 3） ----
+
+    /** 超长单行：每条结果内容 ≤ 1000 字符 + 省略号，总字符可控（爆炸回归用例） */
+    @Test
+    public void grep_longLine_truncated() throws Exception {
+        StringBuilder longLine = new StringBuilder("needle");
+        for (int i = 0; i < 5000; i++) longLine.append('x');
+        Files.write(Paths.get(work, "big.txt"), longLine.toString().getBytes("UTF-8"));
+        ToolResult r = grep.execute(args("{\"pattern\":\"needle\"}"));
+        assertTrue(r.ok);
+        String[] lines = r.output.split("\\r?\\n");
+        assertEquals(1, lines.length); // 单文件单行
+        // "big.txt:1: " 前缀 + 1000 内容 + "..." ≈ 1013
+        assertTrue("结果行过长: " + lines[0].length(), lines[0].length() <= 1020);
+        assertTrue(lines[0].endsWith("..."));
+        // 不落盘（未超限）
+        assertFalse(Files.exists(Paths.get(work, ".minion", "tmp")));
+    }
+
+    /** 超 250 条：显示 250 条 + 提示路径，落盘全量 */
+    @Test
+    public void grep_manyMatches_dumpWritten() throws Exception {
+        for (int i = 0; i < 300; i++) {
+            Files.write(Paths.get(work, "f" + i + ".txt"), ("needle line " + i).getBytes("UTF-8"));
+        }
+        ToolResult r = grep.execute(args("{\"pattern\":\"needle\"}"));
+        assertTrue(r.ok);
+        int shown = r.output.split("needle", -1).length - 1;
+        assertTrue("显示条数应 ≤250，实际 " + shown, shown <= 250);
+        assertTrue(r.output.contains("完整结果已保存到 .minion/tmp/grep-"));
+        assertTrue(r.output.contains("可用 Read 查看"));
+        Path dumpDir = Paths.get(work, ".minion", "tmp");
+        java.util.List<Path> files = Files.list(dumpDir).collect(java.util.stream.Collectors.toList());
+        assertEquals(1, files.size());
+        assertEquals(300, Files.readAllLines(files.get(0)).size());
+    }
+
+    /** maxResults 传超大值被钳制，不放大显示量（防爆炸） */
+    @Test
+    public void grep_maxResults_clamped() throws Exception {
+        for (int i = 0; i < 300; i++) {
+            Files.write(Paths.get(work, "g" + i + ".txt"), ("needle line " + i).getBytes("UTF-8"));
+        }
+        ToolResult r = grep.execute(args("{\"pattern\":\"needle\",\"maxResults\":99999}"));
+        int shown = r.output.split("needle", -1).length - 1;
+        assertTrue(shown <= 250);
+        assertTrue(r.output.contains("完整结果已保存到"));
     }
 }
