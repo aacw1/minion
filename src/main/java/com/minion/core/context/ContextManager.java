@@ -117,7 +117,9 @@ public class ContextManager {
 
     /** 压缩：链为单位，摘要置前；保留最近 keepRecent 条原文。失败分段递归降级，全部失败原样返回。 */
     public List<Message> compress(List<Message> messages) {
-        List<List<Message>> chains = chunkChains(messages);
+        // 超长单链先按消息均分拆成 ≤ SEGMENT_MIN 的子链：否则单链段无法在链边界二分，
+        // splitByTokens 会把 mid 钳回 from，产生同参数递归 → 无限递归栈溢出
+        List<List<Message>> chains = splitOversizedChains(chunkChains(messages));
         int take = takeChains(chains, keepRecent, messages);
         if (take == 0) return messages; // 全部要保留，无需压缩
 
@@ -179,12 +181,22 @@ public class ContextManager {
         if (left.summary != null) {
             // 左段完全成功：摘要A 作 prefix 压右段（合并），左段摘要由右段结果取代
             SegResult right = compressChains(chains, mid, to, left.summary);
-            if (right == null) return left;
+            if (right == null) {
+                // 右段整体失败：摘要A + 右段原文（原文不得因降级丢失）
+                List<Message> out = new ArrayList<Message>(left.messages);
+                for (int i = mid; i < to; i++) out.addAll(chains.get(i));
+                return new SegResult(left.summary, out);
+            }
             return right;
         }
         // 左段部分成功（含失败原文）：右段独立压，两侧结果摘要统一置前拼接
         SegResult right = compressChains(chains, mid, to, null);
-        if (right == null) return left;
+        if (right == null) {
+            // 右段整体失败：左段部分结果 + 右段原文（原文不得因降级丢失）
+            List<Message> out = new ArrayList<Message>(left.messages);
+            for (int i = mid; i < to; i++) out.addAll(chains.get(i));
+            return new SegResult(left.summary, out);
+        }
         List<Message> out = new ArrayList<Message>();
         for (Message m : left.messages) if (m.summary) out.add(m);
         for (Message m : right.messages) if (m.summary) out.add(m);
@@ -249,6 +261,28 @@ public class ContextManager {
         if (mid <= from) mid = from + 1;
         if (mid >= to) mid = to - 1;
         return mid;
+    }
+
+    /** 拆分超长单链（> SEGMENT_MIN 条消息）为 ≤ SEGMENT_MIN 的子链，保持消息顺序。
+     *  保证递归中任何 countMessages > SEGMENT_MIN 的段至少含 2 条链，splitByTokens 的
+     *  mid 必严格落在 (from, to) 内，杜绝单链段同参数无限递归。 */
+    private static List<List<Message>> splitOversizedChains(List<List<Message>> chains) {
+        List<List<Message>> out = new ArrayList<List<Message>>();
+        for (List<Message> chain : chains) {
+            splitChainByMessages(chain, out);
+        }
+        return out;
+    }
+
+    /** 单链按消息数均分递归二分，直至子链 ≤ SEGMENT_MIN 条（拷贝为独立列表，不持有原链视图） */
+    private static void splitChainByMessages(List<Message> chain, List<List<Message>> out) {
+        if (chain.size() <= SEGMENT_MIN) {
+            out.add(new ArrayList<Message>(chain));
+            return;
+        }
+        int mid = chain.size() / 2;
+        splitChainByMessages(chain.subList(0, mid), out);
+        splitChainByMessages(chain.subList(mid, chain.size()), out);
     }
 
     private static Message summaryMsg(String text) {

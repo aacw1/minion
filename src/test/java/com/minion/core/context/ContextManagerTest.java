@@ -370,4 +370,41 @@ public class ContextManagerTest {
         List<Message> result = cm.compress(input);
         assertSame(input, result);
     }
+
+    /** 缺陷A回归：左段部分成功（摘要A+右左原文）、右段整体失败 → 右段原文必须保留（修复前丢失） */
+    @Test
+    public void compress_partialSuccessRightAllFail_keepsRightOriginal() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        llm.failAtCompleteChat.add(1); // 整体✗（39 链 78 条 → 二分 mid=20）
+        llm.failAtCompleteChat.add(3); // 右段带摘要A 合并✗（19 链 38 条 → 二分 mid=30）
+        llm.failAtCompleteChat.add(4); // 右左段带摘要A✗（10 链 20 条 ≤ SEGMENT_MIN → 部分成功）
+        llm.failAtCompleteChat.add(5); // 右右段独立压✗（9 链 18 条 → 整体失败）
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> result = cm.compress(longHistory(40)); // 80 条 = 40 链，压 39 链
+        // 摘要A + 右左 20 条原文 + 右右 18 条原文 + 保留 2 条 = 41 条（修复前仅 23 条，右右原文丢失）
+        assertEquals(41, result.size());
+        assertTrue(result.get(0).summary);
+        assertTrue(result.get(0).content.contains("【摘要】历史要点"));
+        for (int i = 1; i < result.size(); i++) {
+            assertEquals("一二三四五六七八九十", result.get(i).content);
+        }
+    }
+
+    /** 缺陷B回归：单条超长链（>SEGMENT_MIN 消息）持续失败不得无限递归栈溢出，应原样返回 */
+    @Test
+    public void compress_singleOversizedChain_noStackOverflow() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = ""; // 恒失败（空摘要）
+        ContextManager cm = new ContextManager(100000, 0.8, 2, llm, 0);
+        List<Message> input = new ArrayList<Message>();
+        input.add(Message.user("一二三四五六七八九十"));
+        for (int i = 0; i < 40; i++) { // 40 轮工具调用连续无链结束符 → 与首尾合成单链 82 条
+            input.add(assistantWithTools("Read"));
+            input.add(Message.toolResult("c_Read", "Read", "一二三四五六七八九十"));
+        }
+        input.add(Message.assistant("一二三四五六七八九十"));
+        List<Message> result = cm.compress(input);
+        assertSame(input, result);
+    }
 }
