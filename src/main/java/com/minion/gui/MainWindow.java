@@ -238,11 +238,15 @@ public class MainWindow {
                 });
             }
             @Override public void onCompressingChanged(SessionHandle h, boolean compressing) {
+                if (inputView != null) inputView.setCompressing(h, compressing);
                 Platform.runLater(() -> {
                     if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
                         runningIndicator.setCompressing(compressing);
                     }
                 });
+            }
+            @Override public void onContextStatsChanged(SessionHandle h, int used, int max) {
+                if (inputView != null) inputView.onContextStats(h, used, max);
             }
             @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
                 if (inputView != null) inputView.onAskChanged(h, asking, question);

@@ -49,6 +49,7 @@ public class InputView extends VBox {
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
     private final Button uploadButton = new Button();
+    private final ContextRing contextRing = new ContextRing();
     private final SVGPath arrowIcon = IconFactory.send();
     private final SVGPath stopIcon = IconFactory.stop();
     private final SVGPath uploadIcon = IconFactory.attachFile();
@@ -180,8 +181,19 @@ public class InputView extends VBox {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         HBox bottomRow = new HBox(8);
-        bottomRow.getChildren().addAll(uploadButton, spacer, sendButton);
+        bottomRow.getChildren().addAll(uploadButton, contextRing, spacer, sendButton);
         frame.getChildren().addAll(composer, bottomRow);
+
+        // 点击环形圈 → 会话工作线程立即压缩（非运行中且超 30% 才可点；压缩事件回调驱动旋转动画与刷新）
+        contextRing.setOnCompress(new Runnable() {
+            @Override public void run() {
+                SessionHandle h = current;
+                if (h == null || h.running) return;
+                h.pool.execute(new Runnable() {
+                    @Override public void run() { h.loop.compactNow(); }
+                });
+            }
+        });
 
         // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
         GridPane root = new GridPane();
@@ -413,6 +425,22 @@ public class InputView extends VBox {
             askQuestion = h == null ? null : h.askQuestion;
             updateButton();
             updatePrompt();
+            // 环形圈：切会话先隐藏，初始估算放会话线程（全量估算较重，防卡 UI），完成后 runLater 填充
+            contextRing.setCompressing(false);
+            contextRing.setVisible(false);
+            contextRing.setManaged(false);
+            if (h != null && h.loop.contextManager() != null) {
+                final SessionHandle target = h;
+                h.pool.execute(new Runnable() {
+                    @Override public void run() {
+                        final int used = target.loop.contextManager().estimate(target.session.messages);
+                        final int max = target.loop.contextManager().maxTokens();
+                        Platform.runLater(new Runnable() {
+                            @Override public void run() { onContextStats(target, used, max); }
+                        });
+                    }
+                });
+            }
         });
     }
 
@@ -421,6 +449,7 @@ public class InputView extends VBox {
         Platform.runLater(() -> {
             this.running = running;
             updateButton();
+            contextRing.setRunning(running);
         });
     }
 
@@ -432,6 +461,30 @@ public class InputView extends VBox {
             this.askQuestion = question;
             updateButton();
             updatePrompt();
+        });
+    }
+
+    /** 上下文统计更新（MainWindow 转发 SessionManager.Listener）：仅当前会话生效；
+     *  无数据（max<=0）时隐藏不占位 */
+    public void onContextStats(SessionHandle h, int used, int max) {
+        if (current != h) return;
+        Platform.runLater(new Runnable() {
+            @Override public void run() {
+                double threshold = 0.8; // 兜底；正常从 ContextManager 实时读取
+                if (h.loop.contextManager() != null) threshold = h.loop.contextManager().threshold();
+                boolean active = used > 0 && max > 0;
+                contextRing.update(used, max, threshold, running);
+                contextRing.setVisible(active);
+                contextRing.setManaged(active);
+            }
+        });
+    }
+
+    /** 压缩状态变化（MainWindow 转发）：仅当前会话生效，环形旋转动画 */
+    public void setCompressing(SessionHandle h, boolean compressing) {
+        if (current != h) return;
+        Platform.runLater(new Runnable() {
+            @Override public void run() { contextRing.setCompressing(compressing); }
         });
     }
 
