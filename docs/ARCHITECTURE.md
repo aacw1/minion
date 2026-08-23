@@ -101,7 +101,7 @@ com.minion
 ### core/skills/ · core/context/ · core/storage/ · core/config/
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析
-- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×compressThreshold 触发，按完整回合链压缩，保留最近 keepRecentMessages 条）
+- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×compressThreshold 触发，按完整回合链压缩；保留区按 token 占比动态缩小、下限 12 条；压缩失败时按 token 均衡分段递归降级，部分成功自动应用、全部失败原样返回）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `Config`：config.properties（classpath 默认值 + jar 同目录外部覆盖，首次运行自动生成）
 - `WorkspaceManager` / `ModelManager`：workspace.json / model.json（jar 同目录，单文件多条目；缺失自动生成，损坏备份后重建）；workspace.json 数组顺序即侧栏显示顺序，`WorkspaceManager.move(name, newIndex)` 拖拽排序持久化（越界返回 false 不改列表；SessionManager.moveWorkspace 转发但不发通知，避免拖拽时清空聊天区）

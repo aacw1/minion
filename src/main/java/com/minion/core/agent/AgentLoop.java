@@ -134,7 +134,8 @@ public class AgentLoop {
      *  与补充注入同一语义（中断轮不注入，防半轮 tool_call 未配对时插入 user 消息破坏契约）。
      *  注入前做历史级幂等检查：同名技能正文已在历史（pinned 常驻、压缩豁免）→ 跳过，
      *  防 /skill 命令或失败重试跨轮重复注入导致上下文永久叠加（曾实测同名技能重复加载
-     *  后历史出现多条技能正文，压缩无法清除，上下文涨至 200%+）。 */
+     *  后历史出现多条技能正文，压缩无法清除；另注：请求超窗报错后消息仍继续追加，
+     *  上下文占比显示可能虚高，并非真的发出超大请求）。 */
     private void drainPendingSkillLoads() {
         List<SkillLoad> queue;
         synchronized (this) {
