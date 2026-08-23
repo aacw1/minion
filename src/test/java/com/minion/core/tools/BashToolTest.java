@@ -231,4 +231,19 @@ public class BashToolTest {
         Path dumpDir = Paths.get(workDir, ".minion", "tmp");
         assertFalse(Files.exists(dumpDir));
     }
+
+    /** P0 回归：输出落在 (18k, 30k] 区间必须返回全量——旧实现内存只保留 18k 且
+     *  此区间删落盘文件，18k~30k 段数据永久丢失 */
+    @Test
+    public void outputBetween18kAnd30k_fullReturned_noDump() throws Exception {
+        ToolResult r = bash.execute(args("{\"command\":\"yes 0123456789 | head -c 25000\"}"));
+        assertTrue(r.ok);
+        // 25000 字节 = 2272 行 + 末行 "01234567"（无换行）；reader 给末行补 \n，故内存 25001 字符
+        assertEquals("应返回全量，实际 " + r.output.length(), 25001, r.output.length());
+        assertTrue("18k 之后数据丢失: " + r.output.length(), r.output.length() > 18000);
+        assertTrue("尾部数据丢失: " + r.output, r.output.trim().endsWith("01234567"));
+        assertFalse("不应出现截断提示: " + r.output, r.output.contains("输出已截断"));
+        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
+        assertFalse("18k-30k 区间不应落盘", Files.exists(dumpDir));
+    }
 }

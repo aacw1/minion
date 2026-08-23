@@ -160,7 +160,9 @@ public class BashTool implements Tool {
         return ToolResult.success(finishOutput(output, totalChars, dump));
     }
 
-    /** 组装返回：未超限删落盘返回全量（零磁盘痕迹）；超限保留落盘，返回 头 + 提示 + 尾 */
+    /** 组装返回：未超限删落盘返回全量（零磁盘痕迹）；超限保留落盘，返回 头 + 提示 + 尾。
+     *  内存保留上限为 TOTAL_MAX（与删除落盘的阈值一致）——若只保留 HEAD_MAX，则
+     *  输出落在 (18k, 30k] 区间时删盘后无尾部可补，该段数据永久丢失（P0 回归点） */
     private String finishOutput(StringBuilder output, AtomicLong totalChars, Path dump) {
         if (totalChars.get() <= TOTAL_MAX) {
             if (dump != null) {
@@ -170,7 +172,10 @@ public class BashTool implements Tool {
             }
             return output.toString();
         }
-        String head = output.toString();
+        // 超限：头部只取 HEAD_MAX（内存已保留 TOTAL_MAX，需显式截取）；
+        // 落盘失败降级时 head 取内存全量，避免比既有行为再多丢一段
+        String head = dump == null || output.length() <= HEAD_MAX
+                ? output.toString() : output.substring(0, HEAD_MAX);
         String tailStr = dump == null ? "" : OutputDump.tail(dump, TAIL_MAX);
         String rel = dump == null ? "" : OutputDump.workDirRelative(
                 Paths.get(workspace.workDir()), dump);
@@ -180,8 +185,8 @@ public class BashTool implements Tool {
     }
 
     private static void appendTruncated(StringBuilder sb, String s) {
-        if (sb.length() >= HEAD_MAX) return;
-        int room = HEAD_MAX - sb.length();
+        if (sb.length() >= TOTAL_MAX) return;
+        int room = TOTAL_MAX - sb.length();
         if (s.length() > room) {
             sb.append(s, 0, room);
         } else {
