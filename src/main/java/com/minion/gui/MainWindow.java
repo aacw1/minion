@@ -262,8 +262,8 @@ public class MainWindow {
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
                     if (!openedIds.contains(h.id)) {
-                        openedIds.add(h.id); // 打开过的会话才有页签（懒加载）；titlePending 等标题生成后由 updateTab 补建
-                        addTab(h); // addTab 内部有 title 非空守卫
+                        openedIds.add(h.id); // 打开过的会话才有页签（懒加载）；无标题会话以「(新会话)」占位建页签，标题生成后 updateTab 刷新
+                        addTab(h);
                     }
                     selectTab(h);
                     if (chatView != null) chatView.rememberVvalue(chatScroll.getVvalue()); // 切走前记滚动位置
@@ -536,20 +536,21 @@ public class MainWindow {
     private void updateTab(SessionHandle h) {
         for (Tab t : tabs.getTabs()) {
             if (h.id.equals(t.getUserData())) {
-                t.setText(tabTitle(h.title == null ? "(新会话)" : h.title));
-                t.setTooltip(new Tooltip(h.title == null ? "" : h.title)); // 完整标题提示
+                String title = h.title == null ? "(新会话)" : h.title;
+                t.setText(tabTitle(title));
+                t.setTooltip(new Tooltip(title)); // 完整标题提示
                 t.setGraphic(runningIndicator(h));
                 return;
             }
         }
-        if (h.title != null && openedIds.contains(h.id)) addTab(h); // 标题生成后才建页签；已关闭页签的不复活
+        if (openedIds.contains(h.id)) addTab(h); // 补建页签（无标题会话标题生成后；已关闭页签的不复活——openedIds 已移除）
     }
 
     private void addTab(SessionHandle h) {
-        if (h.title == null) return;
-        Tab t = new Tab(tabTitle(h.title));
+        String title = h.title == null ? "(新会话)" : h.title;
+        Tab t = new Tab(tabTitle(title));
         t.setUserData(h.id);
-        t.setTooltip(new Tooltip(h.title)); // 完整标题提示
+        t.setTooltip(new Tooltip(title)); // 完整标题提示
         t.setGraphic(runningIndicator(h));
         t.setClosable(true);
         t.setOnCloseRequest(e -> {
@@ -557,7 +558,7 @@ public class MainWindow {
             if (h.running) {
                 // 运行中：确认才关（关闭 = 中断运行，会话不删除）
                 Alert a = new Alert(Alert.AlertType.CONFIRMATION,
-                        "会话「" + h.title + "」正在运行，关闭将中断运行，确认关闭？",
+                        "会话「" + (h.title == null ? "(新会话)" : h.title) + "」正在运行，关闭将中断运行，确认关闭？",
                         ButtonType.OK, ButtonType.CANCEL);
                 a.setHeaderText(null);                 // 去掉左边的"确认"文字
                 a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
