@@ -9,7 +9,7 @@
 com.minion
 ├── Boot                    自举启动器（shade 打包入口）：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环
 ├── Main                    入口：装配配置/技能/浏览器/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
-├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、会话管理
+├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、图标、会话管理
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
@@ -33,22 +33,23 @@ com.minion
 | 类 | 职责 |
 |---|---|
 | MinionApp | JavaFX 启动（Application），静态注入 Config/WorkspaceManager/ModelManager/SessionManager |
-| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ GridPane 25%/75% 固定比例（无分隔线、不可拖拽，左侧会话/工作空间，右侧页签栏+消息区+输入区（外包 StackPane 承载 ConfirmSheet））；关闭确认 confirmClose 由 ✕ 按钮与系统关闭共用；右侧顶部页签栏（tabs-bar，空页签整行隐藏）selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy |
-| TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，⚙ 设置入口） |
+| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ GridPane 25%/75% 固定比例（无分隔线、不可拖拽，左侧会话/工作空间，右侧页签栏+消息区+输入区（外包 StackPane 承载 ConfirmSheet））；关闭确认 confirmClose 由关闭按钮与系统关闭共用；右侧顶部页签栏（tabs-bar，空页签整行隐藏）selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy |
+| TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，设置入口齿轮图标） |
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
-| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停 ✎/✕、工作空间项悬停 ⚙/✕（重命名并入修改弹窗）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
+| sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停重命名/删除、工作空间项悬停修改/删除（重命名并入修改弹窗）；当前工作空间名称右侧主色圆点标记（SVG）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
 | chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
 | input/InputView | 输入区 0.618 黄金比例宽居中大框（占正文面板宽 61.8%，上=块行+输入框、下=底部操作行：上传按钮左+发送按钮右，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层/终止运行；键盘经 capture 过滤器处理（弹层 ↑↓/Enter/Tab 选择优先于 TextArea 默认行为）；按钮状态机（提问挂起空输入=变淡回答箭头），发送/补充/回答/终止统一 btn-danger 红底；回形针上传按钮（FileChooser 选图→5MB/3 张校验→base64 建 IMAGE 块），带图消息跳过斜杠命令直发 send，回答模式带图拦截提示；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
-| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点●绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点（SVG 圆点）绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；模型页已激活模型名称右侧主色圆点标记（SVG）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
+| icon/IconFactory | SVG 图标工厂：21 个 Material Symbols Outlined 24×24 path 常量 + 工厂方法（每图标带 .icon-* 样式类）+ size() 等比缩放；全部界面图标集中于此，颜色/尺寸由 theme.css 控制，不依赖系统字体（Win7 缺字形环境不再显示方块）；RunningIndicator 齿轮亦经此迁移（IconFactory.gear + .running-indicator-gear） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
-| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再 ✅、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
+| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
 | session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态半屏容差 eps=0.5×视口高/可滚动行程，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
 | WheelScrollAccelerator | 正文消息区滚轮加速：ScrollEvent 过滤器把滚轮增量换算为固定像素（每格 100px，Windows WHEEL_DELTA=40 基准，平滑滚轮小数增量连续换算），setVvalue + consume 阻止皮肤默认比例滚动；Ctrl/Shift 修饰或无滚动行程放行皮肤；MainWindow 构造 chatScroll 后 attach 一次（换 content 无需重挂） |
@@ -62,7 +63,7 @@ com.minion
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
 | SystemPromptBuilder | system prompt 组装：内置提示词 → project.md → 技能列表 → 已加载技能 |
-| StatsLine | 统计行格式化：⏱ 耗时 · in/out/thinking（UsageTracker 会话累计）· ctx 上下文占比；formatTokens 缩写（<1000 原样/整千 "900k"/≥10 万整 k/其余 "7.8k"） |
+| StatsLine | 统计行格式化：耗时 · in/out/thinking（UsageTracker 会话累计）· ctx 上下文占比（"⏱ " 前缀由 GUI 渲染层剥离为计时器图标）；formatTokens 缩写（<1000 原样/整千 "900k"/≥10 万整 k/其余 "7.8k"） |
 
 ### core/llm/
 
