@@ -391,6 +391,51 @@ public class ContextManagerTest {
         }
     }
 
+    /** P2 回归：超长链均分切分点不得落在 tool_result 上（子链首条不得为 TOOL），
+     *  否则切断 tool_call/tool_result 配对：保留区首条为孤立 TOOL 消息 → 下轮 DeepSeek 400。
+     *  41 条单链（user + 20×(A(t)+T)）：mid=20 恰指向 T（修复前子链 [20..41) 首条为 TOOL） */
+    @Test
+    public void splitOversizedChains_noToolResultAtSubchainHead() {
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.user("一二三四五六七八九十"));
+        for (int i = 0; i < 20; i++) {
+            msgs.add(assistantWithTools("Read"));
+            msgs.add(Message.toolResult("c_Read", "Read", "一二三四五六七八九十"));
+        }
+        List<List<Message>> chains = ContextManager.splitOversizedChains(ContextManager.chunkChains(msgs));
+        int total = 0;
+        for (List<Message> c : chains) {
+            assertNotEquals(Message.Role.TOOL, c.get(0).role); // 子链首条非 TOOL（配对不跨段）
+            assertTrue(c.size() <= 30);
+            total += c.size();
+        }
+        assertEquals(41, total); // 消息无丢失、顺序保持
+    }
+
+    /** P2 回归（端到端）：超长链压缩成功后，保留区首条不得为 TOOL（孤立 tool_result 下轮 400）。
+     *  41 条单链（超长 user 消息占大 token）→ 切分为 2 子链；keepRecent=25 保留最后一子链，
+     *  保留区占比 ≤50% 不减半。修复前切分点 mid=20 落在 T 上 → 保留区首条为孤立 TOOL */
+    @Test
+    public void compress_keepRegionHeadNotToolResult() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(100000, 0.8, 25, llm, 0);
+        StringBuilder longUser = new StringBuilder();
+        for (int i = 0; i < 100; i++) longUser.append("一二三四五六七八九十");
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.user(longUser.toString()));
+        for (int i = 0; i < 20; i++) {
+            msgs.add(assistantWithTools("Read"));
+            msgs.add(Message.toolResult("c_Read", "Read", "短"));
+        }
+        List<Message> result = cm.compress(msgs);
+        // summary + 保留区原文；保留区首条非 TOOL，且其配对（tool_call）紧随其前、配对完整
+        assertTrue(result.get(0).summary);
+        assertNotEquals(Message.Role.TOOL, result.get(1).role);
+        assertEquals(Message.Role.TOOL, result.get(2).role);
+        assertEquals("c_Read", result.get(2).toolCallId);
+    }
+
     /** 缺陷B回归：单条超长链（>SEGMENT_MIN 消息）持续失败不得无限递归栈溢出，应原样返回 */
     @Test
     public void compress_singleOversizedChain_noStackOverflow() {

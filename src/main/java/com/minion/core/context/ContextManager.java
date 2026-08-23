@@ -266,7 +266,7 @@ public class ContextManager {
     /** 拆分超长单链（> SEGMENT_MIN 条消息）为 ≤ SEGMENT_MIN 的子链，保持消息顺序。
      *  保证递归中任何 countMessages > SEGMENT_MIN 的段至少含 2 条链，splitByTokens 的
      *  mid 必严格落在 (from, to) 内，杜绝单链段同参数无限递归。 */
-    private static List<List<Message>> splitOversizedChains(List<List<Message>> chains) {
+    static List<List<Message>> splitOversizedChains(List<List<Message>> chains) {
         List<List<Message>> out = new ArrayList<List<Message>>();
         for (List<Message> chain : chains) {
             splitChainByMessages(chain, out);
@@ -274,13 +274,19 @@ public class ContextManager {
         return out;
     }
 
-    /** 单链按消息数均分递归二分，直至子链 ≤ SEGMENT_MIN 条（拷贝为独立列表，不持有原链视图） */
+    /** 单链按消息数均分递归二分，直至子链 ≤ SEGMENT_MIN 条（拷贝为独立列表，不持有原链视图）。
+     *  切分点避开 tool_result：子链首条不得为 TOOL，否则切断 tool_call/tool_result 配对，
+     *  保留区首条可能成为孤立 TOOL 消息 → 下轮发送 DeepSeek 400。 */
     private static void splitChainByMessages(List<Message> chain, List<List<Message>> out) {
         if (chain.size() <= SEGMENT_MIN) {
             out.add(new ArrayList<Message>(chain));
             return;
         }
+        // mid 落在 TOOL 上时前移（链首为 user/assistant，前移必可避开；极端畸形链兜底切 1 条，
+        // 后段严格变小保证递归收敛）
         int mid = chain.size() / 2;
+        while (mid > 0 && chain.get(mid).role == Message.Role.TOOL) mid--;
+        if (mid == 0) mid = 1;
         splitChainByMessages(chain.subList(0, mid), out);
         splitChainByMessages(chain.subList(mid, chain.size()), out);
     }
