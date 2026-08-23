@@ -184,6 +184,10 @@ public class InputView extends VBox {
         bottomRow.getChildren().addAll(uploadButton, contextRing, spacer, sendButton);
         frame.getChildren().addAll(composer, bottomRow);
 
+        // 启动/未选会话：环形圈初始隐藏（bindSession(null) 与 onContextStats 无数据时均不显示，避免空白 Tooltip 颜色块）
+        contextRing.setVisible(false);
+        contextRing.setManaged(false);
+
         // 点击环形圈 → 会话工作线程立即压缩（非运行中且超 30% 才可点；压缩事件回调驱动旋转动画与刷新）
         contextRing.setOnCompress(new Runnable() {
             @Override public void run() {
