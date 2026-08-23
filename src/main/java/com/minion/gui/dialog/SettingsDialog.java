@@ -5,6 +5,7 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.core.mcp.McpManager;
 import com.minion.core.mcp.McpServer;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.event.ActionEvent;
@@ -16,6 +17,7 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -29,6 +31,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Window;
 
@@ -93,8 +96,22 @@ public class SettingsDialog {
         list.setCellFactory(lv -> new ListCell<String>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty || item == null ? null
-                        : item + (item.equals(models.currentName()) ? "  ●" : ""));
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                setText(item);
+                // 当前激活模型：名称右侧主色圆点（SVG，替代原 "  ●" 文本）
+                if (item.equals(models.currentName())) {
+                    SVGPath dot = IconFactory.dot();
+                    IconFactory.size(dot, 8);
+                    setGraphic(dot);
+                } else {
+                    setGraphic(null);
+                }
+                setContentDisplay(ContentDisplay.RIGHT);
+                setGraphicTextGap(4);
             }
         });
         refresh(list, models);
@@ -270,12 +287,13 @@ public class SettingsDialog {
                     setGraphic(null);
                     return;
                 }
-                // 状态点：灰=未启用 绿=已连接 橙=连接中 红=失败
+                // 状态点：灰=未启用 绿=已连接 橙=连接中 红=失败（SVG 圆点，4 态色内联）
                 String color = !item.enabled ? "gray"
                         : item.state == McpServer.State.CONNECTED ? "green"
                         : item.state == McpServer.State.CONNECTING ? "orange" : "red";
-                Label dot = new Label("●");
-                dot.setStyle("-fx-text-fill: " + color + ";");
+                SVGPath dot = IconFactory.dot();
+                IconFactory.size(dot, 8);
+                dot.setStyle("-fx-fill: " + color + ";");
                 Label name = new Label(item.name);
                 String metaText = item.transport
                         + (item.state == McpServer.State.CONNECTED
