@@ -502,6 +502,164 @@ public class AgentLoopTest {
         assertEquals(1, pinnedCount);
     }
 
+    /** 回归：同名技能跨轮重复加载（/skill 命令反复执行或失败后重试）——历史级幂等，
+     *  技能正文（pinned、压缩豁免）不得重复注入。此前 offerSkillLoad 只做队列级去重，
+     *  drain 后队列清空，再次加载会重新注入一条技能正文 → 上下文永久叠加 */
+    @Test
+    public void offerSkillLoad_sameSkillAcrossTurns_doesNotDuplicate() {
+        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md");
+        AgentLoop loop = newLoop();
+        loop.offerSkillLoad(skill);
+        llm.addTurn("好的");
+        loop.runUserTurn("第一次");
+        long c1 = loop.messages().stream()
+                .filter(m -> m.pinned && m.content.contains("<skill name=\"brainstorming\">")).count();
+        assertEquals(1, c1);
+        // 第二次加载同一技能（模拟 /skill 重复执行）：不得再次注入
+        loop.offerSkillLoad(skill);
+        llm.addTurn("好的");
+        loop.runUserTurn("第二次");
+        long c2 = loop.messages().stream()
+                .filter(m -> m.pinned && m.content.contains("<skill name=\"brainstorming\">")).count();
+        assertEquals("同名技能跨轮重复加载不得重复注入历史", 1, c2);
+    }
+
+    /** 回归：接口持续失败（如 401/网络错误）时历史只增用户输入，不得有任何叠加 */
+    @Test
+    public void interfaceFailure_repeatedTurns_noAccumulation() {
+        for (int i = 0; i < 3; i++) {
+            llm.addTurnError("401: 认证失败");
+        }
+        AgentLoop loop = newLoop();
+        for (int i = 0; i < 3; i++) {
+            loop.runUserTurn("尝试" + i);
+        }
+        // 3 次失败 = 3 条用户消息，无 assistant/tool/技能消息叠加
+        assertEquals(3, loop.messages().size());
+        for (Message m : loop.messages()) {
+            assertEquals(Message.Role.USER, m.role);
+            assertFalse(m.pinned);
+        }
+        assertEquals(3, ui.errors.size());
+    }
+
+    /** 真实网络错误路径（streamChat 抛 retryable 异常，与 DeepSeekClient 断线一致）：
+     *  模型每轮先调工具、下一轮网络失败 → 用户重发 → 网络再失败。
+     *  验证失败轮的工具结果只入历史一次，无重复叠加。 */
+    @Test
+    public void networkFailure_toolTurnThenFail_repeatedTurns_noAccumulation() {
+        ScriptedNetFailLlm net = new ScriptedNetFailLlm(Arrays.asList(
+                "TOOL", "NETWORK", "NETWORK",   // runUserTurn#1：调工具 → 网络失败 → 重试失败 → break
+                "TOOL", "NETWORK", "NETWORK")); // runUserTurn#2：同上
+        AgentLoop loop = new AgentLoop(net, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        loop.runUserTurn("任务一");
+        loop.runUserTurn("任务二");
+        // 每轮：user + assistant(tool_calls) + tool(result) = 3 条；2 轮共 6 条，无叠加
+        List<Message> msgs = loop.messages();
+        assertEquals("失败轮工具结果不得重复入历史", 6, msgs.size());
+        assertEquals(Message.Role.USER, msgs.get(0).role);
+        assertEquals(Message.Role.ASSISTANT, msgs.get(1).role);
+        assertEquals(Message.Role.TOOL, msgs.get(2).role);
+        assertEquals(Message.Role.USER, msgs.get(3).role);
+        assertEquals(Message.Role.ASSISTANT, msgs.get(4).role);
+        assertEquals(Message.Role.TOOL, msgs.get(5).role);
+        // 每次 runUserTurn 首请求失败后重试一次（共 2 次请求），随后 break
+        assertEquals(6, net.calls);
+        assertEquals(2, ui.errors.size());
+    }
+
+    /** 网络失败发生在流式中途（已回调部分 content）：半截内容不得入历史（非用户中断），
+     *  重试成功后仅一条完整 assistant 消息 */
+    @Test
+    public void networkFailure_midStreamPartialContent_notDuplicated() throws Exception {
+        MidStreamFailLlm net = new MidStreamFailLlm();
+        AgentLoop loop = new AgentLoop(net, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        loop.runUserTurn("任务");
+        // 第一次请求：回调半截后抛网络异常 → 重试成功
+        // 历史 = user + assistant(完整回复)，半截不入历史
+        assertEquals(2, loop.messages().size());
+        assertEquals(Message.Role.ASSISTANT, loop.messages().get(1).role);
+        assertEquals("完整回复", loop.messages().get(1).content);
+        assertEquals(2, net.calls);
+        assertEquals(1, ui.warnings.size()); // 仅重试提示
+    }
+
+    /** 脚本化网络错误客户端：TOOL=输出工具调用；NETWORK=抛 retryable 网络异常；OK=正常回复 */
+    public static class ScriptedNetFailLlm implements LlmClient {
+        private final List<String> script;
+        private int cursor = 0;
+        public int calls = 0;
+
+        public ScriptedNetFailLlm(List<String> script) { this.script = script; }
+
+        @Override
+        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+                throws LlmException {
+            calls++;
+            String step = script.get(Math.min(cursor, script.size() - 1));
+            cursor++;
+            if ("NETWORK".equals(step)) {
+                throw new LlmException(LlmException.Type.NETWORK, "模拟网络错误", true);
+            }
+            Usage u = new Usage();
+            u.inputTokens = 10;
+            u.outputTokens = 5;
+            if ("TOOL".equals(step)) {
+                ToolCall tc = new ToolCall();
+                tc.id = "c" + cursor;
+                tc.name = "example";
+                tc.arguments = "{\"text\":\"x\"}";
+                handler.onFinish("tool_calls", u, Collections.singletonList(tc));
+                return;
+            }
+            handler.onContent("最终回复");
+            handler.onFinish("stop", u, new ArrayList<ToolCall>());
+        }
+
+        @Override
+        public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+            return "【摘要】";
+        }
+    }
+
+    /** 流式中途网络失败客户端：首次请求回调半截 content 后抛网络异常（重试成功） */
+    public static class MidStreamFailLlm implements LlmClient {
+        public int calls = 0;
+        public List<Message> lastRequest = new ArrayList<Message>();
+
+        @Override
+        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+                throws LlmException {
+            lastRequest = new ArrayList<Message>(messages);
+            calls++;
+            if (calls == 1) {
+                handler.onThinking("思考中");
+                handler.onContent("半截内");
+                throw new LlmException(LlmException.Type.NETWORK, "模拟中途断线", true);
+            }
+            Usage u = new Usage();
+            u.inputTokens = 10;
+            u.outputTokens = 5;
+            handler.onContent("完整回复");
+            handler.onFinish("stop", u, new ArrayList<ToolCall>());
+        }
+
+        @Override
+        public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+            return "【摘要】";
+        }
+    }
+
     /** 技能带参数加载：args 以「用户参数: 」附加在技能正文后注入，下轮请求生效 */
     @Test
     public void offerSkillLoad_withArgs_injectsArgsIntoSkillMessage() {

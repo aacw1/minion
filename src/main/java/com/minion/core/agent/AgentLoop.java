@@ -131,7 +131,10 @@ public class AgentLoop {
     }
 
     /** 检查点注入：待加载技能以 <skill> 用户消息（pinned）入历史——同轮下一请求生效；
-     *  与补充注入同一语义（中断轮不注入，防半轮 tool_call 未配对时插入 user 消息破坏契约） */
+     *  与补充注入同一语义（中断轮不注入，防半轮 tool_call 未配对时插入 user 消息破坏契约）。
+     *  注入前做历史级幂等检查：同名技能正文已在历史（pinned 常驻、压缩豁免）→ 跳过，
+     *  防 /skill 命令或失败重试跨轮重复注入导致上下文永久叠加（曾实测同名技能重复加载
+     *  后历史出现多条技能正文，压缩无法清除，上下文涨至 200%+）。 */
     private void drainPendingSkillLoads() {
         List<SkillLoad> queue;
         synchronized (this) {
@@ -140,6 +143,15 @@ public class AgentLoop {
             pendingSkillLoads.clear();
         }
         for (SkillLoad q : queue) {
+            boolean alreadyInHistory = false;
+            for (Message m : session.messages) {
+                if (m.role == Message.Role.USER && m.content != null
+                        && m.content.contains("<skill name=\"" + q.skill.name + "\">")) {
+                    alreadyInHistory = true;
+                    break;
+                }
+            }
+            if (alreadyInHistory) continue; // 历史已含同名技能正文（常驻），不重复注入
             // I-1：注入即发 UI 事件——技能正文整条 content 渲染为一条用户消息（透明可审计，
             // 与 runUserTurn 发用户输入同一语义：session 工作线程调用，事件驱动 live 渲染）
             // 用户参数放 <skill> 标签外：标签内严格等于 SKILL.md 正文（技能定义不变量，
