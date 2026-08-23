@@ -58,9 +58,37 @@
 }
 .btn-ghost:hover { -fx-text-fill: #f0f2f6; -fx-border-color: #4f8cff; }
 
-/* 图标按钮（输入区发送/终止；SVGPath 填充不继承 -fx-text-fill，须显式指定） */
+/* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
+   通用色 #a8b0bb（同按钮文字色）；hover 由所在按钮容器联动变白/变色 */
 .icon-send { -fx-fill: white; }
 .icon-stop { -fx-fill: white; }
+.icon-settings, .icon-min, .icon-max, .icon-restore, .icon-close { -fx-fill: #a8b0bb; }
+.btn-ghost:hover .icon-settings, .btn-ghost:hover .icon-min,
+.btn-ghost:hover .icon-max, .btn-ghost:hover .icon-restore { -fx-fill: #f0f2f6; }
+.btn-close:hover .icon-close { -fx-fill: #ffffff; }
+
+/* 侧栏行内操作图标：hover 语义色（修改→蓝、删除→红） */
+.icon-edit { -fx-fill: #a8b0bb; }
+.btn-cell:hover .icon-edit { -fx-fill: #4f8cff; }
+.icon-delete { -fx-fill: #a8b0bb; }
+.btn-cell:hover .icon-delete { -fx-fill: #e05b5b; }
+
+/* 当前标记圆点（工作空间列表/设置窗模型列表） */
+.icon-dot { -fx-fill: #4f8cff; }
+
+/* 正文工具区状态图标（ChatView 摘要行） */
+.icon-help { -fx-fill: #e6a23c; }    /* 提问问号 */
+.icon-success { -fx-fill: #4caf50; } /* 工具成功 */
+.icon-error { -fx-fill: #e05b5b; }   /* 工具失败 */
+.icon-play { -fx-fill: #4f8cff; }    /* 子任务开始 */
+.icon-check { -fx-fill: #4caf50; }   /* 子任务完成 */
+.icon-build { -fx-fill: #8a8f98; }   /* 工具调用（扳手） */
+.icon-timer { -fx-fill: #8a8f98; }   /* 统计行 */
+.icon-chevron { -fx-fill: #8a8f98; } /* 折叠箭头 */
+.log-collapse-toggle:hover .icon-chevron { -fx-fill: #f0f2f6; }
+
+/* 正文摘要行文本（图标+文字组合） */
+.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 13px; }
 
 /* 窗口关闭按钮（无边框窗口） */
 .btn-close {
@@ -93,16 +121,10 @@
 .input-frame-focused { -fx-border-color: #f48771; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
-/* 上传按钮（输入框底部操作行左）：回形针描边图标 */
+/* 上传按钮（输入框底部操作行左）：回形针图标（Material 线性填充，同 icon-settings 色系） */
 .btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
-.icon-upload {
-    -fx-fill: transparent;
-    -fx-stroke: #a8b0bb;
-    -fx-stroke-width: 1.6;
-    -fx-stroke-linecap: round;
-    -fx-stroke-linejoin: round;
-}
-.btn-upload:hover .icon-upload { -fx-stroke: #f0f2f6; }
+.icon-upload { -fx-fill: #a8b0bb; }
+.btn-upload:hover .icon-upload { -fx-fill: #f0f2f6; }
 
 /* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
 .chip-row { -fx-hgap: 8; -fx-vgap: 8; }
@@ -115,13 +137,13 @@
 .chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 14px; }
 .chip-close {
     -fx-background-color: transparent;
-    -fx-text-fill: #98a0ab;
-    -fx-font-size: 13px;
     -fx-padding: 0 4 0 4;
     -fx-background-radius: 4;
     -fx-cursor: hand;
 }
-.chip-close:hover { -fx-text-fill: #f85149; -fx-background-color: rgba(248, 81, 73, 0.15); }
+.chip-close .icon-close { -fx-fill: #98a0ab; }
+.chip-close:hover { -fx-background-color: rgba(248, 81, 73, 0.15); }
+.chip-close:hover .icon-close { -fx-fill: #f85149; }
 .input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
 .input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
 .input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
@@ -271,16 +293,15 @@
 /* 侧栏分区标题 */
 .section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; -fx-font-weight: bold; }
 
-/* 侧栏行内悬停小按钮（会话 ✎ 重命名/✕ 删除；工作空间 ⚙ 修改/✕ 删除） */
+/* 侧栏行内悬停小按钮（会话 重命名/删除；工作空间 修改/删除；SVG 图标，无文本） */
 .btn-cell {
     -fx-background-color: transparent;
     -fx-text-fill: #a8b0bb;
     -fx-background-radius: 4;
     -fx-padding: 2 6 2 6;
     -fx-cursor: hand;
-    -fx-min-width: 34px; /* ✎/✕/⚙ 为特殊 Unicode 字形，fallback 渲染宽约 15px，padding 占 12px；prefWidth 仅 26px 时文本区 14px < 字形 → Button(ELLIPSIS) 截断成 "…"（用户反馈"重命名删除都变成了..."）。min-width 保证文本区 ≥22px，字形完整 */
 }
-.btn-cell:hover { -fx-text-fill: #f0f2f6; -fx-background-color: #2a2f3a; }
+.btn-cell:hover { -fx-background-color: #2a2f3a; }
 
 /* 侧栏消息时间（5m/3h/2d） */
 .cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 13px; } /* 原 #7a828e 过暗看不清 */
