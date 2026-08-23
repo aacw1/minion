@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
@@ -199,5 +200,35 @@ public class BashToolTest {
         tool.execute(args("{\"command\":\"cd\"}"));
         ToolResult r = tool.execute(args("{\"command\":\"pwd\"}"));
         assertFalse(r.output.contains("sub"));
+    }
+
+    /** 长输出：头 18k + 尾 12k 保留，中间提示行含落盘路径；落盘文件为全量 */
+    @Test
+    public void longOutput_headTailPreserved_andDumpWritten() throws Exception {
+        // 2000 行 × 41 字符 ≈ 82k > 30k
+        ToolResult r = bash.execute(args("{\"command\":\"for i in $(seq 1 2000); do echo 0123456789012345678901234567890123456789; done\"}"));
+        assertTrue(r.ok);
+        assertTrue(r.output.startsWith("0123456789012345678901234567890123456789"));
+        assertTrue(r.output.trim().endsWith("0123456789012345678901234567890123456789"));
+        assertTrue(r.output.contains("输出已截断"));
+        assertTrue(r.output.contains("完整输出已保存到 .minion/tmp/bash-"));
+        assertTrue(r.output.contains("可用 Read 查看"));
+        String[] lines = r.output.split("\\r?\\n");
+        assertTrue("截断后行数应远小于 2000，实际 " + lines.length, lines.length < 1000);
+        // 落盘文件：全量 2000 行
+        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
+        java.util.List<Path> files = Files.list(dumpDir).collect(java.util.stream.Collectors.toList());
+        assertEquals(1, files.size());
+        assertEquals(2000, Files.readAllLines(files.get(0)).size());
+    }
+
+    /** 短输出：不落盘 */
+    @Test
+    public void shortOutput_noDumpFile() throws Exception {
+        ToolResult r = bash.execute(args("{\"command\":\"echo hello\"}"));
+        assertTrue(r.ok);
+        assertEquals("hello", r.output.trim());
+        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
+        assertFalse(Files.exists(dumpDir));
     }
 }

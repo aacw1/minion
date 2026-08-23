@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -16,17 +17,21 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 命令执行：工作路径内、默认超时 120s、输出截断 30k。危险命令需确认。 */
+/** 命令执行：工作路径内、默认超时 120s、输出头尾截断（头 18k + 尾 12k，超限落盘）。危险命令需确认。 */
 public class BashTool implements Tool {
 
     public static final int DEFAULT_TIMEOUT = 120;
-    private static final int MAX_OUTPUT = 30000;
+    private static final int HEAD_MAX = 18000;   // 内存保留头部上限
+    private static final int TAIL_MAX = 12000;   // 落盘文件尾部读取上限
+    private static final int TOTAL_MAX = HEAD_MAX + TAIL_MAX; // 30000 总预算
 
     // 纯 cd 命令识别：整命令只有 cd [dir]，不含 && / | 等复合语法
     private static final Pattern CD_PATTERN =
@@ -91,6 +96,11 @@ public class BashTool implements Tool {
         long start = System.currentTimeMillis();
         final Process process = pb.start();
         final StringBuilder output = new StringBuilder();
+        // 落盘：先建文件拿到路径，reader 线程流式写全量；失败降级（dump == null 纯内存截断）
+        final Path dump = OutputDump.write(Paths.get(workspace.workDir()), "bash", "");
+        final BufferedWriter dumpWriter = dump == null ? null
+                : Files.newBufferedWriter(dump, StandardCharsets.UTF_8);
+        final AtomicLong totalChars = new AtomicLong();
 
         Thread reader = new Thread(() -> {
             try {
@@ -102,8 +112,20 @@ public class BashTool implements Tool {
                 while ((line = br.readLine()) != null) {
                     appendTruncated(output, line);
                     appendTruncated(output, "\n");
+                    if (dumpWriter != null) {
+                        try {
+                            dumpWriter.write(line);
+                            dumpWriter.write("\n");
+                        } catch (IOException ignored) { }
+                    }
+                    totalChars.addAndGet(line.length() + 1L);
                 }
-            } catch (IOException ignored) { }
+            } catch (IOException ignored) { } finally {
+                // 确保 join 后落盘文件内容完整可见
+                if (dumpWriter != null) {
+                    try { dumpWriter.close(); } catch (IOException ignored) { }
+                }
+            }
         });
         reader.start();
 
@@ -128,19 +150,40 @@ public class BashTool implements Tool {
             // 诊断字段：实际耗时 + 退出码（退出码 0 = 命令实际已自然完成，属假超时）
             long elapsedSec = (System.currentTimeMillis() - start) / 1000;
             return ToolResult.error("命令超时（" + timeout + "s），已终止: " + command
-                    + "（实际耗时 " + elapsedSec + "s，退出码 " + exitCode + "）");
+                    + "（实际耗时 " + elapsedSec + "s，退出码 " + exitCode + "）\n"
+                    + finishOutput(output, totalChars, dump));
         }
         if (exitCode != 0) {
-            return ToolResult.error("exit code " + exitCode + "（命令失败，输出如下）\n" + output);
+            return ToolResult.error("exit code " + exitCode + "（命令失败，输出如下）\n"
+                    + finishOutput(output, totalChars, dump));
         }
-        return ToolResult.success(output.toString());
+        return ToolResult.success(finishOutput(output, totalChars, dump));
+    }
+
+    /** 组装返回：未超限删落盘返回全量（零磁盘痕迹）；超限保留落盘，返回 头 + 提示 + 尾 */
+    private String finishOutput(StringBuilder output, AtomicLong totalChars, Path dump) {
+        if (totalChars.get() <= TOTAL_MAX) {
+            if (dump != null) {
+                dump.toFile().delete();
+                // 顺带删空的 tmp 目录，保证"不超限不落盘"零痕迹
+                try { Files.deleteIfExists(dump.getParent()); } catch (IOException ignored) { }
+            }
+            return output.toString();
+        }
+        String head = output.toString();
+        String tailStr = dump == null ? "" : OutputDump.tail(dump, TAIL_MAX);
+        String rel = dump == null ? "" : OutputDump.workDirRelative(
+                Paths.get(workspace.workDir()), dump);
+        String note = "\n... 输出已截断（共 " + totalChars.get() + " 字符，完整输出已保存到 "
+                + rel + "，可用 Read 查看）...\n";
+        return head + note + tailStr;
     }
 
     private static void appendTruncated(StringBuilder sb, String s) {
-        if (sb.length() >= MAX_OUTPUT) return;
-        int room = MAX_OUTPUT - sb.length();
+        if (sb.length() >= HEAD_MAX) return;
+        int room = HEAD_MAX - sb.length();
         if (s.length() > room) {
-            sb.append(s, 0, room).append("\n... 输出已截断(>").append(MAX_OUTPUT).append("字符)\n");
+            sb.append(s, 0, room);
         } else {
             sb.append(s);
         }
