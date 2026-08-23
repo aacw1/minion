@@ -2,6 +2,7 @@ package com.minion.gui.sidebar;
 
 import com.minion.core.llm.Message;
 import com.minion.gui.StatusDot;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
@@ -19,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.SVGPath;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -91,11 +93,17 @@ public class SessionListView extends ListView<SessionHandle> {
             timeLabel.getStyleClass().add("cell-time");
             String t = TimeFormatter.format(lastMessageTs(h), System.currentTimeMillis());
             if (t != null) timeLabel.setText(t);
-            Button renameBtn = new Button("✎");
+            SVGPath renameIcon = IconFactory.edit();
+            IconFactory.size(renameIcon, 13);
+            Button renameBtn = new Button();
+            renameBtn.setGraphic(renameIcon);
             renameBtn.getStyleClass().add("btn-cell");
             renameBtn.setTooltip(new Tooltip("重命名"));
             renameBtn.setOnAction(e -> doRename(h));
-            Button delBtn = new Button("✕");
+            SVGPath delIcon = IconFactory.delete();
+            IconFactory.size(delIcon, 13);
+            Button delBtn = new Button();
+            delBtn.setGraphic(delIcon);
             delBtn.getStyleClass().add("btn-cell");
             delBtn.setTooltip(new Tooltip("删除"));
             delBtn.setOnAction(e -> doDelete(h));

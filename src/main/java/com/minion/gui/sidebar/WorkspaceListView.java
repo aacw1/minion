@@ -2,6 +2,7 @@ package com.minion.gui.sidebar;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
@@ -17,6 +18,7 @@ import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.Node;
+import javafx.scene.shape.SVGPath;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -70,20 +72,35 @@ public class WorkspaceListView extends ListView<String> {
                 setText(null);
                 return;
             }
-            Label nameLabel = new Label(name + (name.equals(workspaces.currentName()) ? "  ●" : ""));
+            Label nameLabel = new Label(name);
             nameLabel.getStyleClass().add("cell-text");
             nameLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
             nameLabel.setMinWidth(0); // 允许收缩至省略号：长名称不再撑出横向滚动条（悬停 ⚙/✕ 按钮不被挤出）
+            // 当前工作空间：名称右侧主色圆点（SVG，替代原 "  ●" 文本）
+            boolean current = name.equals(workspaces.currentName());
+            if (current) {
+                SVGPath dot = IconFactory.dot();
+                IconFactory.size(dot, 8);
+                nameLabel.setGraphic(dot);
+            }
+            nameLabel.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
+            nameLabel.setGraphicTextGap(4);
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
             // 悬停操作按钮（需求：不用右键，鼠标放上去才显示）
             HBox btns = new HBox(4);
-            Button editBtn = new Button("⚙");
+            SVGPath editIcon = IconFactory.settings(); // 修改（齿轮，同原 ⚙ 语义）
+            IconFactory.size(editIcon, 13);
+            Button editBtn = new Button();
+            editBtn.setGraphic(editIcon);
             editBtn.getStyleClass().add("btn-cell");
             editBtn.setTooltip(new Tooltip("修改"));
             editBtn.setOnAction(e -> doEdit(name));
-            Button delBtn = new Button("✕");
+            SVGPath delIcon = IconFactory.delete(); // 删除（垃圾桶）
+            IconFactory.size(delIcon, 13);
+            Button delBtn = new Button();
+            delBtn.setGraphic(delIcon);
             delBtn.getStyleClass().add("btn-cell");
             delBtn.setTooltip(new Tooltip("删除"));
             delBtn.setOnAction(e -> doDelete(name));
