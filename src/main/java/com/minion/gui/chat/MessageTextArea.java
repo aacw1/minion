@@ -49,6 +49,15 @@ public class MessageTextArea extends TextArea {
     /** 布局后精校已调度（节流：流式高频 setText 只校正一次） */
     private boolean correctScheduled = false;
 
+    /** 布局后精校重试上限：连续校正超限即放弃本轮自续（防 FX 线程被 runLater 死循环占满，
+     *  线上实证：点击会话重放历史后 FX 线程持续满核 20%+ CPU 且关会话不降）。
+     *  重试条件（ratio 超范围 / exact 偏差）在空闲时无状态变化，无限重试=纯空转；
+     *  relayout（文本/宽度/字体变化）重置计数，下一轮测量后重新校正。 */
+    private static final int MAX_CORRECT_ATTEMPTS = 3;
+
+    /** 连续校正次数（relayout 重置）：超限停止自续校正，防自续死循环 */
+    private int correctAttempts = 0;
+
     public MessageTextArea(String text) {
         super(text);
         setEditable(false);
@@ -70,6 +79,7 @@ public class MessageTextArea extends TextArea {
 
     /** 高度自适应：保守测量（按滚动条槽位窄 wrap）→ 高度恒 ≥ 内容 → 内部滚动条不出现；布局后精校消除空隙 */
     private void relayout() {
+        correctAttempts = 0; // 新一轮测量：允许重新精校（流式/改宽/改字重算，校正机会复位）
         double width = getWidth();
         if (width <= 0) width = FALLBACK_WIDTH; // 构造/首次布局前宽度未定：兜底测量，稍后宽度监听用真实宽度更新
         Insets pad = getPadding();
@@ -89,6 +99,9 @@ public class MessageTextArea extends TextArea {
         correctScheduled = true;
         Platform.runLater(() -> Platform.runLater(() -> {
             correctScheduled = false;
+            // 收敛保护：连续校正超限即放弃本轮（条件不满足且无状态变化时，重试=自续死循环，
+            // 线上实证 FX 线程被 runLater 占满；放弃精校仅留保守空隙，不影响高度正确性）
+            if (++correctAttempts > MAX_CORRECT_ATTEMPTS) return;
             Text inner = innerText();
             if (inner == null) return; // 未挂载/未渲染：宽度/文本监听会再触发
             Insets pad = getPadding();
@@ -98,7 +111,7 @@ public class MessageTextArea extends TextArea {
             if (lastMeasuredTextHeight > 0) {
                 double ratio = inner.getLayoutBounds().getHeight() / lastMeasuredTextHeight;
                 if (ratio < lineScale - 0.03 || ratio > lineScale + 0.05) {
-                    scheduleCorrect(); // 布局未跟上当前文本：下轮布局后重试
+                    scheduleCorrect(); // 布局未跟上当前文本：下轮布局后重试（有界，超限自停）
                     return;
                 }
                 if (ratio > 1.0 && Math.abs(ratio - lineScale) > 0.005) {
@@ -107,8 +120,11 @@ public class MessageTextArea extends TextArea {
             }
             double exact = inner.getLayoutBounds().getHeight() + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE;
             if (Math.abs(exact - getPrefHeight()) > 0.5) {
-                setPrefHeight(exact);
-                scheduleCorrect(); // 高度变化可能改变滚动条状态（wrap 宽度随之变化）→ 再校正一次直至收敛
+                // 只增不减：高度只往大校正，永不触发「高度↓→内部滚动条出现→wrap 变窄→行数↑→
+                // 高度↑→滚动条消失→行数↓」的临界震荡（线上实证的自续死循环另一路径）；
+                // 保守测量已保证高度恒 ≥ 内容，小空隙无害（原防线 2 语义）
+                if (exact > getPrefHeight()) setPrefHeight(exact);
+                scheduleCorrect(); // 高度变化可能改变滚动条状态（wrap 宽度随之变化）→ 再校正一次（有界）
             }
         }));
     }
