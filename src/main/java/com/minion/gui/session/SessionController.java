@@ -24,6 +24,21 @@ public class SessionController implements AgentUi {
 
     public void setCompressingStateListener(java.util.function.Consumer<Boolean> l) { this.compressingStateListener = l; }
 
+    /** 上下文统计回调（AgentLoop 关键节点推送），SessionManager 注入 */
+    private volatile java.util.function.Consumer<ContextStat> contextStatsListener;
+
+    public void setContextStatsListener(java.util.function.Consumer<ContextStat> l) { this.contextStatsListener = l; }
+
+    /** 上下文统计快照（used/max = 估算 token；估算线程推送，只读） */
+    public static class ContextStat {
+        public final int used;
+        public final int max;
+        public ContextStat(int used, int max) {
+            this.used = used;
+            this.max = max;
+        }
+    }
+
     public EventList eventList() { return events; }
 
     /** 恢复会话时把历史消息灌入事件流：USER→USER_MESSAGE、ASSISTANT→THINKING/CONTENT/TOOL_CALL、
@@ -127,5 +142,9 @@ public class SessionController implements AgentUi {
     }
     @Override public void onCompressingChanged(boolean compressing) {
         if (compressingStateListener != null) compressingStateListener.accept(compressing);
+    }
+
+    @Override public void onContextStats(int used, int max) {
+        if (contextStatsListener != null) contextStatsListener.accept(new ContextStat(used, max));
     }
 }

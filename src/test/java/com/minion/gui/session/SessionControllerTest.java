@@ -271,4 +271,20 @@ public class SessionControllerTest {
         c.onCompressingChanged(false);
         assertEquals(java.util.Arrays.asList(true, false), got);
     }
+
+    /** 上下文统计：onContextStats 转发到注入的监听器（环形进度圈数据链） */
+    @Test
+    public void contextStats_forwardsToListener() {
+        SessionController c = new SessionController();
+        final int[] got = new int[2];
+        c.setContextStatsListener(new java.util.function.Consumer<SessionController.ContextStat>() {
+            @Override public void accept(SessionController.ContextStat stat) {
+                got[0] = stat.used;
+                got[1] = stat.max;
+            }
+        });
+        c.onContextStats(98000, 900000);
+        assertEquals(98000, got[0]);
+        assertEquals(900000, got[1]);
+    }
 }
