@@ -2,6 +2,7 @@ package com.minion.gui.input;
 
 import com.minion.core.config.Config;
 import com.minion.core.llm.ImagePart;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
 import javafx.application.Platform;
@@ -48,9 +49,9 @@ public class InputView extends VBox {
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
     private final Button uploadButton = new Button();
-    private final SVGPath arrowIcon = new SVGPath();
-    private final SVGPath stopIcon = new SVGPath();
-    private final SVGPath uploadIcon = new SVGPath();
+    private final SVGPath arrowIcon = IconFactory.send();
+    private final SVGPath stopIcon = IconFactory.stop();
+    private final SVGPath uploadIcon = IconFactory.attachFile();
     private final SuggestionPopup popup = new SuggestionPopup();
     private final FileSuggester fileSuggester = new FileSuggester();
     /** 块行与块列表：模型 List<InputChip> 与视图 FlowPane 同步维护（增删块后须 refreshChipRow + updateButton） */
@@ -95,15 +96,7 @@ public class InputView extends VBox {
             else { updateButton(); updatePrompt(); }
         });
 
-        // 上箭头（Claude Code 同款语义：可发送）；方块 = 终止
-        arrowIcon.setContent("M12 4 L20 13 L15 13 L15 21 L9 21 L9 13 L4 13 Z");
-        arrowIcon.getStyleClass().add("icon-send");
-        stopIcon.setContent("M7 7 L17 7 L17 17 L7 17 Z");
-        stopIcon.getStyleClass().add("icon-stop");
-
-        // 回形针（描边图标，CSS 定义 stroke 颜色）
-        uploadIcon.setContent("M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48");
-        uploadIcon.getStyleClass().add("icon-upload");
+        // 上箭头（Claude Code 同款语义：可发送）；方块 = 终止（图形与样式类由 IconFactory 提供）
         uploadButton.setGraphic(uploadIcon);
         uploadButton.setMinSize(30, 30);
         uploadButton.setPrefSize(30, 30);
@@ -300,11 +293,14 @@ public class InputView extends VBox {
         return false;
     }
 
-    /** 渲染单个块：Label + ✕ 按钮；✕ 点击删除并还焦输入框；COMMAND/SKILL/FILE 超 40 字符挂完整内容 tooltip */
+    /** 渲染单个块：Label + 关闭按钮（SVG 叉，点击删除并还焦输入框）；COMMAND/SKILL/FILE 超 40 字符挂完整内容 tooltip */
     private Node chipView(InputChip chip) {
         Label label = new Label(chip.display);
         label.getStyleClass().add("chip-label");
-        Button close = new Button("✕");
+        SVGPath closeIcon = IconFactory.close();
+        IconFactory.size(closeIcon, 11);
+        Button close = new Button();
+        close.setGraphic(closeIcon);
         close.getStyleClass().add("chip-close");
         close.setOnAction(e -> {
             removeChipAt(chips.indexOf(chip));
