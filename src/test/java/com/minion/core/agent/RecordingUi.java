@@ -39,4 +39,10 @@ public class RecordingUi implements AgentUi {
     @Override public synchronized void onCompressingChanged(boolean compressing) {
         this.compressing.add(compressing);
     }
+
+    public final List<int[]> ctxStats = new ArrayList<int[]>();
+
+    @Override public synchronized void onContextStats(int used, int max) {
+        ctxStats.add(new int[]{used, max});
+    }
 }

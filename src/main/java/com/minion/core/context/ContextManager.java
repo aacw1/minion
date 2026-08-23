@@ -49,6 +49,9 @@ public class ContextManager {
     /** 上下文窗口上限（AgentLoop 压缩百分比计算用） */
     public int maxTokens() { return maxContextTokens; }
 
+    /** 自动压缩阈值（0~1，如 0.8=80% 触发；GUI 悬停"剩余x%自动压缩"计算用） */
+    public double threshold() { return threshold; }
+
     public int estimate(List<Message> messages) {
         return systemTokens + TokenCounter.estimateMessages(messages);
     }

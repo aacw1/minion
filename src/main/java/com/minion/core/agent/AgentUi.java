@@ -20,4 +20,6 @@ public interface AgentUi {
     default void onAskUserDone(String answer) { }
     /** 上下文压缩进行中（true=开始，false=结束；同步阻塞压缩前后成对发出） */
     default void onCompressingChanged(boolean compressing) { }
+    /** 上下文统计推送（used/max = 估算 token；关键节点：消息入历史/回复完成/工具结果/压缩完成/轮次结束） */
+    default void onContextStats(int used, int max) { }
 }

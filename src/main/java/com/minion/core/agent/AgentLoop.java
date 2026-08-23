@@ -267,6 +267,13 @@ public class AgentLoop {
         } finally {
             ui.onCompressingChanged(false);
         }
+        pushContextStats();
+    }
+
+    /** 推送上下文统计（GUI 环形进度圈）：contextManager 未启用时不推送 */
+    private void pushContextStats() {
+        if (contextManager == null) return;
+        ui.onContextStats(contextManager.estimate(session.messages), contextManager.maxTokens());
     }
 
     /** REPL 统计用：上下文估算 */
@@ -351,6 +358,7 @@ public class AgentLoop {
         drainPendingSkillLoads();
         ui.onUserMessage(ImagePart.displayText(images, input));
         session.messages.add(Message.userWithImages(input, images));
+        pushContextStats(); // 用户消息入历史：进度圈即时刷新
         int rounds = 0;
         int retries = 0;
         try {
@@ -368,6 +376,7 @@ public class AgentLoop {
                             int pct = (int) (contextManager.estimate(session.messages) * 100
                                     / contextManager.maxTokens());
                             ui.onWarning("上下文已达 " + pct + "%，已自动压缩历史（技能不受影响）");
+                            pushContextStats(); // 压缩完成：进度圈回落
                         }
                     } finally {
                         ui.onCompressingChanged(false);
@@ -443,6 +452,7 @@ public class AgentLoop {
                     assistantMsg.reasoningContent = thinking.length() == 0 ? null : thinking.toString();
                     assistantMsg.toolCalls = toolCalls[0];
                     session.messages.add(assistantMsg);
+                    pushContextStats(); // 回复入历史：进度增长
                 }
 
                 if (interrupted) break;
@@ -488,6 +498,7 @@ public class AgentLoop {
                         inFlight.clear();
                     }
                 }
+                pushContextStats(); // 工具结果入历史：进度增长
                 // 运行中补充注入检查点：工具结果全部入历史后、下一轮请求前；
                 // AskUserQuestion 挂起时补充等回答的 TOOL 消息入历史后同请求发出；
                 // interrupted 不注入——半轮 tool_call 未配对时插入 user 消息会破坏契约（400）
@@ -529,6 +540,7 @@ public class AgentLoop {
                 : TokenCounter.estimateMessages(session.messages);
         int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
         ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
+        ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
     }
 
     /** 失败降级：本次请求含带图消息（历史或挂起补充）且请求失败时，清除全部图片以纯文本重发。
