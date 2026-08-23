@@ -1,16 +1,19 @@
 package com.minion.gui;
 
+import com.minion.gui.icon.IconFactory;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 /**
- * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| ⚙ 设置 | — 最小化 | □ 最大化 | ✕ 关闭。
+ * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为 SVG，IconFactory 集中管理）。
  * 拖动标题栏移动窗口；双击空白区切换最大化。关闭走 confirmClose（与系统关闭共用退出确认）。
  * 最大化不用 stage.setMaximized（无边框窗口在 Windows 上会覆盖任务栏），改手动定位到
  * Screen.getPrimary().getVisualBounds()（系统已排除任务栏区域），还原时恢复记录的原 bounds。
@@ -37,19 +40,23 @@ public class TitleBar extends HBox {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS); // 原页签区弹性占位：模型名与右侧按钮之间留白
 
-        Button gear = new Button("⚙");
+        Button gear = new Button();
+        gear.setGraphic(sized(IconFactory.settings()));
         gear.getStyleClass().add("btn-ghost");
         gear.setOnAction(e -> openSettings.run());
 
-        Button min = new Button("—");
+        Button min = new Button();
+        min.setGraphic(sized(IconFactory.remove()));
         min.getStyleClass().add("btn-ghost");
         min.setOnAction(e -> stage.setIconified(true));
 
-        max = new Button("□");
+        max = new Button();
+        max.setGraphic(maximizeIcon(maxed));
         max.getStyleClass().add("btn-ghost");
         max.setOnAction(e -> toggleMaximize()); // 手动最大化（不挡任务栏）
 
-        Button close = new Button("✕");
+        Button close = new Button();
+        close.setGraphic(sized(IconFactory.close()));
         close.getStyleClass().add("btn-close");
         close.setOnAction(e -> confirmClose.run());
 
@@ -78,6 +85,17 @@ public class TitleBar extends HBox {
         return visual;
     }
 
+    /** 标题栏图标：24 viewport 缩放到 14px 显示 */
+    private static Node sized(SVGPath icon) {
+        IconFactory.size(icon, 14);
+        return icon;
+    }
+
+    /** 最大化/还原图标（maxed=true 显示还原双框，否则最大化方框） */
+    private static Node maximizeIcon(boolean maxed) {
+        return sized(maxed ? IconFactory.filterNone() : IconFactory.cropSquare());
+    }
+
     /** 切换最大化：未最大化 → 记录当前 bounds 并移动到可视区；已最大化 → 还原记录 */
     private void toggleMaximize() {
         if (maxed) {
@@ -94,7 +112,7 @@ public class TitleBar extends HBox {
             stage.setHeight(vb.getHeight());
         }
         maxed = !maxed;
-        max.setText(maxed ? "❐" : "□");
+        max.setGraphic(maximizeIcon(maxed));
     }
 
     /** 模型标签（MainWindow 设置窗关闭后刷新顶部模型名用） */
