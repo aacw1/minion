@@ -88,6 +88,7 @@ public class SubAgentLoop {
                         int attempts = 0;
                         long waited = 0;
                         boolean exhausted = false; // 超时总结标志：break 后统一复位指示器再返回
+                        String failure = null; // 重试中遇非 429 错误的文案：break 后统一复位指示器再返回
                         while (true) {
                             attempts++;
                             long delay = retryPolicy429.delayMs(attempts);
@@ -107,13 +108,16 @@ public class SubAgentLoop {
                             } catch (LlmException re) {
                                 if (Thread.currentThread().isInterrupted()) break;
                                 if (re.type != LlmException.Type.RATE_LIMIT) {
+                                    // 重试中遇非 429 错误（网络/超时/5xx）：与主循环一致，
+                                    // break 退出重试态、统一复位指示器，不再继续退避
                                     ui.onError("子 agent 请求失败: " + re.getMessage());
-                                    return "子 agent 失败: " + re.getMessage();
+                                    failure = re.getMessage();
+                                    break;
                                 }
                                 // 仍 429：继续退避
                             }
                         }
-                        ui.onRetryProgress(0); // 退出重试态（成功/超时/中断统一复位）
+                        ui.onRetryProgress(0); // 退出重试态（成功/超时/中断/非 429 失败统一复位）
                         if (Thread.currentThread().isInterrupted()) {
                             ui.onWarning("子 agent 已中断");
                             return "子 agent 已中断";
@@ -121,7 +125,12 @@ public class SubAgentLoop {
                         if (exhausted) {
                             return "子 agent 失败: 429 持续 " + (waited / 60000) + " 分钟"; // 已 onError
                         }
+                        if (failure != null) {
+                            return "子 agent 失败: " + failure; // 已 onError
+                        }
                         if (finish[0] == null && usage[0] == null) {
+                            // 防御兜底：正常退出必有 finish/usage 回调（成功 break 后）或
+                            // exhausted/failure 标志，理论不可达；保留旧文案以防回归误判
                             return "子 agent 失败: 429 重试超时"; // 已 onError
                         }
                         // 重试成功：落入下方正常处理

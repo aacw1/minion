@@ -338,4 +338,33 @@ public class SubAgentLoopTest {
         assertTrue(!ui.retryProgress.isEmpty());
         assertEquals(Integer.valueOf(0), ui.retryProgress.get(ui.retryProgress.size() - 1));
     }
+
+    /** 子 agent 429 长重试中遇非 429 错误（网络/超时）：退出重试并复位指示器，不残留"正在重试中" */
+    @Test
+    public void subAgent_rateLimit_thenNetworkError_resetsRetryProgress() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
+        llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK, "连接超时", true));
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy429 = new RetryPolicy(10, 10, 20, 60000); // 测试短退避，总时长充裕
+        String result = sub.run();
+        // 非 429 错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
+        assertTrue(result.contains("失败"));
+        assertTrue(result.contains("连接超时"));
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("连接超时"));
+        // 指示器复位：末位必须为 0，不残留"正在重试中…第 N 次"
+        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertTrue(ui.warnings.isEmpty());
+    }
 }
