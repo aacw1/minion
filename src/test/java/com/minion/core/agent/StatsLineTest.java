@@ -36,11 +36,11 @@ public class StatsLineTest {
         u.reasoningTokens = 123;
         t.record(u);
         String line = StatsLine.format(t, 12300, 45000, 900000);
-        assertEquals("⏱ 12.3s · in 1.2k · out 345 · thinking 123 · ctx 45k/900k (5%)", line);
+        assertEquals("⏱ 12.3s  in 1.2k  out 345  thinking 123  ctx 45k/900k (5%)", line);
     }
 
     @Test public void format_zeroMaxCtx_printsZeroPct() {
         String line = StatsLine.format(new UsageTracker(), 500, 0, 0);
-        assertEquals("⏱ 0.5s · in 0 · out 0 · thinking 0 · ctx 0/0 (0%)", line);
+        assertEquals("⏱ 0.5s  in 0  out 0  thinking 0  ctx 0/0 (0%)", line);
     }
 }
