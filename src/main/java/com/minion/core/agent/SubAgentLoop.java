@@ -103,7 +103,10 @@ public class SubAgentLoop {
                             ui.onRetryProgress(attempts); // 指示器显示"正在重试中…第 N 次"
                             try {
                                 llm.streamChat(messages, subAgentTools(), handler);
-                                ui.onWarning("子 agent 已恢复，继续执行");
+                                // 重试成功但流中断（onError 回调已提示）：不再报"已恢复"
+                                if (!"error".equals(finish[0])) {
+                                    ui.onWarning("子 agent 已恢复，继续执行");
+                                }
                                 break; // 成功：finish/toolCalls 已回调，走正常路径
                             } catch (LlmException re) {
                                 if (Thread.currentThread().isInterrupted()) break;
@@ -166,6 +169,7 @@ public class SubAgentLoop {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
+            ui.onRetryProgress(0); // 429 重试等待中被真实中断（future.cancel(true)）：复位指示器
             ui.onWarning("子 agent 已中断");
             return "子 agent 已中断";
         } catch (Exception e) {

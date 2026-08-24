@@ -367,4 +367,31 @@ public class SubAgentLoopTest {
         assertEquals(Arrays.asList(1, 0), ui.retryProgress);
         assertTrue(ui.warnings.isEmpty());
     }
+
+    /** 子 agent 429 重试成功但流中断（onError 回调）：不误报"已恢复"，错误已在回调提示，指示器复位 */
+    @Test
+    public void subAgent_rateLimit_thenStreamError_noFalseRecovery() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
+        llm.addTurnError("连接中断"); // 重试请求：streamChat 正常返回但 handler 走 onError 回调
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        String result = sub.run();
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
+        // 不误报"已恢复"；onError 回调已提示错误
+        assertTrue(ui.warnings.isEmpty());
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("连接中断"));
+        // 指示器复位：进入重试（1）→ 退出（0）
+        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+    }
 }

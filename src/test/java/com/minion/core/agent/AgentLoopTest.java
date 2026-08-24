@@ -1330,6 +1330,23 @@ public class AgentLoopTest {
         assertTrue(ui.errors.isEmpty());
     }
 
+    /** 429 重试成功但流中断（onError 回调路径）：不误报"已恢复"，错误由检查点提示，指示器复位 */
+    @Test
+    public void rateLimit_thenStreamError_noFalseRecovery() {
+        llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
+        llm.addTurnError("连接中断"); // 重试请求：streamChat 正常返回但 handler 走 onError 回调
+        AgentLoop loop = newLoop();
+        loop.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        loop.runUserTurn("任务");
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
+        // 不误报"已恢复"；错误由下方 finish=="error" 检查点提示
+        assertTrue(ui.warnings.isEmpty());
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("连接中断"));
+        // 指示器复位：进入重试（1）→ 退出（0）
+        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+    }
+
     /** 429 持续失败：超总时长后一次性总结并停止，不无限重试 */
     @Test
     public void rateLimit_exhausted_stopsWithSummary() {

@@ -462,7 +462,11 @@ public class AgentLoop {
                             ui.onRetryProgress(attempts); // 指示器显示"正在重试中…第 N 次"
                             try {
                                 llm.streamChat(request, registry.schemas(), handler);
-                                ui.onWarning("已恢复，继续执行");
+                                // 重试成功但流中断（onError 回调路径）：不报"已恢复"，由下方
+                                // finish=="error" 检查点统一处理（图片降级或提示错误）
+                                if (!"error".equals(finish[0])) {
+                                    ui.onWarning("已恢复，继续执行");
+                                }
                                 break; // 重试成功：finish/usage/toolCalls 已由 handler 回调，走正常路径
                             } catch (LlmException re) {
                                 if (interrupted) break;
