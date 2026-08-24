@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.config.Config;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.tools.confirm.ConfirmGate;
@@ -16,6 +17,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -281,5 +283,59 @@ public class SubAgentLoopTest {
         for (com.minion.core.llm.Message m : loop.messages()) {
             assertFalse("技能正文不得注入主会话", m.pinned);
         }
+    }
+
+    /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，消息区仅"已恢复"，与主循环一致 */
+    @Test
+    public void subAgent_rateLimit_retryThenSuccess() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate confirm = new ConfirmGate(config, confirmUi);
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
+        assertEquals(1, ui.warnings.size());
+        assertTrue(ui.warnings.get(0).contains("已恢复"));
+        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertTrue(ui.errors.isEmpty());
+    }
+
+    /** 子 agent 429 持续失败：超总时长后总结停止，不无限重试 */
+    @Test
+    public void subAgent_rateLimit_exhausted_stopsWithSummary() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy429 = new RetryPolicy(10, 10, 20, 50); // 快速耗尽
+        long start = System.currentTimeMillis();
+        String result = sub.run();
+        assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
+        assertTrue(result.contains("失败"));
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("重试了"));
+        assertTrue(ui.errors.get(0).contains("仍失败"));
+        assertTrue(llm.requests.size() >= 2 && llm.requests.size() <= 5);
+        assertTrue(!ui.retryProgress.isEmpty());
+        assertEquals(Integer.valueOf(0), ui.retryProgress.get(ui.retryProgress.size() - 1));
     }
 }

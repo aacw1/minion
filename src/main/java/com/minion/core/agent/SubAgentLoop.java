@@ -25,6 +25,8 @@ public class SubAgentLoop {
     private final ToolRegistry registry;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
+    /** 429 限流长重试策略（与主循环一致；测试可覆写小参数） */
+    public RetryPolicy retryPolicy429 = RetryPolicy.rateLimit();
     private final List<Message> messages = new ArrayList<Message>();
 
     public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
@@ -49,43 +51,90 @@ public class SubAgentLoop {
                 }
                 final List<ToolCall>[] toolCalls = new List[1];
                 final String[] finish = new String[1];
+                final Usage[] usage = new Usage[1];
                 final StringBuilder content = new StringBuilder();
                 final StringBuilder thinking = new StringBuilder();
+                final com.minion.core.llm.StreamHandler handler = new com.minion.core.llm.StreamHandler() {
+                    @Override
+                    public void onThinking(String delta) {
+                        thinking.append(delta);
+                        ui.onThinking(delta);
+                    }
+                    @Override
+                    public void onContent(String delta) {
+                        content.append(delta);
+                        ui.onSubAgentDelta(delta);
+                    }
+                    @Override
+                    public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
+                        finish[0] = finishReason;
+                        usage[0] = u;
+                        toolCalls[0] = tcs;
+                    }
+                    @Override
+                    public void onError(LlmException e) { finish[0] = "error"; ui.onError(e.getMessage()); }
+                };
                 try {
-                    llm.streamChat(messages, subAgentTools(), new com.minion.core.llm.StreamHandler() {
-                        @Override
-                        public void onThinking(String delta) {
-                            thinking.append(delta);
-                            ui.onThinking(delta);
-                        }
-                        @Override
-                        public void onContent(String delta) {
-                            content.append(delta);
-                            ui.onSubAgentDelta(delta);
-                        }
-                        @Override
-                        public void onFinish(String finishReason, Usage usage, List<ToolCall> tcs) {
-                            finish[0] = finishReason;
-                            toolCalls[0] = tcs;
-                        }
-                        @Override
-                        public void onError(LlmException e) { finish[0] = "error"; ui.onError(e.getMessage()); }
-                    });
+                    llm.streamChat(messages, subAgentTools(), handler);
                 } catch (LlmException e) {
                     if (Thread.currentThread().isInterrupted()) {
                         // 已被主循环中断（cancel 引发的 Canceled 错误）：不重试
                         ui.onWarning("子 agent 已中断");
                         return "子 agent 已中断";
                     }
-                    if (e.retryable && retries < 1) {
+                    if (e.type == LlmException.Type.RATE_LIMIT) {
+                        // 429 长重试与主循环一致：2s 起步 +2s 递增，上限 10s，总时长 30 分钟；
+                        // 进度经 onRetryProgress 进左下角指示器，成功轻提示恢复，超时一次性总结停止
+                        int attempts = 0;
+                        long waited = 0;
+                        boolean exhausted = false; // 超时总结标志：break 后统一复位指示器再返回
+                        while (true) {
+                            attempts++;
+                            long delay = retryPolicy429.delayMs(attempts);
+                            if (!sleepWithInterruptCheck(delay)) break; // 中断
+                            waited += delay;
+                            if (retryPolicy429.isExhausted(waited)) {
+                                ui.onError("子 agent 429 重试了 " + attempts + " 次，持续 "
+                                        + (waited / 60000) + " 分钟仍失败，已停止重试");
+                                exhausted = true;
+                                break;
+                            }
+                            ui.onRetryProgress(attempts); // 指示器显示"正在重试中…第 N 次"
+                            try {
+                                llm.streamChat(messages, subAgentTools(), handler);
+                                ui.onWarning("子 agent 已恢复，继续执行");
+                                break; // 成功：finish/toolCalls 已回调，走正常路径
+                            } catch (LlmException re) {
+                                if (Thread.currentThread().isInterrupted()) break;
+                                if (re.type != LlmException.Type.RATE_LIMIT) {
+                                    ui.onError("子 agent 请求失败: " + re.getMessage());
+                                    return "子 agent 失败: " + re.getMessage();
+                                }
+                                // 仍 429：继续退避
+                            }
+                        }
+                        ui.onRetryProgress(0); // 退出重试态（成功/超时/中断统一复位）
+                        if (Thread.currentThread().isInterrupted()) {
+                            ui.onWarning("子 agent 已中断");
+                            return "子 agent 已中断";
+                        }
+                        if (exhausted) {
+                            return "子 agent 失败: 429 持续 " + (waited / 60000) + " 分钟"; // 已 onError
+                        }
+                        if (finish[0] == null && usage[0] == null) {
+                            return "子 agent 失败: 429 重试超时"; // 已 onError
+                        }
+                        // 重试成功：落入下方正常处理
+                    } else if (e.retryable && retries < 1) {
                         retries++;
                         ui.onWarning("子 agent 请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避与主循环一致：429 限流 2s，其余（网络/超时）0.5s
                         Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
                         continue; // 消息未变，直接重发本轮
+                    } else {
+                        ui.onError("子 agent 请求失败: " + e.getMessage());
+                        return "子 agent 失败: " + e.getMessage();
                     }
-                    ui.onError("子 agent 请求失败: " + e.getMessage());
-                    return "子 agent 失败: " + e.getMessage();
                 }
                 if (toolCalls[0] == null || toolCalls[0].isEmpty()
                         || !"tool_calls".equals(finish[0])) {
@@ -114,6 +163,17 @@ public class SubAgentLoop {
             ui.onError("子 agent 异常: " + e.getMessage());
             return "子 agent 异常: " + e.getMessage();
         }
+    }
+
+    /** 可中断等待：100ms 小片轮询中断标志（与主循环 sleepWithInterruptCheck 一致；
+     *  返回 false 表示已中断） */
+    private boolean sleepWithInterruptCheck(long ms) throws InterruptedException {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) {
+            if (Thread.currentThread().isInterrupted()) return false;
+            Thread.sleep(Math.min(100, end - System.currentTimeMillis()));
+        }
+        return !Thread.currentThread().isInterrupted();
     }
 
     /** 子 agent 工具集 = registry 全部工具 schema，剔除 task（防无限递归） */
