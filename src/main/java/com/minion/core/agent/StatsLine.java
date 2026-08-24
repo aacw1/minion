@@ -12,7 +12,7 @@ public class StatsLine {
         double secs = elapsedMillis / 1000.0;
         int pct = maxCtx > 0 ? (int) Math.round(currentCtx * 100.0 / maxCtx) : 0;
         return String.format(Locale.ROOT,
-                "⏱ %.1fs · in %s · out %s · thinking %s · ctx %s/%s (%d%%)",
+                "⏱ %.1fs  in %s  out %s  thinking %s  ctx %s/%s (%d%%)",
                 secs,
                 formatTokens(usage.sessionInput()),
                 formatTokens(usage.sessionOutput()),

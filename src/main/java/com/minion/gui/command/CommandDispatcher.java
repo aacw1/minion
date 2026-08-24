@@ -71,7 +71,7 @@ public class CommandDispatcher {
 
     private String tokensText(SessionHandle h) {
         com.minion.core.llm.UsageTracker t = h.loop.usage();
-        return String.format(Locale.ROOT, "会话统计: in %d · out %d · thinking %d · 合计 %d",
+        return String.format(Locale.ROOT, "会话统计: in %d  out %d  thinking %d  合计 %d",
                 t.sessionInput(), t.sessionOutput(), t.sessionThinking(), t.sessionTotal());
     }
 
