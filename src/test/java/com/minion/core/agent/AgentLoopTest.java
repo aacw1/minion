@@ -201,7 +201,8 @@ public class AgentLoopTest {
         public void cancel() { cancelled = true; }
 
         @Override
-        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler) {
+        public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+                throws LlmException {
             entered.countDown();
             try { Thread.sleep(300); } catch (InterruptedException e) { }
             super.streamChat(messages, tools, handler);
@@ -209,8 +210,7 @@ public class AgentLoopTest {
     }
 
     /** 需求 15：流式中断——第一轮进入后阻塞等 interrupt()，先回调部分内容再抛异常模拟取消。
-     *  直接实现 LlmClient 而非继承 FakeLlmClient：后者 streamChat 未声明 throws LlmException，
-     *  覆写无法抛受检异常；接口本身已声明，实现类可正常抛出 */
+     *  直接实现 LlmClient 而非继承 FakeLlmClient：FakeLlmClient 支持脚本化 throw 后覆写可正常抛异常 */
     public static class InterruptibleStreamLlm implements LlmClient {
         public final CountDownLatch entered = new CountDownLatch(1);
         public final CountDownLatch cancelSignal = new CountDownLatch(1);

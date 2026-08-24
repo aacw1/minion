@@ -29,17 +29,23 @@ public class FakeLlmClient implements LlmClient {
         public final String content;
         public final String thinking;
         public final LlmException error;
+        public final boolean throwOnCall; // true = streamChat 直接抛 error（响应码异常路径）
         public ScriptedTurn(List<ToolCall> toolCalls, String content) {
-            this(toolCalls, content, null, null);
+            this(toolCalls, content, null, null, false);
         }
         public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking) {
-            this(toolCalls, content, thinking, null);
+            this(toolCalls, content, thinking, null, false);
         }
         public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking, LlmException error) {
+            this(toolCalls, content, thinking, error, false);
+        }
+        public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking,
+                            LlmException error, boolean throwOnCall) {
             this.toolCalls = toolCalls;
             this.content = content;
             this.thinking = thinking;
             this.error = error;
+            this.throwOnCall = throwOnCall;
         }
     }
 
@@ -68,14 +74,21 @@ public class FakeLlmClient implements LlmClient {
                 new LlmException(LlmException.Type.OTHER, message, false)));
     }
 
+    /** 脚本化 throw：streamChat 直接抛异常（模拟 429 等响应码错误，走调用方 catch 路径） */
+    public void addTurnThrow(LlmException error) {
+        turns.add(new ScriptedTurn(null, null, null, error, true));
+    }
+
     @Override
-    public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler) {
+    public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
+            throws LlmException {
         lastRequestMessages = new ArrayList<Message>(messages);
         lastRequestTools = tools == null ? new ArrayList<JsonObject>() : new ArrayList<JsonObject>(tools);
         requests.add(new RequestRecord(messages, tools));
         ScriptedTurn turn = turns.get(Math.min(cursor, turns.size() - 1));
         cursor++;
         if (turn.error != null) {
+            if (turn.throwOnCall) throw turn.error;
             handler.onError(turn.error);
             return;
         }
