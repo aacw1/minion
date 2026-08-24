@@ -285,7 +285,7 @@ public class SubAgentLoopTest {
         }
     }
 
-    /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，消息区仅"已恢复"，与主循环一致 */
+    /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，成功后静默恢复，与主循环一致 */
     @Test
     public void subAgent_rateLimit_retryThenSuccess() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -305,8 +305,7 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertEquals(1, ui.warnings.size());
-        assertTrue(ui.warnings.get(0).contains("已恢复"));
+        assertTrue(ui.warnings.isEmpty());    // 成功后静默恢复；重试提示在指示器不进消息区
         assertEquals(Arrays.asList(1, 0), ui.retryProgress);
         assertTrue(ui.errors.isEmpty());
     }
@@ -363,12 +362,12 @@ public class SubAgentLoopTest {
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接超时"));
-        // 指示器复位：末位必须为 0，不残留"正在重试中…第 N 次"
+        // 指示器复位：末位必须为 0，不残留"429限流或余额不足，正在重试中...N次"
         assertEquals(Arrays.asList(1, 0), ui.retryProgress);
         assertTrue(ui.warnings.isEmpty());
     }
 
-    /** 子 agent 429 重试成功但流中断（onError 回调）：不误报"已恢复"，错误已在回调提示，指示器复位 */
+    /** 子 agent 429 重试成功但流中断（onError 回调）：错误已在回调提示，指示器复位 */
     @Test
     public void subAgent_rateLimit_thenStreamError_noFalseRecovery() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -387,7 +386,7 @@ public class SubAgentLoopTest {
         sub.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        // 不误报"已恢复"；onError 回调已提示错误
+        // 成功路径静默恢复（无警告），onError 回调已提示错误
         assertTrue(ui.warnings.isEmpty());
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接中断"));

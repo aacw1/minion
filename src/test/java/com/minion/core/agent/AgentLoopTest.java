@@ -1312,7 +1312,7 @@ public class AgentLoopTest {
         assertFalse(s.preview().contains("审查正文"));
     }
 
-    /** 429 限流长重试：重试进度经 onRetryProgress 进左下角指示器，消息区仅"已恢复"一条，无刷屏无报错 */
+    /** 429 限流长重试：重试进度经 onRetryProgress 进左下角指示器，成功后静默恢复（消息区无警告） */
     @Test
     public void rateLimit_retryThenSuccess_silentRecovery() {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
@@ -1323,14 +1323,13 @@ public class AgentLoopTest {
         assertEquals(2, loop.messages().size()); // user + assistant
         assertEquals("最终回复", loop.messages().get(1).content);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertEquals(1, ui.warnings.size());  // 仅"已恢复"；重试提示在指示器不进消息区
-        assertTrue(ui.warnings.get(0).contains("已恢复"));
+        assertTrue(ui.warnings.isEmpty());     // 成功后静默恢复，不发"已恢复"；重试提示在指示器不进消息区
         // 进度序列：进入重试（第1次）→ 成功退出（0）
         assertEquals(Arrays.asList(1, 0), ui.retryProgress);
         assertTrue(ui.errors.isEmpty());
     }
 
-    /** 429 重试成功但流中断（onError 回调路径）：不误报"已恢复"，错误由检查点提示，指示器复位 */
+    /** 429 重试成功但流中断（onError 回调路径）：错误由检查点提示，指示器复位 */
     @Test
     public void rateLimit_thenStreamError_noFalseRecovery() {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
@@ -1339,7 +1338,7 @@ public class AgentLoopTest {
         loop.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        // 不误报"已恢复"；错误由下方 finish=="error" 检查点提示
+        // 成功路径静默恢复（无警告），onError 回调的流中断错误由检查点提示
         assertTrue(ui.warnings.isEmpty());
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接中断"));

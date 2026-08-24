@@ -25,8 +25,8 @@ public class RunningIndicator extends HBox {
     static final String[] ROTATING_TEXTS = {"正在加载中...", "可随时补充信息..."};
     /** 压缩固定文案（只在压缩时显示，不参与轮换） */
     static final String COMPRESSING_TEXT = "上下文压缩中...";
-    /** 重试文案（固定格式，次数动态更新） */
-    static final String RETRY_TEXT_PREFIX = "正在重试中…第 ";
+    /** 重试文案前缀（固定格式，次数动态更新；429 含限流与余额不足两种常见含义） */
+    static final String RETRY_TEXT_PREFIX = "429限流或余额不足，正在重试中...";
     /** 齿轮旋转周期（2s/圈） */
     static final double SPIN_MS = 2000;
     /** 文案轮换间隔（10s） */
@@ -69,9 +69,9 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 重试文案：显示当前重试次数 */
+    /** 重试文案：显示当前重试次数（如"429限流或余额不足，正在重试中...3次"） */
     static String retryText(int attempt) {
-        return RETRY_TEXT_PREFIX + attempt + " 次";
+        return RETRY_TEXT_PREFIX + attempt + "次";
     }
 
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
@@ -109,7 +109,7 @@ public class RunningIndicator extends HBox {
         }
     }
 
-    /** 429 重试进度：attempt ≥ 1 → 固定显示"正在重试中…第 N 次"并暂停轮换；
+    /** 429 重试进度：attempt ≥ 1 → 固定显示"429限流或余额不足，正在重试中...N次"并暂停轮换；
      *  attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
     public void setRetryProgress(int attempt) {
         this.retryAttempt = attempt;

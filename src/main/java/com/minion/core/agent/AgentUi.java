@@ -22,6 +22,6 @@ public interface AgentUi {
     default void onCompressingChanged(boolean compressing) { }
     /** 上下文统计推送（used/max = 估算 token；关键节点：消息入历史/回复完成/工具结果/压缩完成/轮次结束） */
     default void onContextStats(int used, int max) { }
-    /** 429 长重试进度（attempt ≥ 1 进入/更新重试态，显示"正在重试中…第 N 次"；attempt == 0 退出重试态恢复轮换） */
+    /** 429 长重试进度（attempt ≥ 1 进入/更新重试态，显示"429限流或余额不足，正在重试中...N次"；attempt == 0 退出重试态恢复轮换） */
     default void onRetryProgress(int attempt) { }
 }
