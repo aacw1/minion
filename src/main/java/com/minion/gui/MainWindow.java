@@ -13,6 +13,7 @@ import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
+import javafx.animation.PauseTransition;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -43,6 +44,7 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.Duration;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -405,16 +407,38 @@ public class MainWindow {
         runningIndicator.setCompressing(false);
     }
 
+    /** 自动滚动节流：流式增长触发的 setVvalue(1.0) 合并为每 150ms 至多一次。
+     *  背景：JavaFX 8 ScrollPaneSkin 硬编码视口缓存，每次滚动都全量重绘离屏纹理上传 GPU，
+     *  聊天内容大（长会话）且 es2 管线在 4K/老驱动下时，高频滚动会堵死渲染队列导致界面假死。
+     *  节流显著降低重绘频率；最后一次请求以 ≤150ms 延迟保证执行（pending 标志防丢尾）。 */
+    private final PauseTransition scrollThrottle = new PauseTransition(Duration.millis(150));
+    private boolean scrollPending = false;
+
+    private void requestAutoScroll() {
+        if (scrollPending) return;
+        scrollPending = true;
+        scrollThrottle.setOnFinished(e -> {
+            scrollPending = false;
+            if (policy.shouldFollow()) chatScroll.setVvalue(1.0); // 完成后再确认仍贴底
+        });
+        scrollThrottle.playFromStart();
+    }
+
     /** 需求：消息区自动滚动——贴底时随新内容滚到底，离开底部即暂停，拖回底部恢复。
      *  vmax 恒 1.0 不可用（vvalue 为归一化比例），内容增长改监听内容节点高度变化；
      *  会话切换时内容节点被替换，须随 contentProperty 重挂监听 */
     private void setupAutoScroll() {
-        javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
-            if (policy.shouldFollow()) {
-                Platform.runLater(() -> { // 布局完成后置底；二次确认防监听时旧状态
-                    if (policy.shouldFollow()) chatScroll.setVvalue(1.0);
-                });
+        // 关闭视口缓存：ScrollPaneSkin 构造硬编码 viewport setCache(true)（离屏缓存），
+        // 聊天内容大时每次滚动/更新都全量重绘+上传大纹理到 GPU——es2 管线长会话下会堵死渲染队列（假死根因）。
+        // skin 就绪后 lookup .viewport 取消缓存，改为视口内直接重绘（仅视口大小的绘制，无离屏拷贝上传）。
+        chatScroll.skinProperty().addListener((obs, ov, nv) -> {
+            if (nv != null) {
+                Node viewport = chatScroll.lookup(".viewport");
+                if (viewport != null) viewport.setCache(false);
             }
+        });
+        javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
+            if (policy.shouldFollow()) requestAutoScroll();
         };
         chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
                 policy.sync(nv.doubleValue(), eps()));
