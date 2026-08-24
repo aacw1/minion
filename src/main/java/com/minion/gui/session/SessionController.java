@@ -24,6 +24,11 @@ public class SessionController implements AgentUi {
 
     public void setCompressingStateListener(java.util.function.Consumer<Boolean> l) { this.compressingStateListener = l; }
 
+    /** 429 长重试进度回调（attempt ≥ 1 进入/更新；0 退出），SessionManager 注入 */
+    private volatile java.util.function.Consumer<Integer> retryStateListener;
+
+    public void setRetryStateListener(java.util.function.Consumer<Integer> l) { this.retryStateListener = l; }
+
     /** 上下文统计回调（AgentLoop 关键节点推送），SessionManager 注入 */
     private volatile java.util.function.Consumer<ContextStat> contextStatsListener;
 
@@ -142,6 +147,10 @@ public class SessionController implements AgentUi {
     }
     @Override public void onCompressingChanged(boolean compressing) {
         if (compressingStateListener != null) compressingStateListener.accept(compressing);
+    }
+
+    @Override public void onRetryProgress(int attempt) {
+        if (retryStateListener != null) retryStateListener.accept(attempt);
     }
 
     @Override public void onContextStats(int used, int max) {

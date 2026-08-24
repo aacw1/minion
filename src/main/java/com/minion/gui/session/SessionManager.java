@@ -64,6 +64,8 @@ public class SessionManager {
         default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
         /** 上下文压缩状态变化（true=压缩中；仅当前激活会话时 GUI 显示） */
         default void onCompressingChanged(SessionHandle h, boolean compressing) { }
+        /** 429 长重试进度（attempt ≥ 1 进入/更新；0 退出；仅当前激活会话时 GUI 显示） */
+        default void onRetryProgress(SessionHandle h, int attempt) { }
         /** 上下文统计变化（used/max 估算 token；GUI 环形进度圈，仅当前激活会话显示） */
         default void onContextStatsChanged(SessionHandle h, int used, int max) { }
         /** 会话被删除（deleteSession / deleteWorkspace 均通知，含非当前空间）：UI 清理页签与缓存 */
@@ -163,6 +165,9 @@ public class SessionManager {
     private void notifyCompressingChanged(SessionHandle h, boolean compressing) {
         for (Listener l : listeners) l.onCompressingChanged(h, compressing);
     }
+    private void notifyRetryProgress(SessionHandle h, int attempt) {
+        for (Listener l : listeners) l.onRetryProgress(h, attempt);
+    }
     private void notifyContextStats(SessionHandle h, int used, int max) {
         for (Listener l : listeners) l.onContextStatsChanged(h, used, max);
     }
@@ -221,6 +226,12 @@ public class SessionManager {
                 controller.setCompressingStateListener(new java.util.function.Consumer<Boolean>() {
                     @Override public void accept(Boolean compressing) {
                         notifyCompressingChanged(h, compressing);
+                    }
+                });
+                // 429 重试进度转发（AgentLoop 长重试回调 → 指示器）
+                controller.setRetryStateListener(new java.util.function.Consumer<Integer>() {
+                    @Override public void accept(Integer attempt) {
+                        notifyRetryProgress(h, attempt);
                     }
                 });
                 // 上下文统计转发（AgentLoop 关键节点推送 → 环形进度圈）
@@ -351,6 +362,12 @@ public class SessionManager {
         controller.setCompressingStateListener(new java.util.function.Consumer<Boolean>() {
             @Override public void accept(Boolean compressing) {
                 notifyCompressingChanged(h, compressing);
+            }
+        });
+        // 429 重试进度转发（AgentLoop 长重试回调 → 指示器）
+        controller.setRetryStateListener(new java.util.function.Consumer<Integer>() {
+            @Override public void accept(Integer attempt) {
+                notifyRetryProgress(h, attempt);
             }
         });
         // 上下文统计转发（AgentLoop 关键节点推送 → 环形进度圈）

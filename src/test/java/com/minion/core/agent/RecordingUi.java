@@ -45,4 +45,9 @@ public class RecordingUi implements AgentUi {
     @Override public synchronized void onContextStats(int used, int max) {
         ctxStats.add(new int[]{used, max});
     }
+
+    public final List<Integer> retryProgress = new ArrayList<Integer>();
+
+    /** 429 长重试进度（attempt ≥ 1 进入/更新；0 退出） */
+    @Override public synchronized void onRetryProgress(int attempt) { retryProgress.add(attempt); }
 }

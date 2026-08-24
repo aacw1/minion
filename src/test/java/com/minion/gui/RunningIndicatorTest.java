@@ -38,4 +38,11 @@ public class RunningIndicatorTest {
         assertEquals("上下文压缩中...", RunningIndicator.displayText(true, "正在加载中..."));
         assertEquals("正在加载中...", RunningIndicator.displayText(false, "正在加载中..."));
     }
+
+    /** 重试文案格式：显示当前重试次数 */
+    @Test
+    public void retryText_formatsAttempt() {
+        assertEquals("正在重试中…第 1 次", RunningIndicator.retryText(1));
+        assertEquals("正在重试中…第 12 次", RunningIndicator.retryText(12));
+    }
 }

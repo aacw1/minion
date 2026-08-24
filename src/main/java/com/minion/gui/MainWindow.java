@@ -247,6 +247,13 @@ public class MainWindow {
                     }
                 });
             }
+            @Override public void onRetryProgress(SessionHandle h, int attempt) {
+                Platform.runLater(() -> {
+                    if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
+                        runningIndicator.setRetryProgress(attempt);
+                    }
+                });
+            }
             @Override public void onContextStatsChanged(SessionHandle h, int used, int max) {
                 if (inputView != null) inputView.onContextStats(h, used, max);
             }

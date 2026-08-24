@@ -25,6 +25,8 @@ public class RunningIndicator extends HBox {
     static final String[] ROTATING_TEXTS = {"正在加载中...", "可随时补充信息..."};
     /** 压缩固定文案（只在压缩时显示，不参与轮换） */
     static final String COMPRESSING_TEXT = "上下文压缩中...";
+    /** 重试文案（固定格式，次数动态更新） */
+    static final String RETRY_TEXT_PREFIX = "正在重试中…第 ";
     /** 齿轮旋转周期（2s/圈） */
     static final double SPIN_MS = 2000;
     /** 文案轮换间隔（10s） */
@@ -37,6 +39,7 @@ public class RunningIndicator extends HBox {
     private Timeline rotateText; // 10s 文案轮换动画
     private boolean running;
     private boolean compressing;
+    private int retryAttempt; // 429 重试进度：0=非重试；>0=正在重试第 N 次
 
     public RunningIndicator() {
         getStyleClass().add("running-indicator");
@@ -66,11 +69,17 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
+    /** 重试文案：显示当前重试次数 */
+    static String retryText(int attempt) {
+        return RETRY_TEXT_PREFIX + attempt + " 次";
+    }
+
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
     public void setRunning(boolean running) {
         this.running = running;
         if (!running) {
             compressing = false;
+            retryAttempt = 0;
             stopAnimations();
             setVisible(false);
             return;
@@ -96,6 +105,20 @@ public class RunningIndicator extends HBox {
         if (compressing) {
             if (rotateText != null) rotateText.stop();
         } else {
+            startRotateText();
+        }
+    }
+
+    /** 429 重试进度：attempt ≥ 1 → 固定显示"正在重试中…第 N 次"并暂停轮换；
+     *  attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
+    public void setRetryProgress(int attempt) {
+        this.retryAttempt = attempt;
+        if (!running) return;
+        if (attempt >= 1) {
+            if (rotateText != null) rotateText.stop();
+            text.setText(retryText(attempt));
+        } else {
+            text.setText(displayText(compressing, pickText(rnd)));
             startRotateText();
         }
     }
