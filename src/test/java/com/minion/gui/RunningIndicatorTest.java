@@ -42,7 +42,7 @@ public class RunningIndicatorTest {
     /** 重试文案格式：429 限流或余额不足，显示当前重试次数 */
     @Test
     public void retryText_formatsAttempt() {
-        assertEquals("429限流或余额不足，正在重试中...1次", RunningIndicator.retryText(1));
-        assertEquals("429限流或余额不足，正在重试中...12次", RunningIndicator.retryText(12));
+        assertEquals("429限流，正在重试中...1次", RunningIndicator.retryText(1));
+        assertEquals("429限流，正在重试中...12次", RunningIndicator.retryText(12));
     }
 }

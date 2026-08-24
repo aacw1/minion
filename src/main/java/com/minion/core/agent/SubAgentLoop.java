@@ -100,7 +100,7 @@ public class SubAgentLoop {
                                 exhausted = true;
                                 break;
                             }
-                            ui.onRetryProgress(attempts); // 指示器显示"429限流或余额不足，正在重试中...N次"
+                            ui.onRetryProgress(attempts); // 指示器显示"429限流，正在重试中...N次"
                             try {
                                 llm.streamChat(messages, subAgentTools(), handler);
                                 // 成功后静默恢复（不打扰正文）：finish/toolCalls 已由 handler 回调，

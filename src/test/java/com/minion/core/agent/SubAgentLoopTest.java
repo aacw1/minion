@@ -362,7 +362,7 @@ public class SubAgentLoopTest {
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接超时"));
-        // 指示器复位：末位必须为 0，不残留"429限流或余额不足，正在重试中...N次"
+        // 指示器复位：末位必须为 0，不残留"429限流，正在重试中...N次"
         assertEquals(Arrays.asList(1, 0), ui.retryProgress);
         assertTrue(ui.warnings.isEmpty());
     }

@@ -445,7 +445,7 @@ public class AgentLoop {
                     }
                     if (e.type == LlmException.Type.RATE_LIMIT) {
                         // 429 长重试（内网模型资源差）：2s 起步 +2s 递增，上限 10s，总时长 30 分钟；
-                        // 进度经 onRetryProgress 进左下角指示器（"429限流或余额不足，正在重试中...N次"动态更新），
+                        // 进度经 onRetryProgress 进左下角指示器（"429限流，正在重试中...N次"动态更新），
                         // 成功轻提示恢复，超时一次性总结停止
                         int attempts = 0;
                         long waited = 0;
@@ -459,7 +459,7 @@ public class AgentLoop {
                                         + (waited / 60000) + " 分钟仍失败，已停止重试");
                                 break;
                             }
-                            ui.onRetryProgress(attempts); // 指示器显示"429限流或余额不足，正在重试中...N次"
+                            ui.onRetryProgress(attempts); // 指示器显示"429限流，正在重试中...N次"
                             try {
                                 llm.streamChat(request, registry.schemas(), handler);
                                 // 成功后静默恢复（不打扰正文）：finish/usage/toolCalls 已由 handler 回调，
