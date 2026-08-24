@@ -55,6 +55,8 @@ public class AgentLoop {
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
+    /** 429 限流长重试策略（默认 2s 起步 +2s 递增，上限 10s，总时长 30 分钟；测试可覆写小参数） */
+    public RetryPolicy retryPolicy429 = RetryPolicy.rateLimit();
     /** 连续工具失败止损阈值：达到后注入提醒让模型停止尝试并请求用户补充信息 */
     private static final int STUCK_THRESHOLD = 30;
     /** 连续失败工具计数（成功即清零；注入提醒后重置） */
@@ -409,30 +411,31 @@ public class AgentLoop {
                 final LlmException[] err = new LlmException[1];
                 final StringBuilder content = new StringBuilder();
                 final StringBuilder thinking = new StringBuilder();
+                final com.minion.core.llm.StreamHandler handler = new com.minion.core.llm.StreamHandler() {
+                    @Override
+                    public void onThinking(String delta) {
+                        thinking.append(delta);
+                        ui.onThinking(delta);
+                    }
+                    @Override
+                    public void onContent(String delta) {
+                        content.append(delta);
+                        ui.onContent(delta);
+                    }
+                    @Override
+                    public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
+                        finish[0] = finishReason;
+                        usage[0] = u;
+                        toolCalls[0] = tcs;
+                    }
+                    @Override
+                    public void onError(LlmException e) {
+                        finish[0] = "error";
+                        err[0] = e; // 暂存：检查点统一决定显示错误还是图片降级重试
+                    }
+                };
                 try {
-                    llm.streamChat(request, registry.schemas(), new com.minion.core.llm.StreamHandler() {
-                        @Override
-                        public void onThinking(String delta) {
-                            thinking.append(delta);
-                            ui.onThinking(delta);
-                        }
-                        @Override
-                        public void onContent(String delta) {
-                            content.append(delta);
-                            ui.onContent(delta);
-                        }
-                        @Override
-                        public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
-                            finish[0] = finishReason;
-                            usage[0] = u;
-                            toolCalls[0] = tcs;
-                        }
-                        @Override
-                        public void onError(LlmException e) {
-                            finish[0] = "error";
-                            err[0] = e; // 暂存：检查点统一决定显示错误还是图片降级重试
-                        }
-                    });
+                    llm.streamChat(request, registry.schemas(), handler);
                 } catch (LlmException e) {
                     if (interrupted) {
                         // 用户主动中断（如 DeepSeekClient.cancel → Canceled）：不重试不打警告，
@@ -440,16 +443,57 @@ public class AgentLoop {
                         appendPartialAssistant(content, thinking);
                         break;
                     }
-                    if (e.retryable && retries < 1) {
+                    if (e.type == LlmException.Type.RATE_LIMIT) {
+                        // 429 长重试（内网模型资源差）：2s 起步 +2s 递增，上限 10s，总时长 30 分钟；
+                        // 进度经 onRetryProgress 进左下角指示器（"正在重试中…第 N 次"动态更新），
+                        // 成功轻提示恢复，超时一次性总结停止
+                        int attempts = 0;
+                        long waited = 0;
+                        while (true) {
+                            attempts++;
+                            long delay = retryPolicy429.delayMs(attempts);
+                            if (!sleepWithInterruptCheck(delay)) break; // 用户中断
+                            waited += delay;
+                            if (retryPolicy429.isExhausted(waited)) {
+                                ui.onError("429 重试了 " + attempts + " 次，持续 "
+                                        + (waited / 60000) + " 分钟仍失败，已停止重试");
+                                break;
+                            }
+                            ui.onRetryProgress(attempts); // 指示器显示"正在重试中…第 N 次"
+                            try {
+                                llm.streamChat(request, registry.schemas(), handler);
+                                ui.onWarning("已恢复，继续执行");
+                                break; // 重试成功：finish/usage/toolCalls 已由 handler 回调，走正常路径
+                            } catch (LlmException re) {
+                                if (interrupted) break;
+                                if (re.type != LlmException.Type.RATE_LIMIT) {
+                                    ui.onError("请求失败: " + re.getMessage());
+                                    break;
+                                }
+                                // 仍 429：继续退避重试
+                            }
+                        }
+                        ui.onRetryProgress(0); // 退出重试态：指示器恢复轮换（成功/超时/中断统一复位）
+                        if (interrupted) {
+                            appendPartialAssistant(content, thinking);
+                            break;
+                        }
+                        if (finish[0] == null && usage[0] == null) {
+                            break; // 未成功（超时/换错已提示），结束本轮
+                        }
+                        // 重试成功：落入下方正常处理（usage 记录、回复入历史）
+                    } else if (e.retryable && retries < 1) {
                         retries++;
                         ui.onWarning("请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避：429 限流 2s，其余（网络/超时）0.5s；立即重试 429 几乎必然再 429
                         Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
                         continue; // 消息未变，直接重发本轮
+                    } else if (degradeImagesOnFailure()) {
+                        continue; // 带图请求失败：清图降级纯文本重试
+                    } else {
+                        ui.onError(e.getMessage());
+                        break;
                     }
-                    if (degradeImagesOnFailure()) continue; // 带图请求失败：清图降级纯文本重试
-                    ui.onError(e.getMessage());
-                    break;
                 }
 
                 if (usage[0] != null) session.usage.record(usage[0]);
@@ -557,6 +601,17 @@ public class AgentLoop {
         int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
         ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
         ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
+    }
+
+    /** 可中断等待：100ms 小片轮询 interrupted 标志（interrupt() 只设标志不中断线程，
+     *  直接 sleep 无法及时响应停止；返回 false 表示用户已中断） */
+    private boolean sleepWithInterruptCheck(long ms) throws InterruptedException {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) {
+            if (interrupted) return false;
+            Thread.sleep(Math.min(100, end - System.currentTimeMillis()));
+        }
+        return !interrupted;
     }
 
     /** 失败降级：本次请求含带图消息（历史或挂起补充）且请求失败时，清除全部图片以纯文本重发。
