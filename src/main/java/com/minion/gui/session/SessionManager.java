@@ -208,7 +208,7 @@ public class SessionManager {
                                 .build(allSkills)));
                 SessionController controller = new SessionController();
                 controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
-                AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
+                AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
                         new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir()),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
                 loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
@@ -258,23 +258,29 @@ public class SessionManager {
                 gate, skillsDir);
     }
 
+    /** 会话临时目录：jarDir/.session/tmp/<sessionId>（工具落盘与模型临时文件统一位置） */
+    private Path tmpDirOf(String sessionId) {
+        return jarDir.resolve(".session").resolve("tmp").resolve(sessionId);
+    }
+
     /**
      * 每会话独立 ToolRegistry：AgentLoop 构造时按名注册 TaskTool(this)，若同空间共享
      * 单个 registry，task 工具会永远绑定最后构造的 loop（会话 A 的 task 调用事件流入会话 B）。
      * 工具对象本身无状态（构造参数 workspace/skillsDir/gate 为空间级共享对象），
      * 每次 new ToolRegistry 复制注册同样的工具即可；TaskTool 由 AgentLoop 自动注册、绑定本会话。
      */
-    private ToolRegistry newRegistry(WorkspaceCtx ctx) {
+    private ToolRegistry newRegistry(WorkspaceCtx ctx, String sessionId) {
         ToolRegistry registry = new ToolRegistry();
         String skillsDir = ctx.skillsDir;
         Workspace workspace = ctx.workspace;
         ConfirmGate gate = ctx.confirmGate;
+        String tmpDir = tmpDirOf(sessionId).toString();
         registry.register(new ReadTool(workspace, skillsDir, gate));
         registry.register(new WriteTool(workspace, skillsDir));
         registry.register(new EditTool(workspace, skillsDir));
         registry.register(new GlobTool(workspace, skillsDir, gate));
-        registry.register(new GrepTool(workspace, skillsDir, gate));
-        registry.register(new BashTool(workspace));
+        registry.register(new GrepTool(workspace, skillsDir, tmpDir, gate));
+        registry.register(new BashTool(workspace, tmpDirOf(sessionId)));
         registry.register(new WebFetchTool());
         if (browserSession != null) {
             registry.register(new BrowserTool(browserSession));
@@ -345,7 +351,7 @@ public class SessionManager {
                 TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir())
                         .build(allSkills)));
         SessionController controller = new SessionController();
-        AgentLoop loop = new AgentLoop(llm, newRegistry(ctx),
+        AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
                 new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir()),
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
         loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段

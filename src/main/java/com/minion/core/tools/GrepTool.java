@@ -17,7 +17,7 @@ import java.util.regex.PatternSyntaxException;
 
 /** 正则内容搜索。参数: pattern(必), path(可选搜索起点), ignoreCase, maxResults。
  *  单行内容截断 1000 字符；显示层 250 条 + 30k 字符双上限，超限全量落盘
- *  <workDir>/.minion/tmp/grep-*.txt（模型可用 Read 查看）。 */
+ *  会话临时目录 <jarDir>/.session/tmp/<sessionId>/grep-*.txt（模型可用 Read 查看）。 */
 public class GrepTool implements Tool {
 
     private static final int MAX_RESULTS = 250;    // 显示条数默认与钳制上限
@@ -26,15 +26,22 @@ public class GrepTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    /** 会话临时目录（jarDir/.session/tmp/<sessionId>；null = 落盘降级） */
+    private final Path tmpDir;
     private final ConfirmGate confirm;
 
-    public GrepTool(Workspace workspace) { this(workspace, null, null); }
+    public GrepTool(Workspace workspace) { this(workspace, null); }
 
     public GrepTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
 
     public GrepTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
+        this(workspace, skillsDir, null, confirm);
+    }
+
+    public GrepTool(Workspace workspace, String skillsDir, String tmpDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.tmpDir = tmpDir == null ? null : Paths.get(tmpDir);
         this.confirm = confirm;
     }
 
@@ -85,11 +92,12 @@ public class GrepTool implements Tool {
         if (max < 0) return ToolResult.error("参数 maxResults 不能为负: " + max);
 
         // 落盘：全量匹配流式写入；失败降级（dumpWriter == null 纯内存截断，不阻断执行）
-        final Path dumpPath = OutputDump.write(Paths.get(workspace.workDir()), "grep", "");
+        final Path dumpPath = OutputDump.write(tmpDir, "grep", "");
         final BufferedWriter dumpWriter = dumpPath == null ? null
                 : Files.newBufferedWriter(dumpPath, StandardCharsets.UTF_8);
-        // 跳过落盘目录：dump 文件内容本身含匹配文本，遍历到会自噬（自身被匹配再写入自身）
-        final Path dumpDirPath = OutputDump.dumpDir(Paths.get(workspace.workDir())).toAbsolutePath().normalize();
+        // 跳过落盘目录：jar 目录可能嵌套/重叠工作空间（如 jar 放在项目目录运行），
+        // dump 文件内容本身含匹配文本，遍历到会自噬（自身被匹配再写入自身）
+        final Path dumpDirPath = tmpDir == null ? null : tmpDir.toAbsolutePath().normalize();
 
         final StringBuilder disp = new StringBuilder();  // 显示层（≤max 条 且 ≤30k 字符）
         final int[] dispCount = {0};   // 已入显示层条数
@@ -99,7 +107,7 @@ public class GrepTool implements Tool {
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                return dir.toAbsolutePath().normalize().equals(dumpDirPath)
+                return dumpDirPath != null && dir.toAbsolutePath().normalize().equals(dumpDirPath)
                         ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
             }
 
@@ -150,7 +158,7 @@ public class GrepTool implements Tool {
         String note = dumpPath == null
                 ? "\n... 共 " + totalCount[0] + " 条，落盘失败未保存完整结果，以上为仅存内容\n"
                 : "\n... 共 " + totalCount[0] + " 条，完整结果已保存到 "
-                        + OutputDump.workDirRelative(Paths.get(workspace.workDir()), dumpPath)
+                        + dumpPath.toAbsolutePath()
                         + "，可用 Read 查看\n";
         return ToolResult.success(disp.toString() + note);
     }

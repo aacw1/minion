@@ -19,11 +19,13 @@ public class BashToolTest {
 
     private BashTool bash;
     private String workDir;
+    private Path tmpDir;
 
     @org.junit.Before
-    public void setup() {
+    public void setup() throws Exception {
         workDir = tmp.getRoot().getAbsolutePath();
-        bash = new BashTool(new Workspace(workDir));
+        tmpDir = tmp.newFolder("jar", ".session", "tmp", "s1").toPath();
+        bash = new BashTool(new Workspace(workDir), tmpDir);
     }
 
     private JsonObject args(String json) { return JsonParser.parseString(json).getAsJsonObject(); }
@@ -212,7 +214,8 @@ public class BashToolTest {
         assertTrue(r.ok);
         assertTrue(r.output.contains("输出已截断"));
         assertTrue(r.output.length() > 30000);
-        assertTrue(r.output.length() < 30100);
+        // 上限 = 30k 预算 + 提示行（含绝对落盘路径，长度随临时目录变化）
+        assertTrue(r.output.length() < 30500);
     }
 
     @Test
@@ -244,7 +247,7 @@ public class BashToolTest {
     @Test
     public void cdPersistsAcrossCommands() throws Exception {
         Files.createDirectories(Paths.get(workDir, "sub"));
-        BashTool tool = new BashTool(new Workspace(workDir));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir);
         ToolResult r1 = tool.execute(args("{\"command\":\"cd sub\"}"));
         assertTrue(r1.output, r1.output.contains("当前目录"));
         ToolResult r2 = tool.execute(args("{\"command\":\"pwd\"}"));
@@ -253,7 +256,7 @@ public class BashToolTest {
 
     @Test
     public void cdOutsideWorkDirRejected() throws Exception {
-        BashTool tool = new BashTool(new Workspace(workDir));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir);
         ToolResult r = tool.execute(args("{\"command\":\"cd ..\"}"));
         assertTrue(r.output, r.output.contains("失败"));
         ToolResult r2 = tool.execute(args("{\"command\":\"pwd\"}"));
@@ -262,7 +265,7 @@ public class BashToolTest {
 
     @Test
     public void cdUnknownDirRejected() throws Exception {
-        BashTool tool = new BashTool(new Workspace(workDir));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir);
         ToolResult r = tool.execute(args("{\"command\":\"cd 不存在\"}"));
         assertTrue(r.output, r.output.contains("失败"));
     }
@@ -270,7 +273,7 @@ public class BashToolTest {
     @Test
     public void cdCompoundCommandNotPersisted() throws Exception {
         Files.createDirectories(Paths.get(workDir, "sub"));
-        BashTool tool = new BashTool(new Workspace(workDir));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir);
         // cd a && pwd 走 shell:进程内生效,不持久化
         ToolResult r1 = tool.execute(args("{\"command\":\"cd sub && pwd\"}"));
         assertTrue(r1.output, r1.output.contains("sub"));
@@ -281,7 +284,7 @@ public class BashToolTest {
     @Test
     public void cdNoArgReturnsToWorkDir() throws Exception {
         Files.createDirectories(Paths.get(workDir, "sub"));
-        BashTool tool = new BashTool(new Workspace(workDir));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir);
         tool.execute(args("{\"command\":\"cd sub\"}"));
         tool.execute(args("{\"command\":\"cd\"}"));
         ToolResult r = tool.execute(args("{\"command\":\"pwd\"}"));
@@ -297,12 +300,13 @@ public class BashToolTest {
         assertTrue(r.output.startsWith("0123456789012345678901234567890123456789"));
         assertTrue(r.output.trim().endsWith("0123456789012345678901234567890123456789"));
         assertTrue(r.output.contains("输出已截断"));
-        assertTrue(r.output.contains("完整输出已保存到 .minion/tmp/bash-"));
+        assertTrue(r.output.contains("完整输出已保存到 "));
+        assertTrue(r.output.contains(tmpDir.toAbsolutePath().toString()));
         assertTrue(r.output.contains("可用 Read 查看"));
         String[] lines = r.output.split("\\r?\\n");
         assertTrue("截断后行数应远小于 2000，实际 " + lines.length, lines.length < 1000);
         // 落盘文件：全量 2000 行
-        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
+        Path dumpDir = tmpDir;
         java.util.List<Path> files = Files.list(dumpDir).collect(java.util.stream.Collectors.toList());
         assertEquals(1, files.size());
         assertEquals(2000, Files.readAllLines(files.get(0)).size());
@@ -314,8 +318,7 @@ public class BashToolTest {
         ToolResult r = bash.execute(args("{\"command\":\"echo hello\"}"));
         assertTrue(r.ok);
         assertEquals("hello", r.output.trim());
-        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
-        assertFalse(Files.exists(dumpDir));
+        assertFalse("不超限不落盘", Files.exists(tmpDir));
     }
 
     /** P0 回归：输出落在 (18k, 30k] 区间必须返回全量——旧实现内存只保留 18k 且
@@ -329,18 +332,19 @@ public class BashToolTest {
         assertTrue("18k 之后数据丢失: " + r.output.length(), r.output.length() > 18000);
         assertTrue("尾部数据丢失: " + r.output, r.output.trim().endsWith("01234567"));
         assertFalse("不应出现截断提示: " + r.output, r.output.contains("输出已截断"));
-        Path dumpDir = Paths.get(workDir, ".minion", "tmp");
-        assertFalse("18k-30k 区间不应落盘", Files.exists(dumpDir));
+        assertFalse("18k-30k 区间不应落盘", Files.exists(tmpDir));
     }
 
-    /** P2 降级文案：落盘失败（.minion/tmp 被占位成文件导致目录创建失败）时，
+    /** P2 降级文案：落盘失败（会话临时目录被占位成文件导致目录创建失败）时，
      *  不得提示"完整输出已保存到 <空路径>，可用 Read 查看"误导模型去读空路径 */
     @Test
     public void longOutput_dumpFailure_honestNote() throws Exception {
-        Path minion = Paths.get(workDir, ".minion");
-        Files.createDirectories(minion);
-        Files.write(minion.resolve("tmp"), "x".getBytes()); // 占位成普通文件 → 落盘失败
-        ToolResult r = bash.execute(args("{\"command\":\"yes 0123456789 | head -c 40000\"}"));
+        Path tmpDirAsFile = tmp.getRoot().toPath().resolve("jar2").resolve(".session")
+                .resolve("tmp").resolve("s1");
+        Files.createDirectories(tmpDirAsFile.getParent());
+        Files.write(tmpDirAsFile, "x".getBytes()); // 占位成普通文件 → 目录创建失败 → 落盘失败
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDirAsFile);
+        ToolResult r = tool.execute(args("{\"command\":\"yes 0123456789 | head -c 40000\"}"));
         assertTrue(r.ok);
         assertTrue("缺降级说明: " + r.output, r.output.contains("落盘失败未保存完整输出"));
         assertFalse("不应提示保存到空路径: " + r.output, r.output.contains("完整输出已保存到 "));

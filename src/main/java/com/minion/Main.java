@@ -2,7 +2,6 @@ package com.minion;
 
 import com.minion.core.config.Config;
 import com.minion.core.config.ModelManager;
-import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
 import com.minion.core.mcp.McpManager;
 import com.minion.core.mcp.McpStore;
@@ -29,9 +28,7 @@ public class Main {
         WorkspaceManager workspaces = WorkspaceManager.load(jarDir);
 
         // 工具输出落盘目录清理：仅删修改超 3 天的旧文件（最近的可供回溯 Read）
-        for (WorkspaceConfig wc : workspaces.list()) {
-            OutputDump.cleanup(Paths.get(wc.workDir), OutputDump.RETENTION_MS);
-        }
+        OutputDump.cleanup(jarDir.resolve(".session").resolve("tmp"), OutputDump.RETENTION_MS);
         ModelManager models = ModelManager.load(jarDir);
 
         // 全局技能目录（所有工作空间/模型共用）

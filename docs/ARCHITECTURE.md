@@ -83,7 +83,7 @@ com.minion
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
 - `PathsGuard`：文件工具路径限制（工作路径 + 技能目录；技能目录可配置为工作路径外的绝对路径）
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件
-- `OutputDump`：工具输出超限落盘公共类——Bash/Grep 输出超上限时完整结果写 `<工作区>/.minion/tmp/`（`write` 失败返回 null 降级），`cleanup(Path, long)` 启动时清理修改超 3 天（`RETENTION_MS`）的旧文件，`tail` 供截断显示读取
+- `OutputDump`：工具输出超限落盘公共类——Bash/Grep 输出超上限时完整结果写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级），`cleanup(Path, long)` 启动时扫所有会话子目录清理修改超 3 天（`RETENTION_MS`）的旧文件，`tail` 供截断显示读取
 - `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
@@ -169,7 +169,7 @@ com.minion
 | 主循环工具轮数上限 DEFAULT_ROUND_LIMIT | 10000 | AgentLoop.java |
 | Bash 默认超时（timeoutSeconds 可覆盖） | 120s | BashTool.DEFAULT_TIMEOUT |
 | Bash 输出截断（内存保留上限 TOTAL_MAX，头 18k+尾 12k） | 30k 字符 | BashTool.HEAD_MAX/TAIL_MAX/TOTAL_MAX |
-| Bash/Grep 超限落盘目录 | `<工作区>/.minion/tmp/` | OutputDump |
+| Bash/Grep 超限落盘目录 | `<jarDir>/.session/tmp/<sessionId>/`（返回绝对路径） | OutputDump |
 | 落盘文件保留期 RETENTION_MS | 3 天（启动清理） | OutputDump |
 | Grep 单行截断 LINE_MAX | 1000 字符 | GrepTool |
 | Grep 结果条数 MAX_RESULTS / 显示层 DISPLAY_CHARS | 250 条 / 30k 字符 | GrepTool |

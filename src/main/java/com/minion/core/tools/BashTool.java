@@ -17,7 +17,6 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -38,8 +37,15 @@ public class BashTool implements Tool {
             Pattern.compile("^cd(?:[ \\t]+(\\S+))?[ \\t]*$");
 
     private final Workspace workspace;
+    /** 会话临时目录（jarDir/.session/tmp/<sessionId>；null = 落盘降级为纯内存截断） */
+    private final Path tmpDir;
 
-    public BashTool(Workspace workspace) { this.workspace = workspace; }
+    public BashTool(Workspace workspace) { this(workspace, null); }
+
+    public BashTool(Workspace workspace, Path tmpDir) {
+        this.workspace = workspace;
+        this.tmpDir = tmpDir;
+    }
 
     @Override
     public String name() { return "Bash"; }
@@ -97,7 +103,7 @@ public class BashTool implements Tool {
         final Process process = pb.start();
         final StringBuilder output = new StringBuilder();
         // 落盘：先建文件拿到路径，reader 线程流式写全量；失败降级（dump == null 纯内存截断）
-        final Path dump = OutputDump.write(Paths.get(workspace.workDir()), "bash", "");
+        final Path dump = OutputDump.write(tmpDir, "bash", "");
         final BufferedWriter dumpWriter = dump == null ? null
                 : Files.newBufferedWriter(dump, StandardCharsets.UTF_8);
         final AtomicLong totalChars = new AtomicLong();
@@ -221,7 +227,7 @@ public class BashTool implements Tool {
         String note = dump == null
                 ? "\n... 输出已截断（共 " + totalChars.get() + " 字符，落盘失败未保存完整输出，以上为仅存内容）...\n"
                 : "\n... 输出已截断（共 " + totalChars.get() + " 字符，完整输出已保存到 "
-                        + OutputDump.workDirRelative(Paths.get(workspace.workDir()), dump)
+                        + dump.toAbsolutePath()
                         + "，可用 Read 查看）...\n";
         return head + note + tailStr;
     }
