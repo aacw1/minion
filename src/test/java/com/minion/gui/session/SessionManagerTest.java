@@ -205,6 +205,24 @@ public class SessionManagerTest {
         assertFalse(Files.exists(f));
     }
 
+    /** 删除会话：其临时目录（jarDir/.session/tmp/<id>/）一并删除 */
+    @Test
+    public void deleteSession_removesTmpDir() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        SessionHandle h = m.createSession(null);
+        Path tmpDir = jar.resolve(".session").resolve("tmp").resolve(h.id);
+        Files.createDirectories(tmpDir);
+        Files.write(tmpDir.resolve("bash-1.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        assertTrue(Files.exists(tmpDir));
+        m.deleteSession(h);
+        assertFalse("临时目录应随会话删除: " + tmpDir, Files.exists(tmpDir));
+    }
+
     /** 新建工作空间：配置落盘 + 会话上下文可建 */
     @Test
     public void addWorkspace_buildsContext() throws Exception {
@@ -233,13 +251,17 @@ public class SessionManagerTest {
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
         m.switchWorkspace("projA");
-        m.createSession(null);
+        SessionHandle h = m.createSession(null);
         Path sessionDir = WorkspaceManager.sessionDirFor(jar, "projA");
         assertTrue(Files.exists(sessionDir));
+        Path tmpDir = jar.resolve(".session").resolve("tmp").resolve(h.id);
+        Files.createDirectories(tmpDir);
+        Files.write(tmpDir.resolve("bash-1.txt"), "x".getBytes(StandardCharsets.UTF_8));
 
         m.deleteWorkspace("projA");
         assertNull(ws.get("projA"));
         assertFalse(Files.exists(sessionDir));
+        assertFalse("工作空间删除后其会话临时目录应清理: " + tmpDir, Files.exists(tmpDir));
         assertNotEquals("projA", m.workspaces().currentName());
         assertEquals(0, m.sessions().size());
     }

@@ -39,13 +39,17 @@ import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.gui.command.CommandDispatcher;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * 会话外壳：每会话一个 AgentLoop + 独占工作线程（真并行）；
@@ -263,6 +267,16 @@ public class SessionManager {
         return jarDir.resolve(".session").resolve("tmp").resolve(sessionId);
     }
 
+    /** 递归删除目录（文件占用失败静默跳过；JDK8 Files.walk 需 try-with-resources 关流） */
+    private void deleteRecursively(Path dir) {
+        if (!Files.isDirectory(dir)) return;
+        try (Stream<Path> s = Files.walk(dir)) {
+            s.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+            });
+        } catch (IOException ignored) { }
+    }
+
     /**
      * 每会话独立 ToolRegistry：AgentLoop 构造时按名注册 TaskTool(this)，若同空间共享
      * 单个 registry，task 工具会永远绑定最后构造的 loop（会话 A 的 task 调用事件流入会话 B）。
@@ -470,6 +484,9 @@ public class SessionManager {
         } catch (Exception e) {
             notifyError("删除会话文件失败: " + e.getMessage());
         }
+        // 会话临时目录一并清理；运行中删除时落盘文件可能被占用（Windows 句柄），
+        // 删除失败静默容错（deleteRecursively 内部吞错），由启动清理（Main 3 天过期清理）兜底
+        deleteRecursively(tmpDirOf(h.id));
         h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         if (currentSession == h) currentSession = null;
     }
@@ -568,6 +585,7 @@ public class SessionManager {
             h.pool.shutdownNow();
             h.closeAll(); // 工作空间删除即释放其全部会话的 LLM 客户端（当前 + 待回收）
             h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
+            deleteRecursively(tmpDirOf(h.id)); // 工作空间删除：会话临时目录一并清理
         }
         ctxByName.remove(name);
         if (hasRunning) {
