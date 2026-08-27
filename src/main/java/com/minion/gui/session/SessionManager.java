@@ -268,6 +268,7 @@ public class SessionManager {
      * 单个 registry，task 工具会永远绑定最后构造的 loop（会话 A 的 task 调用事件流入会话 B）。
      * 工具对象本身无状态（构造参数 workspace/skillsDir/gate 为空间级共享对象），
      * 每次 new ToolRegistry 复制注册同样的工具即可；TaskTool 由 AgentLoop 自动注册、绑定本会话。
+     * Bash/Grep 另携带会话级临时目录（tmpDirOf(sessionId)），工具对象随会话创建、随会话删除。
      */
     private ToolRegistry newRegistry(WorkspaceCtx ctx, String sessionId) {
         ToolRegistry registry = new ToolRegistry();

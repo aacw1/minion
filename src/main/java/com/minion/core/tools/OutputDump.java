@@ -53,7 +53,7 @@ public final class OutputDump {
             }
             String s = new String(buf, StandardCharsets.UTF_8);
             // 窗口起点切在多字节字符中间时首字符为 U+FFFD，丢弃
-            if (s.charAt(0) == '�') s = s.substring(1);
+            if (s.charAt(0) == '\uFFFD') s = s.substring(1);
             String cut = s.length() <= maxChars ? s : s.substring(s.length() - maxChars);
             // substring 可能切在代理对（如 emoji）中间，丢弃两端孤立代理
             if (cut.length() > 0 && Character.isLowSurrogate(cut.charAt(0))) cut = cut.substring(1);
