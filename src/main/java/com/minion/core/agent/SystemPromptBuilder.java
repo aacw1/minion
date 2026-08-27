@@ -28,12 +28,17 @@ public class SystemPromptBuilder {
     private final String projectMdPath;
     /** 工作目录（可空=不注入；模型必须知道当前目录，否则会猜测/编造路径，曾实测编造出旧项目目录） */
     private final String workDir;
+    /** 会话临时目录（可空=不注入；模型需要知道临时文件位置与读写权限） */
+    private final String tmpDir;
 
-    public SystemPromptBuilder(String projectMdPath) { this(projectMdPath, null); }
+    public SystemPromptBuilder(String projectMdPath) { this(projectMdPath, null, null); }
 
-    public SystemPromptBuilder(String projectMdPath, String workDir) {
+    public SystemPromptBuilder(String projectMdPath, String workDir) { this(projectMdPath, workDir, null); }
+
+    public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir) {
         this.projectMdPath = projectMdPath;
         this.workDir = workDir;
+        this.tmpDir = tmpDir;
     }
 
     public String build(List<Skill> allSkills) {
@@ -43,7 +48,12 @@ public class SystemPromptBuilder {
               .append("工作目录: ").append(workDir).append("\n")
               .append("- 工具的相对路径与 Bash 命令均以工作目录为基准；不要猜测或编造其他项目路径。\n")
               .append("- 不确定当前目录时，用 Bash 执行 pwd 查看。\n")
-              .append("- 工作目录之外：读取需经系统授权确认；修改/新建将被拒绝。确需访问外部路径时说明用途，等待系统确认。");
+              .append("- 工作目录之外：读取需经系统授权确认；修改/新建将被拒绝。确需访问外部路径时说明用途，等待系统确认。\n");
+            if (tmpDir != null && !tmpDir.trim().isEmpty()) {
+                sb.append("- 临时文件（调试输出、中间结果、工具超限落盘等）统一放到 ").append(tmpDir)
+                  .append(" 目录，不要在工作空间创建临时文件；该目录可自由读写，无需授权确认。\n")
+                  .append("- Bash 命令在 Git Bash 中执行：丢弃输出必须用 /dev/null，写 \"> nul\" 会被当作文件名在工作目录创建真实的 nul 文件。");
+            }
         }
         String projectMd = loadProjectMd(projectMdPath);
         if (!projectMd.isEmpty()) {
