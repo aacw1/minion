@@ -1318,7 +1318,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        loop.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         loop.runUserTurn("任务");
         assertEquals(2, loop.messages().size()); // user + assistant
         assertEquals("最终回复", loop.messages().get(1).content);
@@ -1335,7 +1335,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         llm.addTurnError("连接中断"); // 重试请求：streamChat 正常返回但 handler 走 onError 回调
         AgentLoop loop = newLoop();
-        loop.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        loop.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         // 成功路径静默恢复（无警告），onError 回调的流中断错误由检查点提示
@@ -1351,7 +1351,7 @@ public class AgentLoopTest {
     public void rateLimit_exhausted_stopsWithSummary() {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy429 = new RetryPolicy(10, 10, 20, 50); // 10+20+20=50ms 耗尽
+        loop.retryPolicy = new RetryPolicy(10, 10, 20, 50); // 10+20+20=50ms 耗尽
         long start = System.currentTimeMillis();
         loop.runUserTurn("任务");
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
@@ -1371,7 +1371,7 @@ public class AgentLoopTest {
     public void rateLimit_interruptedDuringBackoff_stopsPromptly() throws Exception {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy429 = new RetryPolicy(60000, 60000, 60000, 3600000L); // 长退避
+        loop.retryPolicy = new RetryPolicy(60000, 60000, 60000, 3600000L); // 长退避
         Thread t = new Thread(() -> loop.runUserTurn("任务"));
         t.start();
         Thread.sleep(200); // 等首次失败进入退避等待

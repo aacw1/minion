@@ -25,8 +25,8 @@ public class SubAgentLoop {
     private final ToolRegistry registry;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
-    /** 429 限流长重试策略（与主循环一致；测试可覆写小参数） */
-    public RetryPolicy retryPolicy429 = RetryPolicy.rateLimit();
+    /** 瞬时错误长重试策略（与主循环一致；测试可覆写小参数） */
+    public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     private final List<Message> messages = new ArrayList<Message>();
 
     public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
@@ -91,10 +91,10 @@ public class SubAgentLoop {
                         String failure = null; // 重试中遇非 429 错误的文案：break 后统一复位指示器再返回
                         while (true) {
                             attempts++;
-                            long delay = retryPolicy429.delayMs(attempts);
+                            long delay = retryPolicy.delayMs(attempts);
                             if (!sleepWithInterruptCheck(delay)) break; // 中断
                             waited += delay;
-                            if (retryPolicy429.isExhausted(waited)) {
+                            if (retryPolicy.isExhausted(waited)) {
                                 ui.onError("子 agent 429 重试了 " + attempts + " 次，持续 "
                                         + (waited / 60000) + " 分钟仍失败，已停止重试");
                                 exhausted = true;

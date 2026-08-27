@@ -301,7 +301,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
@@ -325,7 +325,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy429 = new RetryPolicy(10, 10, 20, 50); // 快速耗尽
+        sub.retryPolicy = new RetryPolicy(10, 10, 20, 50); // 快速耗尽
         long start = System.currentTimeMillis();
         String result = sub.run();
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
@@ -354,7 +354,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy429 = new RetryPolicy(10, 10, 20, 60000); // 测试短退避，总时长充裕
+        sub.retryPolicy = new RetryPolicy(10, 10, 20, 60000); // 测试短退避，总时长充裕
         String result = sub.run();
         // 非 429 错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
         assertTrue(result.contains("失败"));
@@ -383,7 +383,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy429 = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         // 成功路径静默恢复（无警告），onError 回调已提示错误

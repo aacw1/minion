@@ -55,8 +55,8 @@ public class AgentLoop {
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
-    /** 429 限流长重试策略（默认 2s 起步 +2s 递增，上限 10s，总时长 30 分钟；测试可覆写小参数） */
-    public RetryPolicy retryPolicy429 = RetryPolicy.rateLimit();
+    /** 瞬时错误长重试策略（429/500/502；默认固定 5s/次，总时长 20 分钟；测试可覆写小参数） */
+    public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 连续工具失败止损阈值：达到后注入提醒让模型停止尝试并请求用户补充信息 */
     private static final int STUCK_THRESHOLD = 30;
     /** 连续失败工具计数（成功即清零；注入提醒后重置） */
@@ -451,10 +451,10 @@ public class AgentLoop {
                         long waited = 0;
                         while (true) {
                             attempts++;
-                            long delay = retryPolicy429.delayMs(attempts);
+                            long delay = retryPolicy.delayMs(attempts);
                             if (!sleepWithInterruptCheck(delay)) break; // 用户中断
                             waited += delay;
-                            if (retryPolicy429.isExhausted(waited)) {
+                            if (retryPolicy.isExhausted(waited)) {
                                 ui.onError("429 重试了 " + attempts + " 次，持续 "
                                         + (waited / 60000) + " 分钟仍失败，已停止重试");
                                 break;

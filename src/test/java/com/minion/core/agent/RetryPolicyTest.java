@@ -26,11 +26,19 @@ public class RetryPolicyTest {
     }
 
     @Test
-    public void rateLimit_defaultParams() {
-        RetryPolicy p = RetryPolicy.rateLimit();
-        assertEquals(2000, p.initialDelayMs);
-        assertEquals(2000, p.incrementMs);
-        assertEquals(10000, p.maxDelayMs);
-        assertEquals(1800000L, p.maxTotalMs);
+    public void transientErrors_defaultParams() {
+        RetryPolicy p = RetryPolicy.transientErrors();
+        assertEquals(5000, p.initialDelayMs);
+        assertEquals(0, p.incrementMs);
+        assertEquals(5000, p.maxDelayMs);
+        assertEquals(1200000L, p.maxTotalMs); // 20 分钟
+    }
+
+    @Test
+    public void transientErrors_fixedDelayEveryAttempt() {
+        RetryPolicy p = RetryPolicy.transientErrors();
+        assertEquals(5000, p.delayMs(1));
+        assertEquals(5000, p.delayMs(2));
+        assertEquals(5000, p.delayMs(100)); // 任意次数恒 5s
     }
 }
