@@ -26,8 +26,8 @@ public class RunningIndicator extends HBox {
     static final String[] ROTATING_TEXTS = {"正在加载中...", "可随时补充信息..."};
     /** 压缩固定文案（只在压缩时显示，不参与轮换） */
     static final String COMPRESSING_TEXT = "上下文压缩中...";
-    /** 重试文案前缀（固定格式，次数动态更新；429 含限流与余额不足两种常见含义） */
-    static final String RETRY_TEXT_PREFIX = "429限流，正在重试中...";
+    /** 错误体在指示器内的最大显示长度（500/502 展示服务返回的报错，防单行爆宽） */
+    static final int BODY_MAX_CHARS = 200;
     /** 齿轮旋转周期（2s/圈） */
     static final double SPIN_MS = 2000;
     /** 文案轮换间隔（10s） */
@@ -40,7 +40,8 @@ public class RunningIndicator extends HBox {
     private Timeline rotateText; // 10s 文案轮换动画
     private boolean running;
     private boolean compressing;
-    private int retryAttempt; // 429 重试进度：0=非重试；>0=正在重试第 N 次
+    private String retryBase;          // 进入重试态时冻结的基础文案；null = 非重试态
+    private RetryProgress retryProgress; // 最近一次进度（挂起/恢复时重绘重试文案用）
 
     public RunningIndicator() {
         getStyleClass().add("running-indicator");
@@ -54,7 +55,8 @@ public class RunningIndicator extends HBox {
             if (!nv) {
                 stopAnimations();
             } else if (running) {
-                text.setText(displayText(compressing, pickText(rnd)));
+                text.setText(retryBase != null ? retryText(retryProgress, retryBase)
+                        : displayText(compressing, pickText(rnd)));
                 startAnimations();
             }
         });
@@ -70,9 +72,23 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 重试文案：显示当前重试次数（如"429限流，正在重试中...3次"） */
-    static String retryText(int attempt) {
-        return RETRY_TEXT_PREFIX + attempt + "次";
+    /** 重试文案：冻结基础文案 + 错误码/次数/错误体后缀（如"正在加载中...(429限流，重试第3次)"） */
+    static String retryText(RetryProgress p, String base) {
+        return base + "(" + codeLabel(p.httpCode) + "，重试第" + p.attempt + "次" + bodyPart(p) + ")";
+    }
+
+    /** 错误码标签：429 限流 / 500 服务报错 / 502 网关报错；未知码防御性显示 HTTP xxx */
+    static String codeLabel(int httpCode) {
+        if (httpCode == 429) return "429限流";
+        if (httpCode == 500) return "500服务报错";
+        if (httpCode == 502) return "502网关报错";
+        return "HTTP " + httpCode;
+    }
+
+    /** 错误体后缀：仅非 429 且 body 非空时显示，截断 BODY_MAX_CHARS（429 明确是限流，无需错误体） */
+    static String bodyPart(RetryProgress p) {
+        if (p.httpCode == 429 || p.body == null || p.body.isEmpty()) return "";
+        return p.body.length() > BODY_MAX_CHARS ? p.body.substring(0, BODY_MAX_CHARS) : p.body;
     }
 
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
@@ -80,7 +96,8 @@ public class RunningIndicator extends HBox {
         this.running = running;
         if (!running) {
             compressing = false;
-            retryAttempt = 0;
+            retryBase = null;
+            retryProgress = null;
             stopAnimations();
             setVisible(false);
             return;
@@ -100,6 +117,7 @@ public class RunningIndicator extends HBox {
 
     /** 压缩状态：true → 固定压缩文案并暂停轮换；false → 恢复轮换（仅运行态生效） */
     public void setCompressing(boolean compressing) {
+        if (retryBase != null) return; // 重试态：忽略压缩切换（压缩发生在请求前，理论不可达）
         this.compressing = compressing;
         if (!running) return;
         text.setText(displayText(compressing, pickText(rnd)));
@@ -110,15 +128,19 @@ public class RunningIndicator extends HBox {
         }
     }
 
-    /** 瞬时错误重试进度：attempt ≥ 1 → 固定显示重试文案并暂停轮换；
-     *  attempt == 0 → 恢复压缩/轮换文案（仅运行态生效；文案格式重构见 Task 6） */
+    /** 瞬时错误重试进度：attempt ≥ 1 → 首次进入随机取一条基础文案并冻结（停轮换），
+     *  之后每次更新后缀（错误码/错误体随最近一次失败更新）；attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
     public void setRetryProgress(RetryProgress p) {
-        this.retryAttempt = p.attempt;
         if (!running) return;
+        retryProgress = p;
         if (p.attempt >= 1) {
-            if (rotateText != null) rotateText.stop();
-            text.setText(retryText(p.attempt));
+            if (retryBase == null) {
+                retryBase = pickText(rnd); // 首次进入：随机取一条基础文案并冻结
+                if (rotateText != null) rotateText.stop();
+            }
+            text.setText(retryText(p, retryBase));
         } else {
+            retryBase = null;
             text.setText(displayText(compressing, pickText(rnd)));
             startRotateText();
         }
