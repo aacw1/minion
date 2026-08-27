@@ -411,22 +411,33 @@ public class AgentLoop {
                 final LlmException[] err = new LlmException[1];
                 final StringBuilder content = new StringBuilder();
                 final StringBuilder thinking = new StringBuilder();
+                final boolean[] inRetry = new boolean[1]; // 瞬时错误重试循环进行中（首个流式增量到达即复位指示器）
                 final com.minion.core.llm.StreamHandler handler = new com.minion.core.llm.StreamHandler() {
                     @Override
                     public void onThinking(String delta) {
+                        resetRetryOnFirstDelta();
                         thinking.append(delta);
                         ui.onThinking(delta);
                     }
                     @Override
                     public void onContent(String delta) {
+                        resetRetryOnFirstDelta();
                         content.append(delta);
                         ui.onContent(delta);
                     }
                     @Override
                     public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
+                        resetRetryOnFirstDelta(); // 零增量成功（如纯 tool_calls 回复）兜底复位
                         finish[0] = finishReason;
                         usage[0] = u;
                         toolCalls[0] = tcs;
+                    }
+                    /** 重试成功后的首个流式回调：立即复位指示器（"重试中"文案消失，恢复常规轮换） */
+                    void resetRetryOnFirstDelta() {
+                        if (inRetry[0]) {
+                            inRetry[0] = false;
+                            ui.onRetryProgress(RetryProgress.none());
+                        }
                     }
                     @Override
                     public void onError(LlmException e) {
@@ -443,38 +454,42 @@ public class AgentLoop {
                         appendPartialAssistant(content, thinking);
                         break;
                     }
-                    if (e.type == LlmException.Type.RATE_LIMIT) {
-                        // 429 长重试（内网模型资源差）：2s 起步 +2s 递增，上限 10s，总时长 30 分钟；
-                        // 进度经 onRetryProgress 进左下角指示器（"429限流，正在重试中...N次"动态更新），
-                        // 成功轻提示恢复，超时一次性总结停止
+                    if (isTransientError(e)) {
+                        // 瞬时错误长重试（内网模型资源差）：固定 5s/次，总时长 20 分钟（RetryPolicy.transientErrors）；
+                        // 429 限流 / 500 服务端报错 / 502 网关报错；进度经 onRetryProgress 进左下角指示器
+                        // （基础文案+错误码+次数），成功/首个流式增量静默恢复，超时一次性总结停止
                         int attempts = 0;
                         long waited = 0;
+                        int lastCode = e.httpCode;
+                        String lastBody = e.body;
+                        inRetry[0] = true;
                         while (true) {
                             attempts++;
+                            ui.onRetryProgress(RetryProgress.of(attempts, lastCode, lastBody)); // 尝试前立即更新指示器
                             long delay = retryPolicy.delayMs(attempts);
                             if (!sleepWithInterruptCheck(delay)) break; // 用户中断
                             waited += delay;
                             if (retryPolicy.isExhausted(waited)) {
-                                ui.onError("429 重试了 " + attempts + " 次，持续 "
+                                ui.onError(lastCode + " 重试了 " + attempts + " 次，持续 "
                                         + (waited / 60000) + " 分钟仍失败，已停止重试");
                                 break;
                             }
-                            ui.onRetryProgress(RetryProgress.of(attempts, e.httpCode, e.body)); // 指示器显示"基础文案+(错误码，重试第N次)"
                             try {
                                 llm.streamChat(request, registry.schemas(), handler);
-                                // 成功后静默恢复（不打扰正文）：finish/usage/toolCalls 已由 handler 回调，
+                                // 成功后静默恢复（不打扰正文）：首个流式增量/onFinish 已复位指示器，
                                 // 若流中断（onError 回调）则落下方 finish=="error" 检查点统一处理
                                 break;
                             } catch (LlmException re) {
                                 if (interrupted) break;
-                                if (re.type != LlmException.Type.RATE_LIMIT) {
+                                if (!isTransientError(re)) {
                                     ui.onError("请求失败: " + re.getMessage());
                                     break;
                                 }
-                                // 仍 429：继续退避重试
+                                lastCode = re.httpCode; // 仍可重试：更新错误码/错误体，指示器后缀随最近失败更新
+                                lastBody = re.body;
                             }
                         }
-                        ui.onRetryProgress(RetryProgress.none()); // 退出重试态：指示器恢复轮换（成功/超时/中断统一复位）
+                        if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 退出重试态统一复位（幂等）
                         if (interrupted) {
                             appendPartialAssistant(content, thinking);
                             break;
@@ -602,6 +617,11 @@ public class AgentLoop {
         int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
         ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
         ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
+    }
+
+    /** 瞬时错误（429 限流 / 500 服务端报错 / 502 网关报错）：可进长重试 */
+    private boolean isTransientError(LlmException e) {
+        return e.type == LlmException.Type.RATE_LIMIT || e.httpCode == 500 || e.httpCode == 502;
     }
 
     /** 可中断等待：100ms 小片轮询 interrupted 标志（interrupt() 只设标志不中断线程，
