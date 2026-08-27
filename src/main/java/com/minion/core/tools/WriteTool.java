@@ -13,12 +13,16 @@ public class WriteTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final String tmpDir;
 
     public WriteTool(Workspace workspace) { this(workspace, null); }
 
-    public WriteTool(Workspace workspace, String skillsDir) {
+    public WriteTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
+
+    public WriteTool(Workspace workspace, String skillsDir, String tmpDir) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.tmpDir = tmpDir;
     }
 
     @Override
@@ -56,14 +60,15 @@ public class WriteTool implements Tool {
 
     /** 越界守卫：已存在路径交给 PathsGuard（toRealPath 防符号链接）；不存在路径向上找最深已存在祖先做真实路径校验 */
     private ToolResult outsideGuard(Path p) {
-        if (Files.exists(p)) return PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
+        if (Files.exists(p)) return PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, p);
         Path probe = p;
         while (probe != null && !Files.exists(probe)) {
             probe = probe.getParent();
         }
         if (probe == null) {
             // 整个祖先链都不存在（工作路径本身缺失）：无符号链接可绕过，退回规范化词法包含检查
-            if (!insideLexical(workspace.workDir(), p) && !insideLexical(skillsDir, p)) {
+            if (!insideLexical(workspace.workDir(), p) && !insideLexical(skillsDir, p)
+                    && !insideLexical(tmpDir, p)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
             return null;
@@ -71,7 +76,8 @@ public class WriteTool implements Tool {
         try {
             Path probeReal = probe.toRealPath();
             if (!probeReal.startsWith(Paths.get(workspace.workDir()).toRealPath())
-                    && !insideReal(skillsDir, probeReal)) {
+                    && !insideReal(skillsDir, probeReal)
+                    && !insideReal(tmpDir, probeReal)) {
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
         } catch (IOException e) {

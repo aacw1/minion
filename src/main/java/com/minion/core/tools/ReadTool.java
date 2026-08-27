@@ -15,15 +15,21 @@ public class ReadTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final String tmpDir;
     private final ConfirmGate confirm;
 
-    public ReadTool(Workspace workspace) { this(workspace, null, null); }
+    public ReadTool(Workspace workspace) { this(workspace, null); }
 
     public ReadTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
 
     public ReadTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
+        this(workspace, skillsDir, null, confirm);
+    }
+
+    public ReadTool(Workspace workspace, String skillsDir, String tmpDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.tmpDir = tmpDir;
         this.confirm = confirm;
     }
 
@@ -47,14 +53,15 @@ public class ReadTool implements Tool {
         Path p = PathsGuard.resolve(workspace.cwd().toString(), path);
         if (!Files.exists(p)) {
             // 不存在且在工作区外（含技能目录）：明确提示当前工作目录，防模型编造路径误入其他项目
-            if (!PathsGuard.inside(workspace.workDir(), p) && !PathsGuard.inside(skillsDir, p)) {
+            if (!PathsGuard.inside(workspace.workDir(), p) && !PathsGuard.inside(skillsDir, p)
+                    && !PathsGuard.inside(tmpDir, p)) {
                 return ToolResult.error("文件不存在: " + p
                         + "（路径在工作目录之外，访问将被拒绝。当前工作目录: " + workspace.workDir() + "）");
             }
             return ToolResult.error("文件不存在: " + p);
         }
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, p);
         if (guard != null) {
             if (confirm == null || !confirm.checkReadOutside(this, args, p.toString())) return guard;
         }

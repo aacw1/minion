@@ -4,6 +4,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -73,6 +74,25 @@ public class PathsGuardTest {
         } finally {
             deleteRecursively(outside);
         }
+    }
+
+    /** 会话临时目录白名单：tmpDir 内路径放行（jar 目录须在工作路径之外，白名单才真正生效） */
+    @Test
+    public void errorIfOutside_tmpDirAllowed() throws Exception {
+        Path workDir = tmp.newFolder("work").toPath();
+        Path tmpDir = tmp.newFolder("jar", ".session", "tmp", "s1").toPath();
+        Path f = Files.write(tmpDir.resolve("bash-1.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        assertNull(PathsGuard.errorIfOutside(workDir.toString(), null, tmpDir.toString(), f));
+    }
+
+    /** tmpDir 之外（jar 目录其他位置，且不在工作路径内）仍拦截 */
+    @Test
+    public void errorIfOutside_outsideTmpDirRejected() throws Exception {
+        Path workDir = tmp.newFolder("work2").toPath();
+        Path jar = tmp.newFolder("jar2").toPath();
+        Path outside = Files.write(jar.resolve("config.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        String tmpDir = jar.resolve(".session").resolve("tmp").resolve("s1").toString();
+        assertNotNull(PathsGuard.errorIfOutside(workDir.toString(), null, tmpDir, outside));
     }
 
     private static void deleteRecursively(Path p) throws Exception {

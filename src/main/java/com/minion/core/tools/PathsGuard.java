@@ -6,7 +6,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/** 路径守卫：限制文件工具只能访问工作路径（+ 可选技能目录） */
+/** 路径守卫：限制文件工具只能访问工作路径（+ 可选技能目录/会话临时目录） */
 public class PathsGuard {
 
     /** 解析相对工作路径的绝对路径（相对路径以 workDir 为基准） */
@@ -43,7 +43,12 @@ public class PathsGuard {
 
     /** 越界守卫：工作路径或技能目录内的路径均放行 */
     public static ToolResult errorIfOutside(String workDir, String skillsDir, Path p) {
-        if (!inside(workDir, p) && !inside(skillsDir, p)) {
+        return errorIfOutside(workDir, skillsDir, null, p);
+    }
+
+    /** 越界守卫：工作路径/技能目录/会话临时目录内的路径均放行 */
+    public static ToolResult errorIfOutside(String workDir, String skillsDir, String tmpDir, Path p) {
+        if (!inside(workDir, p) && !inside(skillsDir, p) && !inside(tmpDir, p)) {
             return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
         }
         return null;

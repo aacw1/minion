@@ -488,6 +488,20 @@ public class FileToolsTest {
         assertFalse("不应提示可 Read 查看: " + r.output, r.output.contains("可用 Read 查看"));
     }
 
+    /** tmpDir 白名单：模型 Read 会话临时目录内文件免确认（jar 目录在工作路径之外，无 confirm 时直接放行） */
+    @Test
+    public void read_sessionTmpDir_allowedWithoutConfirm() throws Exception {
+        Path workDir = tmp.newFolder("work3").toPath();
+        Path jar = tmp.newFolder("jar3").toPath();
+        Path tmpDir = jar.resolve(".session").resolve("tmp").resolve("s1");
+        Files.createDirectories(tmpDir);
+        Path dump = Files.write(tmpDir.resolve("bash-1.txt"), "hi".getBytes(StandardCharsets.UTF_8));
+        ReadTool r = new ReadTool(new Workspace(workDir.toString()), null, tmpDir.toString(), null);
+        ToolResult res = r.execute(args("{\"path\":\"" + dump.toAbsolutePath().toString().replace("\\", "\\\\") + "\"}"));
+        assertTrue(res.ok);
+        assertTrue(res.output.contains("hi"));
+    }
+
     /** 遍历检查字符串无孤立代理（每个高/低代理必须成对出现） */
     private static void assertNoLoneSurrogate(String msg, String s) {
         for (int i = 0; i < s.length(); i++) {

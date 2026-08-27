@@ -268,7 +268,8 @@ public class SessionManager {
      * 单个 registry，task 工具会永远绑定最后构造的 loop（会话 A 的 task 调用事件流入会话 B）。
      * 工具对象本身无状态（构造参数 workspace/skillsDir/gate 为空间级共享对象），
      * 每次 new ToolRegistry 复制注册同样的工具即可；TaskTool 由 AgentLoop 自动注册、绑定本会话。
-     * Bash/Grep 另携带会话级临时目录（tmpDirOf(sessionId)），工具对象随会话创建、随会话删除。
+     * 文件工具（Read/Write/Edit/Glob/Grep/BrowserScreenshot/Bash）携带会话级临时目录
+     * （tmpDirOf(sessionId)），工具对象随会话创建、随会话删除。
      */
     private ToolRegistry newRegistry(WorkspaceCtx ctx, String sessionId) {
         ToolRegistry registry = new ToolRegistry();
@@ -276,17 +277,17 @@ public class SessionManager {
         Workspace workspace = ctx.workspace;
         ConfirmGate gate = ctx.confirmGate;
         String tmpDir = tmpDirOf(sessionId).toString();
-        registry.register(new ReadTool(workspace, skillsDir, gate));
-        registry.register(new WriteTool(workspace, skillsDir));
-        registry.register(new EditTool(workspace, skillsDir));
-        registry.register(new GlobTool(workspace, skillsDir, gate));
+        registry.register(new ReadTool(workspace, skillsDir, tmpDir, gate));
+        registry.register(new WriteTool(workspace, skillsDir, tmpDir));
+        registry.register(new EditTool(workspace, skillsDir, tmpDir));
+        registry.register(new GlobTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new GrepTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new BashTool(workspace, tmpDirOf(sessionId)));
         registry.register(new WebFetchTool());
         if (browserSession != null) {
             registry.register(new BrowserTool(browserSession));
             registry.register(new BrowserEvalTool(browserSession));
-            registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir, gate));
+            registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir, tmpDir, gate));
             registry.register(new BrowserDebugTool(browserSession));
         }
         if (mcp != null) {

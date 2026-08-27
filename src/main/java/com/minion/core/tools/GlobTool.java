@@ -23,15 +23,21 @@ public class GlobTool implements Tool {
 
     private final Workspace workspace;
     private final String skillsDir;
+    private final String tmpDir;
     private final ConfirmGate confirm;
 
-    public GlobTool(Workspace workspace) { this(workspace, null, null); }
+    public GlobTool(Workspace workspace) { this(workspace, null); }
 
     public GlobTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
 
     public GlobTool(Workspace workspace, String skillsDir, ConfirmGate confirm) {
+        this(workspace, skillsDir, null, confirm);
+    }
+
+    public GlobTool(Workspace workspace, String skillsDir, String tmpDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
+        this.tmpDir = tmpDir;
         this.confirm = confirm;
     }
 
@@ -67,7 +73,7 @@ public class GlobTool implements Tool {
         if (start != null && !start.isEmpty()) {
             final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
             if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
-            ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, root);
+            ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, root);
             if (guard != null) {
                 if (confirm == null || !confirm.checkReadOutside(this, args, root.toString())) return guard;
             }
