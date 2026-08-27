@@ -306,7 +306,7 @@ public class SubAgentLoopTest {
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertTrue(ui.warnings.isEmpty());    // 成功后静默恢复；重试提示在指示器不进消息区
-        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
         assertTrue(ui.errors.isEmpty());
     }
 
@@ -334,8 +334,8 @@ public class SubAgentLoopTest {
         assertTrue(ui.errors.get(0).contains("重试了"));
         assertTrue(ui.errors.get(0).contains("仍失败"));
         assertTrue(llm.requests.size() >= 2 && llm.requests.size() <= 5);
-        assertTrue(!ui.retryProgress.isEmpty());
-        assertEquals(Integer.valueOf(0), ui.retryProgress.get(ui.retryProgress.size() - 1));
+        assertTrue(!ui.retryAttempts().isEmpty());
+        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
     }
 
     /** 子 agent 429 长重试中遇非 429 错误（网络/超时）：退出重试并复位指示器，不残留"正在重试中" */
@@ -363,7 +363,7 @@ public class SubAgentLoopTest {
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接超时"));
         // 指示器复位：末位必须为 0，不残留"429限流，正在重试中...N次"
-        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
         assertTrue(ui.warnings.isEmpty());
     }
 
@@ -391,6 +391,6 @@ public class SubAgentLoopTest {
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接中断"));
         // 指示器复位：进入重试（1）→ 退出（0）
-        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
 }

@@ -46,8 +46,15 @@ public class RecordingUi implements AgentUi {
         ctxStats.add(new int[]{used, max});
     }
 
-    public final List<Integer> retryProgress = new ArrayList<Integer>();
+    public final List<RetryProgress> retryProgress = new ArrayList<RetryProgress>();
 
-    /** 429 长重试进度（attempt ≥ 1 进入/更新；0 退出） */
-    @Override public synchronized void onRetryProgress(int attempt) { retryProgress.add(attempt); }
+    /** 瞬时错误长重试进度（attempt ≥ 1 进入/更新；0 退出） */
+    @Override public synchronized void onRetryProgress(RetryProgress p) { retryProgress.add(p); }
+
+    /** 重试次数序列（attempt 值，0=复位），供既有断言使用 */
+    public synchronized List<Integer> retryAttempts() {
+        List<Integer> out = new ArrayList<Integer>();
+        for (RetryProgress p : retryProgress) out.add(p.attempt);
+        return out;
+    }
 }

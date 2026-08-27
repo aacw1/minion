@@ -2,6 +2,7 @@ package com.minion.gui.session;
 
 import com.google.gson.JsonObject;
 import com.minion.core.agent.AgentUi;
+import com.minion.core.agent.RetryProgress;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
@@ -24,10 +25,10 @@ public class SessionController implements AgentUi {
 
     public void setCompressingStateListener(java.util.function.Consumer<Boolean> l) { this.compressingStateListener = l; }
 
-    /** 429 长重试进度回调（attempt ≥ 1 进入/更新；0 退出），SessionManager 注入 */
-    private volatile java.util.function.Consumer<Integer> retryStateListener;
+    /** 瞬时错误长重试进度回调（attempt ≥ 1 进入/更新；0 退出），SessionManager 注入 */
+    private volatile java.util.function.Consumer<RetryProgress> retryStateListener;
 
-    public void setRetryStateListener(java.util.function.Consumer<Integer> l) { this.retryStateListener = l; }
+    public void setRetryStateListener(java.util.function.Consumer<RetryProgress> l) { this.retryStateListener = l; }
 
     /** 上下文统计回调（AgentLoop 关键节点推送），SessionManager 注入 */
     private volatile java.util.function.Consumer<ContextStat> contextStatsListener;
@@ -149,8 +150,8 @@ public class SessionController implements AgentUi {
         if (compressingStateListener != null) compressingStateListener.accept(compressing);
     }
 
-    @Override public void onRetryProgress(int attempt) {
-        if (retryStateListener != null) retryStateListener.accept(attempt);
+    @Override public void onRetryProgress(RetryProgress p) {
+        if (retryStateListener != null) retryStateListener.accept(p);
     }
 
     @Override public void onContextStats(int used, int max) {

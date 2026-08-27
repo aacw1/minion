@@ -1,5 +1,6 @@
 package com.minion.gui;
 
+import com.minion.core.agent.RetryProgress;
 import com.minion.core.config.ModelConfig;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
@@ -247,10 +248,10 @@ public class MainWindow {
                     }
                 });
             }
-            @Override public void onRetryProgress(SessionHandle h, int attempt) {
+            @Override public void onRetryProgress(SessionHandle h, RetryProgress p) {
                 Platform.runLater(() -> {
                     if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
-                        runningIndicator.setRetryProgress(attempt);
+                        runningIndicator.setRetryProgress(p);
                     }
                 });
             }

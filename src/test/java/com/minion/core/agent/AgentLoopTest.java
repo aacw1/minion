@@ -1325,7 +1325,7 @@ public class AgentLoopTest {
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertTrue(ui.warnings.isEmpty());     // 成功后静默恢复，不发"已恢复"；重试提示在指示器不进消息区
         // 进度序列：进入重试（第1次）→ 成功退出（0）
-        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
         assertTrue(ui.errors.isEmpty());
     }
 
@@ -1343,7 +1343,7 @@ public class AgentLoopTest {
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("连接中断"));
         // 指示器复位：进入重试（1）→ 退出（0）
-        assertEquals(Arrays.asList(1, 0), ui.retryProgress);
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
 
     /** 429 持续失败：超总时长后一次性总结并停止，不无限重试 */
@@ -1361,9 +1361,9 @@ public class AgentLoopTest {
         // 请求数有限：1 原始 + 重试（10ms、20ms、20ms 后耗尽 → 2 次重试）
         assertTrue(llm.requests.size() >= 2 && llm.requests.size() <= 5);
         // 进度序列：1、2（两次重试）… 末位 0（退出重试态复位）
-        assertTrue(!ui.retryProgress.isEmpty());
-        assertEquals(Integer.valueOf(0), ui.retryProgress.get(ui.retryProgress.size() - 1));
-        assertTrue(ui.retryProgress.get(0) >= 1);
+        assertTrue(!ui.retryAttempts().isEmpty());
+        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
+        assertTrue(ui.retryAttempts().get(0) >= 1);
     }
 
     /** 429 重试等待中 interrupt()：小片轮询，不等待完整间隔，立即退出 */

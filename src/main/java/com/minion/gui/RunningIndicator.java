@@ -1,5 +1,6 @@
 package com.minion.gui;
 
+import com.minion.core.agent.RetryProgress;
 import com.minion.gui.icon.IconFactory;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -109,14 +110,14 @@ public class RunningIndicator extends HBox {
         }
     }
 
-    /** 429 重试进度：attempt ≥ 1 → 固定显示"429限流，正在重试中...N次"并暂停轮换；
-     *  attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
-    public void setRetryProgress(int attempt) {
-        this.retryAttempt = attempt;
+    /** 瞬时错误重试进度：attempt ≥ 1 → 固定显示重试文案并暂停轮换；
+     *  attempt == 0 → 恢复压缩/轮换文案（仅运行态生效；文案格式重构见 Task 6） */
+    public void setRetryProgress(RetryProgress p) {
+        this.retryAttempt = p.attempt;
         if (!running) return;
-        if (attempt >= 1) {
+        if (p.attempt >= 1) {
             if (rotateText != null) rotateText.stop();
-            text.setText(retryText(attempt));
+            text.setText(retryText(p.attempt));
         } else {
             text.setText(displayText(compressing, pickText(rnd)));
             startRotateText();

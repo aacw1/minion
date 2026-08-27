@@ -100,7 +100,7 @@ public class SubAgentLoop {
                                 exhausted = true;
                                 break;
                             }
-                            ui.onRetryProgress(attempts); // 指示器显示"429限流，正在重试中...N次"
+                            ui.onRetryProgress(RetryProgress.of(attempts, e.httpCode, e.body)); // 指示器显示"基础文案+(错误码，重试第N次)"
                             try {
                                 llm.streamChat(messages, subAgentTools(), handler);
                                 // 成功后静默恢复（不打扰正文）：finish/toolCalls 已由 handler 回调，
@@ -118,7 +118,7 @@ public class SubAgentLoop {
                                 // 仍 429：继续退避
                             }
                         }
-                        ui.onRetryProgress(0); // 退出重试态（成功/超时/中断/非 429 失败统一复位）
+                        ui.onRetryProgress(RetryProgress.none()); // 退出重试态（成功/超时/中断/非瞬时错误失败统一复位）
                         if (Thread.currentThread().isInterrupted()) {
                             ui.onWarning("子 agent 已中断");
                             return "子 agent 已中断";
@@ -167,7 +167,7 @@ public class SubAgentLoop {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
-            ui.onRetryProgress(0); // 429 重试等待中被真实中断（future.cancel(true)）：复位指示器
+            ui.onRetryProgress(RetryProgress.none()); // 重试等待中被真实中断（future.cancel(true)）：复位指示器
             ui.onWarning("子 agent 已中断");
             return "子 agent 已中断";
         } catch (Exception e) {

@@ -1,6 +1,7 @@
 package com.minion.gui.session;
 
 import com.minion.core.agent.AgentLoop;
+import com.minion.core.agent.RetryProgress;
 import com.minion.core.agent.Session;
 import com.minion.core.agent.SystemPromptBuilder;
 import com.minion.core.agent.TitleGenerator;
@@ -65,7 +66,7 @@ public class SessionManager {
         /** 上下文压缩状态变化（true=压缩中；仅当前激活会话时 GUI 显示） */
         default void onCompressingChanged(SessionHandle h, boolean compressing) { }
         /** 429 长重试进度（attempt ≥ 1 进入/更新；0 退出；仅当前激活会话时 GUI 显示） */
-        default void onRetryProgress(SessionHandle h, int attempt) { }
+        default void onRetryProgress(SessionHandle h, RetryProgress p) { }
         /** 上下文统计变化（used/max 估算 token；GUI 环形进度圈，仅当前激活会话显示） */
         default void onContextStatsChanged(SessionHandle h, int used, int max) { }
         /** 会话被删除（deleteSession / deleteWorkspace 均通知，含非当前空间）：UI 清理页签与缓存 */
@@ -165,8 +166,8 @@ public class SessionManager {
     private void notifyCompressingChanged(SessionHandle h, boolean compressing) {
         for (Listener l : listeners) l.onCompressingChanged(h, compressing);
     }
-    private void notifyRetryProgress(SessionHandle h, int attempt) {
-        for (Listener l : listeners) l.onRetryProgress(h, attempt);
+    private void notifyRetryProgress(SessionHandle h, RetryProgress p) {
+        for (Listener l : listeners) l.onRetryProgress(h, p);
     }
     private void notifyContextStats(SessionHandle h, int used, int max) {
         for (Listener l : listeners) l.onContextStatsChanged(h, used, max);
@@ -228,10 +229,10 @@ public class SessionManager {
                         notifyCompressingChanged(h, compressing);
                     }
                 });
-                // 429 重试进度转发（AgentLoop 长重试回调 → 指示器）
-                controller.setRetryStateListener(new java.util.function.Consumer<Integer>() {
-                    @Override public void accept(Integer attempt) {
-                        notifyRetryProgress(h, attempt);
+                // 瞬时错误重试进度转发（AgentLoop 长重试回调 → 指示器）
+                controller.setRetryStateListener(new java.util.function.Consumer<RetryProgress>() {
+                    @Override public void accept(RetryProgress p) {
+                        notifyRetryProgress(h, p);
                     }
                 });
                 // 上下文统计转发（AgentLoop 关键节点推送 → 环形进度圈）
@@ -364,10 +365,10 @@ public class SessionManager {
                 notifyCompressingChanged(h, compressing);
             }
         });
-        // 429 重试进度转发（AgentLoop 长重试回调 → 指示器）
-        controller.setRetryStateListener(new java.util.function.Consumer<Integer>() {
-            @Override public void accept(Integer attempt) {
-                notifyRetryProgress(h, attempt);
+        // 瞬时错误重试进度转发（AgentLoop 长重试回调 → 指示器）
+        controller.setRetryStateListener(new java.util.function.Consumer<RetryProgress>() {
+            @Override public void accept(RetryProgress p) {
+                notifyRetryProgress(h, p);
             }
         });
         // 上下文统计转发（AgentLoop 关键节点推送 → 环形进度圈）
