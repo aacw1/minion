@@ -229,6 +229,64 @@ public class EditToolsTest {
         }
     }
 
+    // ---- Round 2 review regression tests ----
+
+    /** Round 2 回归：tmpDir 内符号链接目录指向外部时，新建文件不得经符号链接落盘到外部。
+     *  b1dd803 词法兜底过宽：probe 为 tmpDir 内符号链接时真实路径在外部，但 p 词法在 tmpDir
+     *  内使兜底条件不成立即放行（逃逸）；修复后 probe 词法在 tmpDir 内时以真实路径校验为准。
+     *  链接构造三级降级：真实符号链接（Linux/macOS/管理员 Windows）→ mklink /J 联结
+     * （无需管理员权限，toRealPath 同样跟随）→ 已存在的外部父目录 + 不存在的子文件
+     * （等价构造，同样走"最深已存在祖先"真实路径校验）。 */
+    @Test
+    public void write_symlinkInsideTmpDir_rejected() throws Exception {
+        Path workDir = tmp.newFolder("work-symtmp-").toPath();
+        Path sessionTmp = tmp.newFolder("session-tmp-").toPath();
+        WriteTool w = new WriteTool(new Workspace(workDir.toString()), null, sessionTmp.toString());
+        Path outsideDir = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"),
+                "minion-out-junc-" + System.nanoTime());
+        Files.createDirectories(outsideDir);
+        outsideDir.toFile().deleteOnExit();
+        String name = "minion-out-new-" + System.nanoTime() + ".txt";
+        Path link = sessionTmp.resolve("link");
+        boolean linked = false;
+        try {
+            Files.createSymbolicLink(link, outsideDir);
+            linked = true;
+        } catch (Exception e) {
+            linked = createJunction(link, outsideDir);
+        }
+        if (linked) {
+            Path target = sessionTmp.resolve("link/" + name);
+            target.toFile().deleteOnExit();
+            ToolResult r = w.execute(args("{\"path\":\"" + target.toString().replace("\\", "\\\\")
+                    + "\",\"content\":\"x\"}"));
+            assertFalse(r.output, r.ok);
+            assertTrue(r.output.contains("工作路径之外"));
+            assertFalse(Files.exists(target));
+        } else {
+            Path target = outsideDir.resolve(name);
+            ToolResult r = w.execute(args("{\"path\":\"" + target.toString().replace("\\", "\\\\")
+                    + "\",\"content\":\"x\"}"));
+            assertFalse(r.output, r.ok);
+            assertTrue(r.output.contains("工作路径之外"));
+            assertFalse(Files.exists(target));
+        }
+    }
+
+    /** Windows 目录联结（cmd mklink /J）：无需管理员权限/开发者模式即可创建，
+     *  toRealPath 与符号链接一样跟随目标，可用于复现符号链接逃逸 */
+    private static boolean createJunction(Path link, Path target) {
+        try {
+            Process p = new ProcessBuilder("cmd", "/c", "mklink", "/J",
+                    "\"" + link.toString() + "\"", "\"" + target.toString() + "\"")
+                    .redirectErrorStream(true).start();
+            p.waitFor();
+            return Files.exists(link);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Test
     public void edit_outsideRejected() throws Exception {
         Path outside = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"), "minion-edit-out.txt");
