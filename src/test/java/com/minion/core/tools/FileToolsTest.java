@@ -502,6 +502,22 @@ public class FileToolsTest {
         assertTrue(res.output.contains("hi"));
     }
 
+    /** Grep 路径指向会话临时目录：守卫放行，不拒绝（SKIP_SUBTREE 使 root==tmpDir 时结果为"未匹配"，属预期，只断言不被拒绝） */
+    @Test
+    public void grep_sessionTmpDirPath_allowedWithoutConfirm() throws Exception {
+        Path workDir = tmp.newFolder("work-grep").toPath();
+        Path jar = tmp.newFolder("jar-grep").toPath();
+        Path sessionTmp = jar.resolve(".session").resolve("tmp").resolve("s1");
+        Files.createDirectories(sessionTmp);
+        Files.write(sessionTmp.resolve("note.txt"), "hello world".getBytes(StandardCharsets.UTF_8));
+        GrepTool grep = new GrepTool(new Workspace(workDir.toString()), null, sessionTmp.toString(), null); // confirm=null：被拒则硬拒绝
+        JsonObject args = new JsonObject();
+        args.addProperty("pattern", "hello");
+        args.addProperty("path", sessionTmp.toAbsolutePath().toString());
+        ToolResult r = grep.execute(args);
+        assertFalse("tmp 目录内路径不应被守卫拒绝: " + r.output, r.output.contains("路径在工作路径之外"));
+    }
+
     /** 遍历检查字符串无孤立代理（每个高/低代理必须成对出现） */
     private static void assertNoLoneSurrogate(String msg, String s) {
         for (int i = 0; i < s.length(); i++) {
