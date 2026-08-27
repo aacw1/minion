@@ -169,6 +169,25 @@ public class EditToolsTest {
         assertFalse(Files.exists(outside));
     }
 
+    /** 会话临时目录尚未创建（会话首次写入/Bash/Grep 不超限执行后目录被清空）时，
+     *  tmpDir 内新文件写入应放行（词法兜底），并自动创建目录 */
+    @Test
+    public void write_tmpDirNotExists_newFileAllowed() throws Exception {
+        Path workDir = tmp.newFolder("work-write").toPath();
+        Path jar = tmp.newFolder("jar-write").toPath();
+        String tmpDirStr = jar.resolve(".session").resolve("tmp").resolve("s1").toString();
+        assertFalse("前置：tmpDir 不存在（词法兜底场景）", Files.exists(Paths.get(tmpDirStr)));
+        WriteTool w = new WriteTool(new Workspace(workDir.toString()), null, tmpDirStr);
+        Path target = Paths.get(tmpDirStr, "new.txt");
+        ToolResult r = w.execute(args("{\"path\":\"" + target.toString().replace("\\", "\\\\")
+                + "\",\"content\":\"hello\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("应提示已写入: " + r.output, r.output.contains("已写入"));
+        assertFalse("不应被拒绝: " + r.output, r.output.contains("已拒绝"));
+        assertTrue("tmpDir 应被自动创建", Files.isDirectory(Paths.get(tmpDirStr)));
+        assertEquals("hello", new String(Files.readAllBytes(target), StandardCharsets.UTF_8));
+    }
+
     // ---- Round 1 review regression tests ----
 
     @Test

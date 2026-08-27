@@ -77,7 +77,8 @@ public class WriteTool implements Tool {
             Path probeReal = probe.toRealPath();
             if (!probeReal.startsWith(Paths.get(workspace.workDir()).toRealPath())
                     && !insideReal(skillsDir, probeReal)
-                    && !insideReal(tmpDir, probeReal)) {
+                    && !insideReal(tmpDir, probeReal)
+                    && !insideLexical(tmpDir, p)) {   // tmpDir 尚不存在（会话首次写/目录已被清）时词法兜底：不存在路径上无符号链接可绕过
                 return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
             }
         } catch (IOException e) {
