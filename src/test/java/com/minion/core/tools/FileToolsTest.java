@@ -502,7 +502,8 @@ public class FileToolsTest {
         assertTrue(res.output.contains("hi"));
     }
 
-    /** Grep 路径指向会话临时目录：守卫放行，不拒绝（SKIP_SUBTREE 使 root==tmpDir 时结果为"未匹配"，属预期，只断言不被拒绝） */
+    /** Grep 路径指向会话临时目录：守卫放行且可搜索（SKIP_SUBTREE 豁免搜索根自身；
+     *  落盘文件本身单独跳过防自噬），不被拒绝 */
     @Test
     public void grep_sessionTmpDirPath_allowedWithoutConfirm() throws Exception {
         Path workDir = tmp.newFolder("work-grep").toPath();
@@ -516,6 +517,7 @@ public class FileToolsTest {
         args.addProperty("path", sessionTmp.toAbsolutePath().toString());
         ToolResult r = grep.execute(args);
         assertFalse("tmp 目录内路径不应被守卫拒绝: " + r.output, r.output.contains("路径在工作路径之外"));
+        assertTrue("root==tmpDir 应可搜索到内容: " + r.output, r.output.contains("note.txt"));
     }
 
     /** 遍历检查字符串无孤立代理（每个高/低代理必须成对出现） */

@@ -108,12 +108,23 @@ public class GrepTool implements Tool {
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                return dumpDirPath != null && dir.toAbsolutePath().normalize().equals(dumpDirPath)
-                        ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
+                boolean isDumpDir = dumpDirPath != null
+                        && dir.toAbsolutePath().normalize().equals(dumpDirPath);
+                // 仅当命中落盘目录且不是搜索根时才跳过：root==tmpDir 时根自身即落盘目录，
+                // 跳过会导致"未匹配"（模型 grep 自己的临时目录与"可自由读写"承诺相悖）
+                if (isDumpDir && !dir.toAbsolutePath().normalize().equals(root.toAbsolutePath().normalize())) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                // 落盘文件本身跳过：遍历中持续写入，读它会自噬（匹配内容写入自身）
+                if (dumpPath != null
+                        && file.toAbsolutePath().normalize().equals(dumpPath.toAbsolutePath().normalize())) {
+                    return FileVisitResult.CONTINUE;
+                }
                 Path rel = rootInWork ? workspace.cwd().relativize(file) : file;
                 try {
                     java.util.List<String> lines = TextFiles.readAllLines(file).lines;
