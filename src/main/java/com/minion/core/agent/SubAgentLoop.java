@@ -42,6 +42,7 @@ public class SubAgentLoop {
     public String run() {
         ui.onSubAgentStart(messages.get(1).content);
         int retries = 0;
+        final boolean[] inRetry = new boolean[1]; // 瞬时错误重试循环进行中（首个流式增量到达即复位指示器）；方法级：外层 InterruptedException 需访问
         try {
             while (true) {
                 // 中断路径：主循环 interrupt() 取消 in-flight 工具 future → 本线程中断 → 立即中止
@@ -57,19 +58,29 @@ public class SubAgentLoop {
                 final com.minion.core.llm.StreamHandler handler = new com.minion.core.llm.StreamHandler() {
                     @Override
                     public void onThinking(String delta) {
+                        resetRetryOnFirstDelta();
                         thinking.append(delta);
                         ui.onThinking(delta);
                     }
                     @Override
                     public void onContent(String delta) {
+                        resetRetryOnFirstDelta();
                         content.append(delta);
                         ui.onSubAgentDelta(delta);
                     }
                     @Override
                     public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
+                        resetRetryOnFirstDelta(); // 零增量成功（如纯 tool_calls 回复）兜底复位
                         finish[0] = finishReason;
                         usage[0] = u;
                         toolCalls[0] = tcs;
+                    }
+                    /** 重试成功后的首个流式回调：立即复位指示器（"重试中"文案消失） */
+                    void resetRetryOnFirstDelta() {
+                        if (inRetry[0]) {
+                            inRetry[0] = false;
+                            ui.onRetryProgress(RetryProgress.none());
+                        }
                     }
                     @Override
                     public void onError(LlmException e) { finish[0] = "error"; ui.onError(e.getMessage()); }
@@ -82,49 +93,53 @@ public class SubAgentLoop {
                         ui.onWarning("子 agent 已中断");
                         return "子 agent 已中断";
                     }
-                    if (e.type == LlmException.Type.RATE_LIMIT) {
-                        // 429 长重试与主循环一致：2s 起步 +2s 递增，上限 10s，总时长 30 分钟；
+                    if (isTransientError(e)) {
+                        // 瞬时错误长重试与主循环一致：固定 5s/次，总时长 20 分钟；
                         // 进度经 onRetryProgress 进左下角指示器，成功轻提示恢复，超时一次性总结停止
                         int attempts = 0;
                         long waited = 0;
                         boolean exhausted = false; // 超时总结标志：break 后统一复位指示器再返回
-                        String failure = null; // 重试中遇非 429 错误的文案：break 后统一复位指示器再返回
+                        String failure = null; // 重试中遇非瞬时错误的文案：break 后统一复位指示器再返回
+                        int lastCode = e.httpCode;
+                        String lastBody = e.body;
+                        inRetry[0] = true;
                         while (true) {
                             attempts++;
+                            ui.onRetryProgress(RetryProgress.of(attempts, lastCode, lastBody)); // 尝试前立即更新指示器
                             long delay = retryPolicy.delayMs(attempts);
                             if (!sleepWithInterruptCheck(delay)) break; // 中断
                             waited += delay;
                             if (retryPolicy.isExhausted(waited)) {
-                                ui.onError("子 agent 429 重试了 " + attempts + " 次，持续 "
+                                ui.onError("子 agent " + lastCode + " 重试了 " + attempts + " 次，持续 "
                                         + (waited / 60000) + " 分钟仍失败，已停止重试");
                                 exhausted = true;
                                 break;
                             }
-                            ui.onRetryProgress(RetryProgress.of(attempts, e.httpCode, e.body)); // 指示器显示"基础文案+(错误码，重试第N次)"
                             try {
                                 llm.streamChat(messages, subAgentTools(), handler);
-                                // 成功后静默恢复（不打扰正文）：finish/toolCalls 已由 handler 回调，
+                                // 成功后静默恢复（不打扰正文）：首个流式增量/onFinish 已复位指示器，
                                 // 若流中断（onError 回调已提示）则落下方正常路径处理
                                 break;
                             } catch (LlmException re) {
                                 if (Thread.currentThread().isInterrupted()) break;
-                                if (re.type != LlmException.Type.RATE_LIMIT) {
-                                    // 重试中遇非 429 错误（网络/超时/5xx）：与主循环一致，
+                                if (!isTransientError(re)) {
+                                    // 重试中遇非瞬时错误（网络/超时/其他 5xx）：与主循环一致，
                                     // break 退出重试态、统一复位指示器，不再继续退避
                                     ui.onError("子 agent 请求失败: " + re.getMessage());
                                     failure = re.getMessage();
                                     break;
                                 }
-                                // 仍 429：继续退避
+                                lastCode = re.httpCode; // 仍可重试：更新错误码/错误体，指示器后缀随最近失败更新
+                                lastBody = re.body;
                             }
                         }
-                        ui.onRetryProgress(RetryProgress.none()); // 退出重试态（成功/超时/中断/非瞬时错误失败统一复位）
+                        if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 退出重试态统一复位（幂等）
                         if (Thread.currentThread().isInterrupted()) {
                             ui.onWarning("子 agent 已中断");
                             return "子 agent 已中断";
                         }
                         if (exhausted) {
-                            return "子 agent 失败: 429 持续 " + (waited / 60000) + " 分钟"; // 已 onError
+                            return "子 agent 失败: " + lastCode + " 持续 " + (waited / 60000) + " 分钟"; // 已 onError
                         }
                         if (failure != null) {
                             return "子 agent 失败: " + failure; // 已 onError
@@ -132,7 +147,7 @@ public class SubAgentLoop {
                         if (finish[0] == null && usage[0] == null) {
                             // 防御兜底：正常退出必有 finish/usage 回调（成功 break 后）或
                             // exhausted/failure 标志，理论不可达；保留旧文案以防回归误判
-                            return "子 agent 失败: 429 重试超时"; // 已 onError
+                            return "子 agent 失败: " + lastCode + " 重试超时"; // 已 onError
                         }
                         // 重试成功：落入下方正常处理
                     } else if (e.retryable && retries < 1) {
@@ -167,13 +182,18 @@ public class SubAgentLoop {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
-            ui.onRetryProgress(RetryProgress.none()); // 重试等待中被真实中断（future.cancel(true)）：复位指示器
+            if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 瞬时错误重试等待中被真实中断（future.cancel(true)）：复位指示器
             ui.onWarning("子 agent 已中断");
             return "子 agent 已中断";
         } catch (Exception e) {
             ui.onError("子 agent 异常: " + e.getMessage());
             return "子 agent 异常: " + e.getMessage();
         }
+    }
+
+    /** 瞬时错误（429 限流 / 500 服务端报错 / 502 网关报错）：可进长重试（与主循环一致） */
+    private boolean isTransientError(LlmException e) {
+        return e.type == LlmException.Type.RATE_LIMIT || e.httpCode == 500 || e.httpCode == 502;
     }
 
     /** 可中断等待：100ms 小片轮询中断标志（与主循环 sleepWithInterruptCheck 一致；

@@ -393,4 +393,63 @@ public class SubAgentLoopTest {
         // 指示器复位：进入重试（1）→ 退出（0）
         assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
+
+    /** 子 agent 500 服务端报错：进长重试，成功后静默恢复（与主循环一致） */
+    @Test
+    public void subAgent_serverError500_retryThenSuccess() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(LlmException.of(500, "{\"error\":\"internal\"}"));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 测试短固定间隔
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        assertEquals(2, llm.requests.size());
+        assertTrue(ui.warnings.isEmpty());
+        assertTrue(ui.errors.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+    }
+
+    /** 子 agent 重试循环内错误码切换（429 → 502）：进度携带最近一次错误码/响应体 */
+    @Test
+    public void subAgent_retry_codeSwitches_suffixFollowsLatestError() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(LlmException.of(429, null));
+        llm.addTurnThrow(LlmException.of(429, null));
+        llm.addTurnThrow(LlmException.of(502, "{\"message\":\"bad gateway\"}"));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        // 请求序列：原始 429 → 重试1 429 → 重试2 502 → 重试3 成功（FakeLlmClient 每 streamChat 消耗一回合）
+        assertEquals(4, llm.requests.size());
+        assertEquals(4, ui.retryProgress.size());
+        assertEquals(1, ui.retryProgress.get(0).attempt);
+        assertEquals(429, ui.retryProgress.get(0).httpCode);
+        assertEquals(2, ui.retryProgress.get(1).attempt);
+        assertEquals(429, ui.retryProgress.get(1).httpCode);
+        assertEquals(3, ui.retryProgress.get(2).attempt);
+        assertEquals(502, ui.retryProgress.get(2).httpCode);
+        assertEquals("{\"message\":\"bad gateway\"}", ui.retryProgress.get(2).body);
+        assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue()); // 末位复位
+    }
 }
