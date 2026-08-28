@@ -13,7 +13,8 @@ import javafx.scene.shape.StrokeLineCap;
 
 /** 上下文环形进度圈（参考 Claude VSCode context 指示器）：
  *  Canvas 自绘背景环+进度弧；悬停显示"上下文大小xk,占比y%,剩余z%自动压缩"，
- *  超过 30% 第二行浅色提示"点击立即压缩"（点击动作在环形圈本体，InputView 注入 onCompress）。
+ *  超 30% 第二行浅色提示"点击立即压缩"（点击动作在环形圈本体，InputView 注入 onCompress）；
+ *  压缩中显示"正在压缩中"且不可点击，环体旋转动画。
  *  组件本体需 FX toolkit 不单测，纯静态逻辑（arcAngle/compressable/formatInfo）由 ContextRingTest 覆盖。 */
 public class ContextRing extends Canvas {
 
@@ -82,6 +83,7 @@ public class ContextRing extends Canvas {
     /** 压缩中状态：true 启动旋转动画，false 停止并重绘静态进度 */
     public void setCompressing(boolean compressing) {
         this.compressing = compressing;
+        refreshTooltip(); // 压缩中文案切换（"正在压缩中" ↔ 原文案）
         if (compressing) spinner.start();
         else {
             spinner.stop();
