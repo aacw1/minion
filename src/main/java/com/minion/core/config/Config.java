@@ -95,6 +95,8 @@ public class Config {
 
     /** 读逃逸：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
     public boolean readAllowOutside() { return Boolean.parseBoolean(get("paths.read.allowOutside", "false")); }
+    /** 工具空输出占位：true 时成功空输出发送「输出内容为空」占位（服务端校验通过+模型可识别）；默认 false */
+    public boolean emptyOutputPlaceholder() { return Boolean.parseBoolean(get("agent.emptyOutput.placeholder", "false")); }
     public boolean confirmSkip() { return Boolean.parseBoolean(get("confirm.skip", "false")); }
     /** 输入框发送键：true=Enter 发送（Ctrl+Enter 换行）；false=Ctrl+Enter 发送（Enter 换行）；无键（空/旧配置）默认 true */
     public boolean enterSends() { return Boolean.parseBoolean(get("input.enterSends", "true")); }

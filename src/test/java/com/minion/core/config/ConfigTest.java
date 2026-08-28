@@ -113,6 +113,20 @@ public class ConfigTest {
         assertTrue(c.enterSends());
     }
 
+    /** 工具空输出占位：无该配置（含旧配置）默认 false；外部文件可覆盖为 true */
+    @Test
+    public void emptyOutputPlaceholder_defaultsFalseAndOverridable() throws IOException {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertFalse(c.emptyOutputPlaceholder());
+
+        Path root = tmp.getRoot().toPath();
+        Config c1 = Config.load(root, TEST_DEFAULTS);
+        Files.write(c1.externalFile(), "\nagent.emptyOutput.placeholder=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        Config c2 = Config.load(root, TEST_DEFAULTS);
+        assertTrue(c2.emptyOutputPlaceholder());
+    }
+
     /** 输入发送键：外部文件显式 false 覆盖默认（用户选择优先，保护旧默认用户），重载后保持 */
     @Test
     public void enterSends_explicitFalseOverridesDefault() throws IOException {

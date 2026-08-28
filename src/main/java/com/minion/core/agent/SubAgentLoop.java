@@ -27,6 +27,8 @@ public class SubAgentLoop {
     private final AgentUi ui;
     /** 瞬时错误长重试策略（与主循环一致；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
+    /** 工具空输出占位（AgentLoop 创建时注入；开启时成功空输出发「输出内容为空」占位） */
+    public boolean emptyOutputPlaceholder = false;
     private final List<Message> messages = new ArrayList<Message>();
 
     public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
@@ -176,7 +178,8 @@ public class SubAgentLoop {
                 messages.add(assistantMsg);
                 for (ToolCall call : toolCalls[0]) {
                     ToolResult result = runOneTool(call);
-                    messages.add(Message.toolResult(call.id, call.name, result.output));
+                    messages.add(Message.toolResult(call.id, call.name,
+                            ToolResult.outputForApi(result.output, emptyOutputPlaceholder)));
                     ui.onToolResult(call.name, result);
                 }
             }

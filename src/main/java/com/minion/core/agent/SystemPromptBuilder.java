@@ -30,19 +30,31 @@ public class SystemPromptBuilder {
     private final String workDir;
     /** 会话临时目录（可空=不注入；模型需要知道临时文件位置与读写权限） */
     private final String tmpDir;
+    /** 工具空输出占位开关：开启时追加第 9 条规则，告知模型「输出内容为空」占位含义（与配置联动） */
+    private final boolean emptyOutputPlaceholder;
 
     public SystemPromptBuilder(String projectMdPath) { this(projectMdPath, null, null); }
 
     public SystemPromptBuilder(String projectMdPath, String workDir) { this(projectMdPath, workDir, null); }
 
     public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir) {
+        this(projectMdPath, workDir, tmpDir, false);
+    }
+
+    public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir,
+                               boolean emptyOutputPlaceholder) {
         this.projectMdPath = projectMdPath;
         this.workDir = workDir;
         this.tmpDir = tmpDir;
+        this.emptyOutputPlaceholder = emptyOutputPlaceholder;
     }
 
     public String build(List<Skill> allSkills) {
         StringBuilder sb = new StringBuilder(BUILTIN);
+        if (emptyOutputPlaceholder) {
+            sb.append("\n9.工具执行成功但无输出时，返回结果将为「输出内容为空」（如 mvn -q 输出重定向、读取空文件）：")
+              .append("表示命令成功、无输出内容，请按成功结果处理，不要视为失败或重复调用同一工具。\n");
+        }
         if (workDir != null && !workDir.trim().isEmpty()) {
             sb.append("\n\n=== 当前工作目录 ===\n")
               .append("工作目录: ").append(workDir).append("\n")

@@ -209,14 +209,15 @@ public class SessionManager {
                 ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                         mc.keepRecentMessages, llm,
                         TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir(),
-                                tmpDirOf(meta.id).toString())
+                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder())
                                 .build(allSkills)));
                 SessionController controller = new SessionController();
                 controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
                 AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
                         new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir(),
-                                tmpDirOf(meta.id).toString()),
+                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder()),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
+                loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
                 loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
@@ -367,13 +368,14 @@ public class SessionManager {
         ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                 mc.keepRecentMessages, llm,
                 TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir(),
-                        tmpDirOf(s.id).toString())
+                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder())
                         .build(allSkills)));
         SessionController controller = new SessionController();
         AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
                 new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir(),
-                        tmpDirOf(s.id).toString()),
+                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder()),
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
+        loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
         loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,

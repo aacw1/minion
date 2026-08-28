@@ -57,6 +57,8 @@ public class AgentLoop {
     public int roundLimit = DEFAULT_ROUND_LIMIT;
     /** 瞬时错误长重试策略（429/500/502；默认固定 5s/次，总时长 20 分钟；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
+    /** 工具空输出占位（配置 agent.emptyOutput.placeholder 注入；开启时成功空输出发「输出内容为空」占位） */
+    public boolean emptyOutputPlaceholder = false;
     /** 连续工具失败止损阈值：达到后注入提醒让模型停止尝试并请求用户补充信息 */
     private static final int STUCK_THRESHOLD = 30;
     /** 连续失败工具计数（成功即清零；注入提醒后重置） */
@@ -97,8 +99,10 @@ public class AgentLoop {
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             ui.onSubAgentStart(desc);
-            return new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
-                    llm, registry, confirmGate, ui).run();
+            SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
+                    llm, registry, confirmGate, ui);
+            sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
+            return sub.run();
         });
     }
 
@@ -569,7 +573,8 @@ public class AgentLoop {
                             consecutiveToolErrors++;
                         }
                         session.messages.add(Message.toolResult(
-                                calls.get(i).id, calls.get(i).name, result.output));
+                                calls.get(i).id, calls.get(i).name,
+                                ToolResult.outputForApi(result.output, emptyOutputPlaceholder)));
                         ui.onToolResult(calls.get(i).name, result);
                     }
                 } finally {

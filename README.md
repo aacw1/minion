@@ -25,7 +25,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 |---|---|
 | `workspace.json` | 工作空间（名称、work.dir、project.md）；界面「＋ 新建工作空间」创建（work.dir 用系统文件夹选择框选，project.md 可文件选择器选取；新建/修改弹窗同样支持） |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；设置窗「模型」页管理 |
-| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
+| `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、agent（工具空输出占位）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
 | `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
 
 ## 快捷操作
