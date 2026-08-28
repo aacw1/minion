@@ -8,7 +8,7 @@ public class LlmException extends Exception {
     public final boolean retryable;
     /** HTTP 状态码（非 HTTP 错误为 0；瞬时错误长重试判断依据） */
     public final int httpCode;
-    /** 原始响应体（非 HTTP 错误或未捕获为 null；500/502 指示器展示用） */
+    /** 原始响应体（非 HTTP 错误或未捕获为 null；429/500/502 指示器展示用） */
     public final String body;
 
     public LlmException(Type type, String message, boolean retryable) {
@@ -28,7 +28,7 @@ public class LlmException extends Exception {
             return new LlmException(Type.AUTH, "认证失败(" + httpCode + ")，请检查 config.properties 的 model.key", false, httpCode, body);
         }
         if (httpCode == 429) {
-            return new LlmException(Type.RATE_LIMIT, "请求过于频繁(" + httpCode + ")，请稍后重试或检查余额", true, httpCode, body);
+            return new LlmException(Type.RATE_LIMIT, "请求过于频繁(" + httpCode + ")，限流中，请稍后重试", true, httpCode, body);
         }
         if (httpCode == 400) {
             // 带 body：400 根因（如上下文超限、tool_call 配对）只在响应体里，

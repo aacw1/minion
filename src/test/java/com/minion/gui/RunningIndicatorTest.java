@@ -63,14 +63,14 @@ public class RunningIndicatorTest {
                 RunningIndicator.retryText(RetryProgress.of(1, 502, "bad gateway"), "可随时补充信息..."));
     }
 
-    /** 错误体截断：只显示前 200 字符；429 不显示 body */
+    /** 错误体截断：只显示前 200 字符（429/500/502 一致） */
     @Test
     public void retryText_bodyTruncatedAt200() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 250; i++) sb.append('x');
         String longBody = sb.toString();
         assertEquals(200, RunningIndicator.bodyPart(RetryProgress.of(1, 500, longBody)).length());
-        assertEquals("", RunningIndicator.bodyPart(RetryProgress.of(1, 429, longBody)));
+        assertEquals(200, RunningIndicator.bodyPart(RetryProgress.of(1, 429, longBody)).length());
         assertTrue(RunningIndicator.retryText(RetryProgress.of(1, 500, longBody), "正在加载中...")
                 .contains(longBody.substring(0, 200)));
     }

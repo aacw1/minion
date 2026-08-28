@@ -85,9 +85,9 @@ public class RunningIndicator extends HBox {
         return "HTTP " + httpCode;
     }
 
-    /** 错误体后缀：仅非 429 且 body 非空时显示，截断 BODY_MAX_CHARS（429 明确是限流，无需错误体） */
+    /** 错误体后缀：body 非空时显示（429/500/502 一致，服务返回内容可帮助诊断），截断 BODY_MAX_CHARS */
     static String bodyPart(RetryProgress p) {
-        if (p.httpCode == 429 || p.body == null || p.body.isEmpty()) return "";
+        if (p.body == null || p.body.isEmpty()) return "";
         return p.body.length() > BODY_MAX_CHARS ? p.body.substring(0, BODY_MAX_CHARS) : p.body;
     }
 

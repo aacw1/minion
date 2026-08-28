@@ -1335,7 +1335,7 @@ public class LlmException extends Exception {
             return new LlmException(Type.AUTH, "认证失败(" + httpCode + ")，请检查 config.properties 的 model.key", false);
         }
         if (httpCode == 429) {
-            return new LlmException(Type.RATE_LIMIT, "请求过于频繁(" + httpCode + ")，请稍后重试或检查余额", true);
+            return new LlmException(Type.RATE_LIMIT, "请求过于频繁(" + httpCode + ")，限流中，请稍后重试", true);
         }
         if (httpCode == 400) {
             return new LlmException(Type.BAD_REQUEST, "请求被拒绝(400)，可能是消息格式或思考内容回传问题", false);
