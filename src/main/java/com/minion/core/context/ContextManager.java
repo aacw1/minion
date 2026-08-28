@@ -26,6 +26,9 @@ public class ContextManager {
     private volatile int keepRecent;
     private volatile LlmClient llm;
     private final int systemTokens;    // system 提示词 token 估算在构造时固定，保持不变
+    /** 最近一次 compress 是否真正尝试过压缩（take>0）：false = 真无可压缩（条数/token 未达），
+     *  true = 已尝试但 LLM 调用失败原样返回。供 AgentLoop 区分"暂无可压缩"与"压缩失败"提示 */
+    private volatile boolean lastCompressAttempted;
 
     public ContextManager(int maxContextTokens, double threshold, int keepRecent,
                           LlmClient llm, int systemTokens) {
@@ -48,6 +51,9 @@ public class ContextManager {
 
     /** 上下文窗口上限（AgentLoop 压缩百分比计算用） */
     public int maxTokens() { return maxContextTokens; }
+
+    /** 最近一次 compress 是否真正尝试过压缩（供"压缩失败"与"暂无可压缩"文案区分） */
+    public boolean lastCompressAttempted() { return lastCompressAttempted; }
 
     /** 自动压缩阈值（0~1，如 0.8=80% 触发；GUI 悬停"剩余x%自动压缩"计算用） */
     public double threshold() { return threshold; }
@@ -89,18 +95,23 @@ public class ContextManager {
     }
 
     /** 保留区动态缩小：keep 条数起步，保留区 token 占比 > KEEP_RATIO 且条数 > KEEP_MIN
-     *  时减半重算。返回要压缩的链数（前 take 个链）。 */
+     *  时减半重算。take==0 但上下文已超阈值时同样强制缩小：消息条数少但单条超长
+     *  （如 43 轮长思考/大工具输出，token 已 99% 而条数 ≤ keepRecent）时，
+     *  修复前 take==0 直接原样返回，误报"暂无可压缩内容"。返回要压缩的链数（前 take 个链）。 */
     private int takeChains(List<List<Message>> chains, int limit, List<Message> messages) {
         int take = computeTake(chains, limit);
         int total = TokenCounter.estimateMessages(messages);
-        while (take > 0 && limit > KEEP_MIN) {
+        boolean force = take == 0 && shouldCompress(messages); // 条数不足但 token 超阈值：强制缩小
+        while ((force || take > 0) && limit > KEEP_MIN) {
             int keptTokens = 0;
             for (int i = take; i < chains.size(); i++) {
                 keptTokens += TokenCounter.estimateMessages(chains.get(i));
             }
-            if ((double) keptTokens / total <= KEEP_RATIO) break;
+            if (take > 0 && (double) keptTokens / total <= KEEP_RATIO) break;
             limit = Math.max(KEEP_MIN, limit / 2); // 减半不跌破下限（如 13 → 12，而非 6）
-            take = computeTake(chains, limit);
+            int next = computeTake(chains, limit);
+            if (next == 0) break; // 缩到下限仍全保留（消息 ≤ KEEP_MIN 条）：真无可压缩
+            take = next;
         }
         return take;
     }
@@ -124,7 +135,11 @@ public class ContextManager {
         // splitByTokens 会把 mid 钳回 from，产生同参数递归 → 无限递归栈溢出
         List<List<Message>> chains = splitOversizedChains(chunkChains(messages));
         int take = takeChains(chains, keepRecent, messages);
-        if (take == 0) return messages; // 全部要保留，无需压缩
+        if (take == 0) {
+            lastCompressAttempted = false; // 真无可压缩（未达压缩条件）
+            return messages; // 全部要保留，无需压缩
+        }
+        lastCompressAttempted = true; // 已尝试：后续无论成败都不是"无可压缩"
 
         SegResult res = compressChains(chains, 0, take, null);
         if (res == null) {

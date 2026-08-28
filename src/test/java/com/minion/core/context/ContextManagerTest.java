@@ -452,4 +452,67 @@ public class ContextManagerTest {
         List<Message> result = cm.compress(input);
         assertSame(input, result);
     }
+
+    /** 缺陷回归（线上现象：43 轮对话 99% 上下文，点压缩报"暂无可压缩内容"）：
+     *  全程使用默认配置（maxContextTokens=131000, threshold=0.8, keepRecent=50），
+     *  不依赖用户改小窗口——缺陷本质是"保留区只看消息条数不看 token"：
+     *  43 条消息 ≤ 50 条保留上限，但单条超长（长思考 reasoningEffort=max /
+     *  大段代码）使 token 已达 99% → take==0 原样返回 → 误报"暂无可压缩内容"。
+     *  43 条 × 3014 token ≈ 129.6K / 131K ≈ 99%，超 0.8 阈值，必须能压缩。 */
+    @Test
+    public void compress_fewMessagesHugeTokens_mustCompress() {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(131000, 0.8, 50, llm, 0); // 默认配置
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 430; i++) big.append("一二三四五六七八九十"); // 4300 字 ≈ 3010 token
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 21; i++) { // 21 轮（42 条）
+            msgs.add(Message.user(big.toString()));
+            msgs.add(Message.assistant(big.toString()));
+        }
+        msgs.add(Message.user(big.toString())); // 第 43 条
+        assertTrue(cm.shouldCompress(msgs)); // 99% 场景前提
+        List<Message> result = cm.compress(msgs);
+        assertNotSame(msgs, result); // 修复前：take==0 原样返回（线上误报"暂无可压缩内容"）
+        assertTrue(result.size() < msgs.size());
+        assertTrue(result.get(0).summary);
+    }
+
+    /** 压缩尝试状态：区分"无可压缩"（take==0）与"压缩失败"（take>0 但 LLM 调用异常），
+     *  供 AgentLoop.compactNow 文案区分（修复前统一误报"暂无可压缩内容"） */
+    @Test
+    public void compress_attemptedFlag_distinguishesFailure() {
+        // 场景1：take==0（消息少且未超阈值）→ 未尝试
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】历史要点";
+        ContextManager cm = new ContextManager(131000, 0.8, 50, llm, 0);
+        List<Message> tiny = new ArrayList<Message>();
+        tiny.add(Message.user("hi"));
+        tiny.add(Message.assistant("hello"));
+        cm.compress(tiny);
+        assertFalse(cm.lastCompressAttempted());
+        // 场景2：take>0 且压缩成功 → 已尝试
+        List<Message> mid = new ArrayList<Message>();
+        for (int i = 0; i < 30; i++) { // 60 条 > 50 → take > 0
+            mid.add(Message.user("短消息"));
+            mid.add(Message.assistant("短消息"));
+        }
+        cm.compress(mid);
+        assertTrue(cm.lastCompressAttempted());
+        // 场景3：take>0 但 LLM 调用失败 → 已尝试（与"无可压缩"区分开）
+        FakeLlmClient llm2 = new FakeLlmClient();
+        llm2.throwOnCompleteChat = true;
+        ContextManager cm2 = new ContextManager(131000, 0.8, 50, llm2, 0);
+        cm2.compress(sampleHistory()); // 6 条 ≤ 50 → take==0 → 未尝试
+        assertFalse(cm2.lastCompressAttempted());
+        List<Message> big = new ArrayList<Message>();
+        for (int i = 0; i < 30; i++) { // 60 条 > 50 → take > 0
+            big.add(Message.user("短消息"));
+            big.add(Message.assistant("短消息"));
+        }
+        List<Message> bigResult = cm2.compress(big);
+        assertTrue(cm2.lastCompressAttempted());
+        assertSame(big, bigResult); // 失败原样返回
+    }
 }

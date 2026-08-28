@@ -279,6 +279,9 @@ public class AgentLoop {
             session.messages = contextManager.compress(session.messages);
             if (session.messages.size() < before) {
                 ui.onWarning("已压缩上下文（历史摘要已置前）");
+            } else if (contextManager.lastCompressAttempted()) {
+                // take>0 但压缩 LLM 调用失败（网络/超窗）原样返回：与"无可压缩"区分开，避免误导
+                ui.onWarning("压缩失败（模型调用异常），请稍后重试");
             } else {
                 ui.onWarning("暂无可压缩内容");
             }
