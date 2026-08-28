@@ -57,7 +57,7 @@ public class ContextRing extends Canvas {
         // hover 微亮：重绘时按 isHover() 取亮色
         hoverProperty().addListener((obs, ov, nv) -> repaint(-1));
         setOnMouseClicked(e -> {
-            if (compressable(running, pct()) && onCompress != null) onCompress.run();
+            if (compressable(compressing, running, pct()) && onCompress != null) onCompress.run();
         });
         repaint(-1);
     }
@@ -94,13 +94,18 @@ public class ContextRing extends Canvas {
 
     private double pct() { return max > 0 ? (double) used / max : 0; }
 
-    /** 悬停信息刷新：第一行大小/占比/剩余；第二行超 30% 才显示（运行中提示不可压缩） */
+    /** 悬停信息刷新：第一行大小/占比/剩余；第二行文案优先级：压缩中 > 运行中不可压缩 > 点击立即压缩；
+     *  可见性 over || compressing（手动 /compact 可能在 ≤30% 时触发，压缩中必须显示文案） */
     private void refreshTooltip() {
         infoLine.setText(formatInfo(used, max, threshold));
         boolean over = pct() > COMPRESS_HINT_PCT;
-        hintLine.setText(over ? (running ? "运行中不可压缩" : "点击立即压缩") : "");
-        hintLine.setVisible(over);
-        hintLine.setManaged(over);
+        if (compressing) {
+            hintLine.setText("正在压缩中");
+        } else {
+            hintLine.setText(over ? (running ? "运行中不可压缩" : "点击立即压缩") : "");
+        }
+        hintLine.setVisible(over || compressing);
+        hintLine.setManaged(over || compressing);
     }
 
     private void repaint(long nowMs) {
@@ -133,9 +138,9 @@ public class ContextRing extends Canvas {
         return p * 360;
     }
 
-    /** 可点击压缩判定：非运行中且占比 > 30%（严格超过；静态可单测） */
-    static boolean compressable(boolean running, double pct) {
-        return !running && pct > COMPRESS_HINT_PCT;
+    /** 可点击压缩判定：非压缩中、非运行中且占比 > 30%（严格超过；静态可单测） */
+    static boolean compressable(boolean compressing, boolean running, double pct) {
+        return !compressing && !running && pct > COMPRESS_HINT_PCT;
     }
 
     /** 悬停第一行文案：上下文大小98k,占比70%,剩余10%自动压缩（k 格式复用 StatsLine.formatTokens；

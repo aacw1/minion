@@ -38,15 +38,21 @@ public class ContextRingTest {
     }
 
     @Test public void compressable_over30_idle() {
-        assertTrue(ContextRing.compressable(false, 0.31));
+        assertTrue(ContextRing.compressable(false, false, 0.31));
+    }
+    @Test public void compressable_compressing_no() {
+        assertFalse(ContextRing.compressable(true, false, 0.31));
+    }
+    @Test public void compressable_compressing_running_no() {
+        assertFalse(ContextRing.compressable(true, true, 0.31));
     }
     @Test public void compressable_running_no() {
-        assertFalse(ContextRing.compressable(true, 0.31));
+        assertFalse(ContextRing.compressable(false, true, 0.31));
     }
     @Test public void compressable_exactly30_no() {
-        assertFalse(ContextRing.compressable(false, 0.3));
+        assertFalse(ContextRing.compressable(false, false, 0.3));
     }
     @Test public void compressable_below30_no() {
-        assertFalse(ContextRing.compressable(false, 0.1));
+        assertFalse(ContextRing.compressable(false, false, 0.1));
     }
 }
