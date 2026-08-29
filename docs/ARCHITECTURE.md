@@ -101,7 +101,7 @@ com.minion
 ### core/skills/ · core/context/ · core/storage/ · core/config/
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析；`scanTree(root, maxDepth, maxCount)` 递归扫描任意目录树（跳过 .git/node_modules/target 等噪声目录，深度/数量触顶截断并回告警，不抛异常），产出带 `[项目]` 来源标注的技能
-- `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（不缓存，只在创建/恢复会话时调用一次），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
+- `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（SkillSet 自身无缓存；调用方 `SessionManager` 按空间缓存扫描结果、配置变更时失效），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
 - `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×compressThreshold 触发，按完整回合链压缩；保留区按 token 占比动态缩小、下限 12 条；压缩失败时按 token 均衡分段递归降级，部分成功自动应用、全部失败原样返回）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `Config`：config.properties（classpath 默认值 + jar 同目录外部覆盖，首次运行自动生成）
@@ -120,7 +120,7 @@ com.minion
 
 - **每会话一个 AgentLoop + 独占工作线程**（真并行，切换工作空间/会话不打断后台运行）
 - **每工作空间一套上下文**（WorkspaceCtx：Workspace/SessionStore/ConfirmGate 空间级共享），恢复/新建会话时经 `SessionManager.newRegistry` 注册工具——**每会话独立 ToolRegistry**（TaskTool 绑定本会话 loop，防 task 事件串流）
-- **会话级技能快照**：`Main` 启动扫内置技能 → `SessionManager` 建/恢复会话时 `SkillSet.resolve(项目级技能目录)`（项目覆盖同名内置，`WorkspacePaths` 按各空间 workDir 解析相对路径）→ **不可变快照**塞进 `AgentLoop.setAllSkills` → `SystemPromptBuilder` 每轮渲染快照（`[项目]/[内置]` 标注 + 目录行）。快照随会话固化，切换工作空间/改配置互不串台、只对新会话生效；`/skills` 与 `@`/`/` 补全读 `SessionManager.currentSkills()`（激活会话快照）
+- **会话级技能快照**：`Main` 启动扫内置技能 → `SessionManager` 建/恢复会话时 `SkillSet.resolve(项目级技能目录)`（项目覆盖同名内置，`WorkspacePaths` 按各空间 workDir 解析相对路径；结果按空间缓存，配置变更时失效）→ **不可变快照**塞进 `AgentLoop.setAllSkills` → `SystemPromptBuilder` 每轮渲染快照（`[项目]/[内置]` 标注 + 目录行）。快照随会话固化，切换工作空间/改配置互不串台、只对新会话生效；`/skills` 与 `@`/`/` 补全读 `SessionManager.currentSkills()`（激活会话快照；无会话时按当前空间缓存结果实算）
 - **MCP 接线**：newRegistry 对每个启用服务器触发 `ensureConnectedAsync`（首次建会话即后台预连接，不阻塞界面）；连接完成（McpManager.Listener）补注册该服务器工具进所有存活会话的 registry（AgentLoop 每轮动态 `registry.schemas()`，下一轮即可被模型调用）；与内置工具重名跳过并计数 skippedTools；新建/恢复会话另有兜底补注册（覆盖连接完成于会话注册前毫秒级竞态）
 - **事件缓冲**：工作线程只写 EventList，FX 线程读取渲染（UI 不被工具执行阻塞）
 - **确认交互**：GuiConfirmUi 经 Platform.runLater 投递 ConfirmSheet，工具线程 take() 无限等点击（不阻塞 FX 线程；点击结果即决策，无超时竞态）；无 GUI 环境防御性 REJECT
