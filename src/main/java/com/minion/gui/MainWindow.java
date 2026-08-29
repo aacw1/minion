@@ -6,6 +6,7 @@ import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.ConfirmSheet;
 import com.minion.gui.dialog.SettingsDialog;
+import com.minion.gui.dialog.WorkspaceFormDialog;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.AutoScrollPolicy;
 import com.minion.gui.session.SessionHandle;
@@ -24,12 +25,10 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
@@ -41,7 +40,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -473,86 +471,23 @@ public class MainWindow {
         // 会话激活后，onSessionActivated 回调在 show() 注册的监听器中绑定消息区与输入区
     }
 
-    /** 新建工作空间弹窗（Task 9 从 show() 抽取）：work.dir 支持系统文件夹选择框 */
+    /** 新建工作空间弹窗（表单抽到 WorkspaceFormDialog：项目路径/主说明文件/技能路径 + 名称预校验） */
     private void onNewWorkspace(WorkspaceListView wsList) {
-        Dialog<WorkspaceConfig> d = new Dialog<WorkspaceConfig>();
-        d.setTitle("新建工作空间");
-        Theme.style(d);
-        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        GridPane g = new GridPane();
-        g.setHgap(8); g.setVgap(8); g.setPadding(new Insets(10));
-        TextField n = new TextField();
-        n.setPromptText("名称");
-        HBox wdBox = new HBox(6);
-        TextField wd = new TextField();
-        wd.setPromptText("work.dir");
-        HBox.setHgrow(wd, Priority.ALWAYS);
-        Button browse = new Button("浏览…");
-        browse.getStyleClass().add("btn-ghost");
-        browse.setOnAction(e -> {
-            DirectoryChooser dc = new DirectoryChooser();
-            java.io.File dir = dc.showDialog(d.getOwner());
-            if (dir != null) wd.setText(dir.getAbsolutePath());
-        });
-        wdBox.getChildren().addAll(wd, browse);
-        HBox pmBox = new HBox(6);
-        TextField pm = new TextField();
-        pm.setPromptText("project.md（可空）");
-        HBox.setHgrow(pm, Priority.ALWAYS);
-        Button pmBrowse = new Button("浏览…");
-        pmBrowse.getStyleClass().add("btn-ghost");
-        pmBrowse.setOnAction(e -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle("选择 project.md");
-            fc.getExtensionFilters().add(
-                    new javafx.stage.FileChooser.ExtensionFilter("Markdown", "*.md", "*.markdown"));
-            java.io.File file = fc.showOpenDialog(d.getOwner());
-            if (file != null) pm.setText(file.getAbsolutePath());
-        });
-        pmBox.getChildren().addAll(pm, pmBrowse);
-        g.addRow(0, new Label("名称:"), n);
-        g.addRow(1, new Label("work.dir:"), wdBox);
-        g.addRow(2, new Label("project.md:"), pmBox);
-        // 名称预校验（同 WorkspaceManager.isValidName：非空/无非法字符/不重名）：非法时 OK 禁用 + 行内红字提示，
-        // 不再"先提交后弹错"。existing 为打开弹窗时的名称快照（模态弹窗期间 UI 无法改列表，快照足够）
-        final java.util.List<String> existing = new java.util.ArrayList<String>();
+        java.util.List<String> existing = new java.util.ArrayList<String>();
         for (WorkspaceConfig w : manager.workspaces().list()) existing.add(w.workSpaceName);
-        Label nameErr = new Label();
-        nameErr.getStyleClass().add("log-error"); // 红字提示（theme.css 已挂载）
-        nameErr.setVisible(false);
-        g.add(nameErr, 1, 3);
-        d.getDialogPane().setContent(g);
-        Button okBtn = (Button) d.getDialogPane().lookupButton(ButtonType.OK);
-        okBtn.disableProperty().bind(javafx.beans.binding.Bindings.createBooleanBinding(
-                () -> !com.minion.core.config.WorkspaceManager.isValidName(n.getText().trim(), existing),
-                n.textProperty()));
-        n.textProperty().addListener((obs, ov, nv) -> nameErr.setVisible(false)); // 继续编辑即清旧提示
-        // 兜底：校验不过不关弹窗（正常路径 OK 已禁用，此处防绕过与快照过期竞态）
-        okBtn.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
-            if (!com.minion.core.config.WorkspaceManager.isValidName(n.getText().trim(), existing)) {
-                e.consume();
-                nameErr.setText("名称非法或已存在");
-                nameErr.setVisible(true);
-            }
-        });
-        d.setResultConverter(bt -> {
-            if (bt != ButtonType.OK) return null;
-            WorkspaceConfig out = new WorkspaceConfig();
-            out.workSpaceName = n.getText().trim();
-            out.workDir = wd.getText().trim();
-            out.projectMd = pm.getText().trim();
-            return out;
-        });
+        WorkspaceFormDialog d = new WorkspaceFormDialog("新建工作空间",
+                "新建工作空间（三个路径均可留空；项目级技能路径下的技能会以 [项目] 标注进入提示词）",
+                null, existing);
         Optional<WorkspaceConfig> r = d.showAndWait();
-        if (r.isPresent()) {
-            if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd, null)) {
-                Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
-                Theme.style(a);
-                a.setTitle("新建失败");
-                a.showAndWait();
-            }
-            wsList.refresh();
+        if (!r.isPresent()) return;
+        WorkspaceConfig v = r.get();
+        if (!manager.addWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
+            Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
+            Theme.style(a);
+            a.setTitle("新建失败");
+            a.showAndWait();
         }
+        wsList.refresh();
     }
 
     private static final int TAB_TITLE_MAX = 16; // 页签标题截取长度（过长撑宽页签栏致标题栏错乱）
