@@ -96,11 +96,15 @@ public class AgentLoop {
         registry.register(new com.minion.core.tools.TodoWriteTool(session.todos));
         this.askUserTool = new com.minion.core.tools.AskUserQuestionTool(ui);
         registry.register(askUserTool);
+        // 模型热切换回归修复：lambda 写在构造器内，简单名 llm 会按作用域规则捕获「构造器形参」
+        // （创建会话时的旧客户端引用），导致 setLlm 切模型后主 agent 用新模型、子 agent 仍用旧模型
+        // （事故：选 qwen 却由子 agent 烧光 deepseek 额度并报 402 余额不足）。
+        // 必须显式 this.llm 读 volatile 字段，才与主循环请求路径（456/485 行）同源。
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             ui.onSubAgentStart(desc);
             SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
-                    llm, registry, confirmGate, ui);
+                    this.llm, registry, confirmGate, ui);
             sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
             return sub.run();
         });

@@ -285,6 +285,50 @@ public class SubAgentLoopTest {
         }
     }
 
+    /**
+     * 回归：模型热切换后子 agent 必须与主 agent 用同一客户端。
+     * 根因——默认 subAgentRunner 的 lambda 写在构造器内，简单名 llm 捕获的是构造器形参
+     * （旧客户端引用）而非可变字段 this.llm，导致 setLlm 切模型后主 agent 用新模型、
+     * 子 agent 仍用旧模型（实际事故：切 qwen 后子 agent 继续烧 deepseek 额度，402 余额不足）。
+     */
+    @Test
+    public void subAgent_usesLlmClient_afterSetLlm() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient oldLlm = new FakeLlmClient();  // 会话创建时的模型（事故中的 deepseek）
+        FakeLlmClient newLlm = new FakeLlmClient();  // setLlm 切换后的模型（事故中的 qwen）
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        FakeConfirmUi confirmUi = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate confirm = new ConfirmGate(config, confirmUi);
+        RecordingUi ui = new RecordingUi();
+        AgentLoop loop = new AgentLoop(oldLlm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.roundLimit = 10;
+        loop.setLlm(newLlm); // 模拟设置窗切换模型（SessionManager.applyModelChanged 同路径）
+
+        ToolCall tc = new ToolCall();
+        tc.id = "t1";
+        tc.name = "task";
+        tc.arguments = "{\"description\":\"派发子任务\"}";
+        // 切换后主 agent 用 newLlm：第 1 轮发 task → 子 agent 一轮 → 第 2 轮总结
+        newLlm.addTurnWithTools(Collections.singletonList(tc), null);
+        newLlm.addTurn("子agent结果");
+        newLlm.addTurn("主agent总结");
+        oldLlm.addTurn("旧模型回答"); // 旧客户端的牌：仅 bug 版本会被子 agent 取走
+
+        loop.runUserTurn("派发");
+
+        assertTrue("子 agent 请求必须出现在切换后的客户端上（system + user(任务) 形态）",
+                newLlm.requests.stream().anyMatch(r -> r.messages.size() == 2
+                        && r.messages.get(0).role == Message.Role.SYSTEM
+                        && r.messages.get(1).content.contains("派发子任务")));
+        assertEquals("旧模型客户端不得再收到任何请求（子 agent 尤其不行），实际 "
+                + oldLlm.requests.size() + " 次", 0, oldLlm.requests.size());
+    }
+
     /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，成功后静默恢复，与主循环一致 */
     @Test
     public void subAgent_rateLimit_retryThenSuccess() throws Exception {
