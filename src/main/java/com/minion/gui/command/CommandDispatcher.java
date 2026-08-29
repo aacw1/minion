@@ -3,6 +3,7 @@ package com.minion.gui.command;
 import com.minion.core.skills.Skill;
 import com.minion.gui.session.SessionHandle;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -10,16 +11,14 @@ import java.util.Locale;
  *  非 null = 已本地执行的命令展示文本。命令结果永不发给 LLM。 */
 public class CommandDispatcher {
 
-    private final List<Skill> skills;
-
-    public CommandDispatcher(List<Skill> skills) { this.skills = skills; }
+    public CommandDispatcher() { }
 
     public String dispatch(SessionHandle h, String input) {
         if (input == null || !input.trim().startsWith("/")) return null;
         String[] parts = input.trim().split("\\s+");
         String cmd = parts[0].toLowerCase(Locale.ROOT);
         if ("/help".equals(cmd)) return helpText();
-        if ("/skills".equals(cmd)) return skillsText();
+        if ("/skills".equals(cmd)) return skillsText(h);
         if ("/skill".equals(cmd)) return dispatchSkill(h, parts);
         if ("/tokens".equals(cmd)) return tokensText(h);
         if ("/compact".equals(cmd)) return dispatchCompact(h);
@@ -35,9 +34,16 @@ public class CommandDispatcher {
                 + "/tokens          显示 token 用量统计";
     }
 
-    private String skillsText() {
-        if (skills == null || skills.isEmpty()) {
-            return "未发现可用技能。请检查 设置 → 基础设置 → 技能目录（skills.dir）";
+    /** 技能清单来自会话快照（每会话一份，切换会话/空间自然跟着变） */
+    private static List<Skill> skillsOf(SessionHandle h) {
+        return h == null || h.loop == null ? new ArrayList<Skill>() : h.loop.allSkills();
+    }
+
+    private String skillsText(SessionHandle h) {
+        List<Skill> skills = skillsOf(h);
+        if (skills.isEmpty()) {
+            return "未发现可用技能。请检查 设置 → 基础设置 → 技能目录（skills.dir），"
+                    + "或工作空间 → 项目级技能路径";
         }
         StringBuilder sb = new StringBuilder("可用技能（").append(skills.size()).append(" 个）：");
         for (Skill s : skills) sb.append('\n').append("- ").append(s.hint());
@@ -46,7 +52,7 @@ public class CommandDispatcher {
 
     private String dispatchSkill(SessionHandle h, String[] parts) {
         if (parts.length < 2) return "用法: /skill <技能名> [参数]（/skills 查看列表）";
-        for (Skill s : skills) {
+        for (Skill s : skillsOf(h)) {
             if (s.name.equalsIgnoreCase(parts[1])) {
                 String args = joinTail(parts, 2);
                 h.loop.offerSkillLoad(s, args);

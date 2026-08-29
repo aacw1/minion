@@ -10,6 +10,7 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.core.config.WorkspacePaths;
 import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.DeepSeekClient;
@@ -20,6 +21,7 @@ import com.minion.core.mcp.McpServer;
 import com.minion.core.mcp.McpToolInfo;
 import com.minion.core.tools.mcp.McpProxyTool;
 import com.minion.core.skills.Skill;
+import com.minion.core.skills.SkillSet;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.BashTool;
 import com.minion.core.tools.EditTool;
@@ -85,7 +87,7 @@ public class SessionManager {
     private final Path jarDir;
     private final WorkspaceManager workspaces;
     private final ModelManager models;
-    private final List<Skill> allSkills;
+    private final SkillSet skillSet; // 内置列表 + 项目实扫合并；建会话时取一次不可变快照
     private final BrowserSession browserSession; // 可为 null（测试/未配置浏览器路径）
     private final McpManager mcp; // 可为 null（测试）；MCP 服务器管理：惰性连接 + 工具补注册
     private final CommandDispatcher dispatcher; // 斜杠命令本地分发（GUI 输入路径）
@@ -124,10 +126,10 @@ public class SessionManager {
         this.jarDir = jarDir;
         this.workspaces = workspaces;
         this.models = models;
-        this.allSkills = allSkills;
+        this.skillSet = new SkillSet(allSkills == null ? new ArrayList<Skill>() : allSkills);
         this.browserSession = browserSession;
         this.mcp = mcp;
-        this.dispatcher = new CommandDispatcher(allSkills);
+        this.dispatcher = new CommandDispatcher();
         if (mcp != null) {
             // 连接完成（后台线程）：补注册 MCP 工具进所有存活会话（下一轮 schemas() 可见）
             mcp.addListener(new McpManager.Listener() {
@@ -206,19 +208,23 @@ public class SessionManager {
                 Session s = ctx.store.load(meta.id);
                 ModelConfig mc = models.current();
                 LlmClient llm = newLlm(mc);
+                // 每会话各算一次快照：恢复会话保持落盘时的技能上下文（不随配置变更重扫）
+                SkillSet.Result sk = skillsOf(ctx.name);
+                String mdAbs = projectMdOf(ctx.name);
+                String projSkills = projectSkillsDirOf(ctx.name);
                 ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                         mc.keepRecentMessages, llm,
-                        TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir(),
-                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder())
-                                .build(allSkills)));
+                        TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
+                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder(), projSkills)
+                                .build(sk.skills)));
                 SessionController controller = new SessionController();
                 controller.replayHistory(s.messages); // 历史消息灌入事件流：点击会话即可重放显示
                 AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
-                        new SystemPromptBuilder(projectMdPath(ctx.name), ctx.workspace.workDir(),
-                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder()),
+                        new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
+                                tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder(), projSkills),
                         ctx.confirmGate, controller, cm, ctx.workspace, s);
                 loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
-                loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
+                loop.setAllSkills(sk.skills); // 会话级快照：本会话独享、不可变
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
                 SessionHandle h = new SessionHandle(s.id, ctx.name, s, loop, controller,
@@ -259,6 +265,9 @@ public class SessionManager {
     private WorkspaceCtx buildCtx(WorkspaceConfig w) {
         String skillsDir = Paths.get(config.skillsDir()).toAbsolutePath().normalize().toString();
         Workspace workspace = new Workspace(w.workDir);
+        String projSkills = WorkspacePaths.projectSkillsDir(w);
+        workspace.setExtraAllowedDirs(projSkills == null
+                ? new ArrayList<String>() : java.util.Collections.singletonList(projSkills));
         ConfirmGate gate = new ConfirmGate(config, confirmUi);
         return new WorkspaceCtx(w.workSpaceName, workspace,
                 new SessionStore(WorkspaceManager.sessionDirFor(jarDir, w.workSpaceName)),
@@ -365,18 +374,22 @@ public class SessionManager {
         Session s = Session.create(ctx.workspace.workDir(), mc.modelName);
         s.title = title;
         LlmClient llm = newLlm(mc);
+        SkillSet.Result sk = skillsOf(currentWorkspaceName);
+        if (sk.warning != null) notifyError(sk.warning);
+        String mdAbs = projectMdOf(currentWorkspaceName);
+        String projSkills = projectSkillsDirOf(currentWorkspaceName);
         ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
                 mc.keepRecentMessages, llm,
-                TokenCounter.estimate(new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir(),
-                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder())
-                        .build(allSkills)));
+                TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
+                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder(), projSkills)
+                        .build(sk.skills)));
         SessionController controller = new SessionController();
         AgentLoop loop = new AgentLoop(llm, newRegistry(ctx, s.id),
-                new SystemPromptBuilder(projectMdPath(currentWorkspaceName), ctx.workspace.workDir(),
-                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder()),
+                new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
+                        tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder(), projSkills),
                 ctx.confirmGate, controller, cm, ctx.workspace, s);
         loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
-        loop.setAllSkills(allSkills); // 技能目录接线：Skill 工具可访问 + 子 agent 系统提示词含目录段
+        loop.setAllSkills(sk.skills);   // 会话级快照：本会话独享、不可变
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
                 title, title == null, llm);
@@ -415,12 +428,25 @@ public class SessionManager {
         return h;
     }
 
-    private String projectMdPath(String workspaceName) {
-        WorkspaceConfig c = workspaces.get(workspaceName);
-        if (c == null || c.projectMd == null || c.projectMd.trim().isEmpty()) {
-            return "./project.md";
-        }
-        return c.projectMd;
+    /** 该空间当次配置解析出的技能快照（项目级覆盖同名内置）；扫描告警由调用方提示 */
+    private SkillSet.Result skillsOf(String workspaceName) {
+        return skillSet.resolve(projectSkillsDirOf(workspaceName));
+    }
+
+    /** 项目级技能目录绝对路径（相对写法按该空间项目路径解析）；未配置 → null */
+    private String projectSkillsDirOf(String workspaceName) {
+        return WorkspacePaths.projectSkillsDir(workspaces.get(workspaceName));
+    }
+
+    /** 项目主说明文件绝对路径；取代原先按进程 cwd 解析的 projectMdPath（跨空间串台根因） */
+    private String projectMdOf(String workspaceName) {
+        return WorkspacePaths.projectMd(workspaces.get(workspaceName));
+    }
+
+    /** 当前应展示的技能清单：激活会话用其快照；无会话则按当前空间实算 */
+    public List<Skill> currentSkills() {
+        if (currentSession != null) return currentSession.loop.allSkills();
+        return skillsOf(currentWorkspaceName).skills;
     }
 
     /** 新建 LlmClient（模型配置工厂；GUI 弹窗切模型也用它） */
@@ -554,12 +580,17 @@ public class SessionManager {
     /**
      * 修改工作空间：配置落盘 + workDir 热更新（所有会话共享同一 workspace 实例，
      * setWorkDir 后下一轮工具调用即按新根守卫，无需重启）；projectMd 对新会话生效（运行中会话
-     * 的 system prompt 在创建时构建，不热换）。
+     * 的 system prompt 在创建时构建，不热换）。技能放行目录同样按新配置刷新，
+     * 但已存活会话的技能快照与提示词不刷新（新会话才用新配置）。
      */
     public void updateWorkspace(String name, String workDir, String projectMd, String projectSkillsDir) {
         workspaces.update(name, workDir, projectMd, projectSkillsDir);
         WorkspaceCtx ctx = ctxByName.get(name);
-        if (ctx != null) ctx.workspace.setWorkDir(workDir);
+        if (ctx == null) return;
+        ctx.workspace.setWorkDir(workDir);
+        String abs = projectSkillsDirOf(name);   // 按更新后的配置重新解析
+        ctx.workspace.setExtraAllowedDirs(abs == null
+                ? new ArrayList<String>() : java.util.Collections.singletonList(abs));
     }
 
     /**
@@ -703,9 +734,6 @@ public class SessionManager {
         if (h == null || !h.running) return;
         h.loop.answerAskUser(text);
     }
-
-    /** 全部技能（补全弹层/命令分发共用；启动时扫描） */
-    public List<Skill> skills() { return allSkills; }
 
     /** 当前工作空间 workDir（文件补全遍历根；无当前空间返回 null） */
     public String currentWorkspaceDir() {

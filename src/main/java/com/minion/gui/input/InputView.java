@@ -363,11 +363,11 @@ public class InputView extends VBox {
             CompletionParser.Token t = CompletionParser.parse(input.getText(), input.getCaretPosition());
             switch (t.mode) {
                 case SLASH:
-                    popup.show(frame, SlashSuggester.all(manager.skills()), t.query);
+                    popup.show(frame, SlashSuggester.all(manager.currentSkills()), t.query);
                     lastToken = t;
                     break;
                 case SLASH_SKILL:
-                    popup.show(frame, SlashSuggester.skillEntries(manager.skills()), t.query);
+                    popup.show(frame, SlashSuggester.skillEntries(manager.currentSkills()), t.query);
                     lastToken = t;
                     break;
                 case FILE: {

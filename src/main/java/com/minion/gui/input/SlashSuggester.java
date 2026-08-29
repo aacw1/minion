@@ -19,13 +19,15 @@ public final class SlashSuggester {
         return out;
     }
 
-    /** 技能条目：选中插入 /skill <名> */
+    /** 技能条目：选中插入 /skill <名>；desc 前标注来源（与 /skills 的 hint() 一致） */
     public static List<Suggestion> skillEntries(List<Skill> skills) {
         List<Suggestion> out = new ArrayList<Suggestion>();
         if (skills == null) return out;
         for (Skill s : skills) {
             String label = "/skill " + s.name;
-            out.add(new Suggestion(label, label, s.description, Suggestion.Type.SKILL));
+            out.add(new Suggestion(label, label,
+                    (com.minion.core.skills.Skill.SOURCE_PROJECT.equals(s.source) ? "[项目] " : "[内置] ")
+                            + s.description, Suggestion.Type.SKILL));
         }
         return out;
     }

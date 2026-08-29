@@ -41,9 +41,10 @@ public class CommandDispatcherTest {
     @Before
     public void setUp() {
         List<Skill> skills = Arrays.asList(
-                new Skill("brainstorming", "需求头脑风暴", "指令正文", "/skills/brainstorming/SKILL.md", Skill.SOURCE_GLOBAL),
-                new Skill("writing-plans", "编写实施计划", "指令正文", "/skills/writing-plans/SKILL.md", Skill.SOURCE_GLOBAL));
-        dispatcher = new CommandDispatcher(skills);
+                new Skill("brainstorming", "需求头脑风暴", "指令正文",
+                        "/skills/brainstorming/SKILL.md", Skill.SOURCE_GLOBAL),
+                new Skill("writing-plans", "编写实施计划", "指令正文",
+                        "/skills/writing-plans/SKILL.md", Skill.SOURCE_GLOBAL));
         Config config = Config.load(tmp.getRoot().toPath());
         llm = new FakeLlmClient();
         ToolRegistry registry = new ToolRegistry();
@@ -53,7 +54,9 @@ public class CommandDispatcherTest {
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, controller, null, new Workspace(tmp.getRoot().getPath()), s);
+        loop.setAllSkills(skills);        // 技能清单归会话持有，与真实运行路径一致
         h = new SessionHandle("sid123456789", "ws", s, loop, controller, "标题", false, llm);
+        dispatcher = new CommandDispatcher();
     }
 
     @After
@@ -79,6 +82,16 @@ public class CommandDispatcherTest {
         String r = dispatcher.dispatch(h, "/skills");
         assertTrue(r.contains("brainstorming"));
         assertTrue(r.contains("writing-plans"));
+    }
+
+    /** 回归：/skills 读的是会话快照，不是全局列表——换会话即换内容 */
+    @Test
+    public void skills_readsSessionSnapshotNotGlobal() {
+        h.loop.setAllSkills(java.util.Collections.singletonList(
+                new Skill("only-here", "仅此会话", "正文", "f.md", Skill.SOURCE_PROJECT)));
+        String r = dispatcher.dispatch(h, "/skills");
+        assertTrue(r.contains("only-here"));
+        assertFalse(r.contains("brainstorming"));
     }
 
     @Test public void skill_loadsIntoLoop() {

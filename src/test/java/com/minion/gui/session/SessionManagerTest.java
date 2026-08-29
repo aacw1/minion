@@ -823,6 +823,101 @@ public class SessionManagerTest {
         assertEquals(java.util.Arrays.asList(true, false), got);
     }
 
+    /**
+     * 造一个「项目目录」：返回 proj 绝对路径，其下 skills/<skillName>/SKILL.md 是一个技能。
+     * 调用方把返回值填进 WorkspaceConfig.workDir，技能目录填 proj+"/skills"（或写相对 ./skills）。
+     */
+    private String projectWithSkill(String folder, String skillName, String desc) throws Exception {
+        java.nio.file.Path proj = tmp.newFolder(folder).toPath();
+        java.nio.file.Path dir = proj.resolve("skills").resolve(skillName);
+        java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.write(dir.resolve("SKILL.md"),
+                ("---\nname: " + skillName + "\ndescription: " + desc + "\n---\n正文")
+                        .getBytes("UTF-8"));
+        return proj.toString();
+    }
+
+    private static java.util.List<String> namesOf(java.util.List<com.minion.core.skills.Skill> skills) {
+        java.util.List<String> out = new ArrayList<String>();
+        for (com.minion.core.skills.Skill s : skills) out.add(s.name);
+        return out;
+    }
+
+    /** 两个空间各配不同项目技能目录：技能快照与系统提示词互不含对方内容（切空间/切会话都不串） */
+    @Test
+    public void projectSkills_isolatedPerWorkspaceAndSession() throws Exception {
+        Path jar = tmp.newFolder("jar-iso").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        String projA = projectWithSkill("projA-iso", "deploy-a", "A 部署");
+        String projB = projectWithSkill("projB-iso", "deploy-b", "B 部署");
+        assertTrue(ws.add("A", projA, "", projA + java.io.File.separator + "skills"));
+        assertTrue(ws.add("B", projB, "", projB + java.io.File.separator + "skills"));
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
+                ModelManager.load(jar), new ArrayList<Skill>(), null, null);
+
+        m.switchWorkspace("A");
+        SessionHandle a = m.createSession(null);
+        m.switchWorkspace("B");
+        SessionHandle b = m.createSession(null);
+
+        assertEquals(java.util.Arrays.asList("deploy-a"), namesOf(a.loop.allSkills()));
+        assertEquals(java.util.Arrays.asList("deploy-b"), namesOf(b.loop.allSkills()));
+        assertTrue(a.loop.buildSystemPrompt().contains("deploy-a"));
+        assertFalse("A 会话提示词不得含 B 空间技能",
+                a.loop.buildSystemPrompt().contains("deploy-b"));
+        assertFalse("B 会话提示词不得含 A 空间技能",
+                b.loop.buildSystemPrompt().contains("deploy-a"));
+
+        // 激活是 GUI 真实路径：先切回对应空间再激活（activateSession 拒绝跨空间激活）
+        m.switchWorkspace("A");
+        m.activateSession(a);
+        assertEquals(java.util.Arrays.asList("deploy-a"), namesOf(m.currentSkills()));
+        m.switchWorkspace("B");
+        m.activateSession(b);
+        assertEquals(java.util.Arrays.asList("deploy-b"), namesOf(m.currentSkills()));
+    }
+
+    /** 相对写法 ./skills 在两个空间各自解析（同一份配置文本不共享同一目录） */
+    @Test
+    public void relativeSkillsDir_resolvesPerWorkspace() throws Exception {
+        Path jar = tmp.newFolder("jar-rel").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        String projA = projectWithSkill("projA-rel", "rel-a", "A");
+        String projB = projectWithSkill("projB-rel", "rel-b", "B");
+        assertTrue(ws.add("RA", projA, "", "./skills"));
+        assertTrue(ws.add("RB", projB, "", "./skills"));
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
+                ModelManager.load(jar), new ArrayList<Skill>(), null, null);
+        m.switchWorkspace("RA");
+        assertEquals(java.util.Arrays.asList("rel-a"),
+                namesOf(m.createSession(null).loop.allSkills()));
+        m.switchWorkspace("RB");
+        assertEquals(java.util.Arrays.asList("rel-b"),
+                namesOf(m.createSession(null).loop.allSkills()));
+    }
+
+    /** 改配置只影响新会话：已存在会话保持旧快照（快照语义，不为旧会话做兼容） */
+    @Test
+    public void updateSkillsDir_affectsOnlyNewSessions() throws Exception {
+        Path jar = tmp.newFolder("jar-upd").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        String sep = java.io.File.separator;
+        String projOld = projectWithSkill("projU-old", "skill-old", "旧");
+        String projNew = projectWithSkill("projU-new", "skill-new", "新");
+        assertTrue(ws.add("U", projOld, "", projOld + sep + "skills"));
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
+                ModelManager.load(jar), new ArrayList<Skill>(), null, null);
+        m.switchWorkspace("U");
+        SessionHandle before = m.createSession(null);
+        m.updateWorkspace("U", projNew, "", projNew + sep + "skills");
+        assertEquals(java.util.Arrays.asList("skill-old"), namesOf(before.loop.allSkills()));
+        assertEquals(java.util.Arrays.asList("skill-new"),
+                namesOf(m.createSession(null).loop.allSkills()));
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();
