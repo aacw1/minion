@@ -1,5 +1,5 @@
 target/
-skills/
+/skills/
 .idea/
 .claude/worktrees/
 *.iml
