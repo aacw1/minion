@@ -85,6 +85,8 @@ public class SkillManager {
             Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), maxDepth + 1,
                     new SimpleFileVisitor<Path>() {
                 @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    // 遍历根目录自身不参与跳过判断：用户把技能目录命名为 target/build/session 时仍应能扫描
+                    if (dir.equals(root)) return FileVisitResult.CONTINUE;
                     String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
                     return SKIP_DIRS.contains(name)
                             ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;

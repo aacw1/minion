@@ -7,7 +7,7 @@ import java.util.Collections;
 
 import static org.junit.Assert.*;
 
-/** 系统提示词：临时文件目录注入 + Git Bash 规则说明 */
+/** 系统提示词：临时文件目录注入 + Git Bash 规则说明 + 技能来源标注（[项目]/[内置]）与项目级技能目录行 */
 public class SystemPromptBuilderTest {
 
     @Test

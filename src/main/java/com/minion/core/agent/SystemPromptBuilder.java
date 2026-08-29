@@ -89,7 +89,7 @@ public class SystemPromptBuilder {
             for (Skill s : allSkills) sb.append("- ").append(s.hint()).append("（").append(s.file).append("）\n");
             if (projectSkillsDir != null && !projectSkillsDir.trim().isEmpty()) {
                 sb.append("\n项目级技能目录: ").append(projectSkillsDir.trim())
-                  .append("（随当前工作空间变化，只包含本项目的技能）");
+                  .append("（随当前工作空间变化，只包含本项目的技能）\n");
             }
         }
         return sb.toString();

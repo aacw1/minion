@@ -44,7 +44,6 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
 
         final TextField name = new TextField(initial == null ? "" : initial.workSpaceName);
         name.setPromptText("名称");
-        HBox.setHgrow(name, Priority.ALWAYS);
 
         HBox workBox = new HBox(6);
         final TextField workDir = pathRow(workBox, initial == null ? "" : initial.workDir,

@@ -148,4 +148,14 @@ public class SkillManagerTest {
         assertEquals("[项目] deploy — 部署", p.hint());
         assertEquals("[内置] think — 思考", g.hint());
     }
+
+    /** 回归：噪声目录名单只作用于子目录，遍历根目录自身命名为 target 也要能扫到技能 */
+    @Test
+    public void scanTree_rootItselfNamedLikeNoiseDir_isNotSkipped() throws Exception {
+        Path root = tmp.newFolder("target").toPath();
+        writeSkill(root.resolve("deploy"), "deploy", "部署");
+        SkillManager.ScanResult r = SkillManager.scanTree(root, 6, 200);
+        assertEquals(1, r.skills.size());
+        assertEquals("deploy", r.skills.get(0).name);
+    }
 }

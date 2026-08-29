@@ -94,6 +94,9 @@ public class SessionManager {
     private final List<Listener> listeners = new ArrayList<Listener>();
 
     private final Map<String, WorkspaceCtx> ctxByName = new HashMap<String, WorkspaceCtx>();
+    /** 技能快照按空间缓存。仅 FX 线程访问：读于 createSession / currentSkills（及构造期
+     *  restoreSessions），失效于 updateWorkspace / renameWorkspace / deleteWorkspace 的同步段
+     *  （finishDeleteWorkspace 的后台 daemon 段不触碰）——与 ctxByName 同一线程模型 */
     private final Map<String, SkillSet.Result> skillCache = new HashMap<String, SkillSet.Result>();
     private String currentWorkspaceName;
     private SessionHandle currentSession;
