@@ -31,7 +31,7 @@ public class SkillToolTest {
     private FakeLlmClient llm;
     private ToolRegistry registry;
     private AgentLoop loop;
-    private final Skill SKILL = new Skill("brainstorming", "头脑风暴技能", "正文：先澄清需求再设计", "SKILL.md");
+    private final Skill SKILL = new Skill("brainstorming", "头脑风暴技能", "正文：先澄清需求再设计", "SKILL.md", Skill.SOURCE_GLOBAL);
 
     @Before
     public void setup() {

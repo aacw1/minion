@@ -41,8 +41,8 @@ public class CommandDispatcherTest {
     @Before
     public void setUp() {
         List<Skill> skills = Arrays.asList(
-                new Skill("brainstorming", "需求头脑风暴", "指令正文", "/skills/brainstorming/SKILL.md"),
-                new Skill("writing-plans", "编写实施计划", "指令正文", "/skills/writing-plans/SKILL.md"));
+                new Skill("brainstorming", "需求头脑风暴", "指令正文", "/skills/brainstorming/SKILL.md", Skill.SOURCE_GLOBAL),
+                new Skill("writing-plans", "编写实施计划", "指令正文", "/skills/writing-plans/SKILL.md", Skill.SOURCE_GLOBAL));
         dispatcher = new CommandDispatcher(skills);
         Config config = Config.load(tmp.getRoot().toPath());
         llm = new FakeLlmClient();

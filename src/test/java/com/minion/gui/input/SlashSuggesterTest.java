@@ -22,7 +22,7 @@ public class SlashSuggesterTest {
 
     @Test public void skillEntries_insertFullSkillCommand() {
         List<Suggestion> all = SlashSuggester.all(Arrays.asList(
-                new Skill("brainstorming", "需求头脑风暴", "正文", "f.md")));
+                new Skill("brainstorming", "需求头脑风暴", "正文", "f.md", Skill.SOURCE_GLOBAL)));
         Suggestion skill = null;
         for (Suggestion s : all) if (s.type == Suggestion.Type.SKILL) skill = s;
         assertNotNull(skill);
@@ -32,7 +32,7 @@ public class SlashSuggesterTest {
 
     @Test public void skillsOnly_excludesBuiltins() {
         List<Suggestion> only = SlashSuggester.skillEntries(Arrays.asList(
-                new Skill("brainstorming", "需求头脑风暴", "正文", "f.md")));
+                new Skill("brainstorming", "需求头脑风暴", "正文", "f.md", Skill.SOURCE_GLOBAL)));
         assertEquals(1, only.size());
         assertEquals(Suggestion.Type.SKILL, only.get(0).type);
     }

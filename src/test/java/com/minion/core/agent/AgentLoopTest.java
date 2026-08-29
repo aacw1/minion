@@ -474,7 +474,7 @@ public class AgentLoopTest {
     @Test
     public void offerSkillLoad_injectsSkillMessageNextTurn() {
         AgentLoop loop = newLoop();
-        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"));
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md", Skill.SOURCE_GLOBAL));
         llm.addTurn("好的");
         loop.runUserTurn("开始");
         // 0:user(技能) 1:user(输入) 2:assistant
@@ -493,8 +493,8 @@ public class AgentLoopTest {
     @Test
     public void offerSkillLoad_deduplicatesPendingQueue() {
         AgentLoop loop = newLoop();
-        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"));
-        loop.offerSkillLoad(new Skill("review", "另一个描述", "审查正文 2", "SKILL.md"));
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md", Skill.SOURCE_GLOBAL));
+        loop.offerSkillLoad(new Skill("review", "另一个描述", "审查正文 2", "SKILL.md", Skill.SOURCE_GLOBAL));
         llm.addTurn("好的");
         loop.runUserTurn("开始");
         long pinnedCount = loop.messages().stream()
@@ -507,7 +507,7 @@ public class AgentLoopTest {
      *  drain 后队列清空，再次加载会重新注入一条技能正文 → 上下文永久叠加 */
     @Test
     public void offerSkillLoad_sameSkillAcrossTurns_doesNotDuplicate() {
-        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md");
+        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md", Skill.SOURCE_GLOBAL);
         AgentLoop loop = newLoop();
         loop.offerSkillLoad(skill);
         llm.addTurn("好的");
@@ -664,7 +664,7 @@ public class AgentLoopTest {
     @Test
     public void offerSkillLoad_withArgs_injectsArgsIntoSkillMessage() {
         AgentLoop loop = newLoop();
-        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"), "帮我设计一个设置页");
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md", Skill.SOURCE_GLOBAL), "帮我设计一个设置页");
         llm.addTurn("好的");
         loop.runUserTurn("开始");
         List<Message> msgs = loop.messages();
@@ -683,8 +683,8 @@ public class AgentLoopTest {
     @Test
     public void offerSkillLoad_deduplicatesByNameEvenWithDifferentArgs() {
         AgentLoop loop = newLoop();
-        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"), "参数A");
-        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md"), "参数B");
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md", Skill.SOURCE_GLOBAL), "参数A");
+        loop.offerSkillLoad(new Skill("review", "审查", "审查正文", "SKILL.md", Skill.SOURCE_GLOBAL), "参数B");
         llm.addTurn("好的");
         loop.runUserTurn("开始");
         long pinnedCount = loop.messages().stream()
@@ -1254,7 +1254,7 @@ public class AgentLoopTest {
     /** Skill 工具调用 → 工具结果入历史 → 检查点注入 <skill> 消息 → 下一轮请求携带（同轮生效，链式衔接） */
     @Test
     public void skillTool_sameTurnEffect() {
-        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md");
+        Skill skill = new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md", Skill.SOURCE_GLOBAL);
         AgentLoop loop = newLoop();
         loop.setAllSkills(Collections.singletonList(skill));
         ToolCall tc = new ToolCall();
@@ -1281,7 +1281,7 @@ public class AgentLoopTest {
         AgentLoop loop = newLoop();
         assertEquals(0, loop.allSkills().size());
         loop.setAllSkills(Collections.singletonList(
-                new Skill("brainstorming", "头脑风暴", "正文", "SKILL.md")));
+                new Skill("brainstorming", "头脑风暴", "正文", "SKILL.md", Skill.SOURCE_GLOBAL)));
         assertEquals(1, loop.allSkills().size());
         // 子 agent 复用 buildSystemPrompt：目录段可见
         assertTrue(loop.buildSystemPrompt().contains("brainstorming — 头脑风暴"));
@@ -1292,7 +1292,7 @@ public class AgentLoopTest {
     @Test
     public void skillInjection_emitsUiEvent() {
         AgentLoop loop = newLoop();
-        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md"));
+        loop.offerSkillLoad(new Skill("brainstorming", "头脑风暴", "正文：先澄清需求", "SKILL.md", Skill.SOURCE_GLOBAL));
         llm.addTurn("好的");
         loop.runUserTurn("开始");
         assertTrue("技能注入未发 UI 事件",
