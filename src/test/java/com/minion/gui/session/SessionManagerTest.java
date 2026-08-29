@@ -918,6 +918,53 @@ public class SessionManagerTest {
                 namesOf(m.createSession(null).loop.allSkills()));
     }
 
+    /** 修复轮 1：无会话时 currentSkills 走空间缓存——补全弹层每次按键不再触发整树扫描；配置变更必须失效缓存 */
+    @Test
+    public void currentSkills_noSession_invalidatedByUpdateWorkspace() throws Exception {
+        Path jar = tmp.newFolder("jar-cache").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        String sep = java.io.File.separator;
+        String projOld = projectWithSkill("projC-old", "cache-old", "旧");
+        String projNew = projectWithSkill("projC-new", "cache-new", "新");
+        assertTrue(ws.add("C", projOld, "", projOld + sep + "skills"));
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws,
+                ModelManager.load(jar), new ArrayList<Skill>(), null, null);
+        m.switchWorkspace("C");
+        // 无会话：首次读取扫描一次并缓存，连续读取命中缓存且结果一致
+        assertEquals(java.util.Arrays.asList("cache-old"), namesOf(m.currentSkills()));
+        assertEquals(java.util.Arrays.asList("cache-old"), namesOf(m.currentSkills()));
+        // 配置变更必须失效缓存：无会话补全立即反映新目录，而不是旧扫描结果
+        m.updateWorkspace("C", projNew, "", projNew + sep + "skills");
+        assertEquals(java.util.Arrays.asList("cache-new"), namesOf(m.currentSkills()));
+    }
+
+    /** 修复轮 1：恢复会话按空间一次扫描共享快照——同一空间恢复的每个会话都持有正确技能清单 */
+    @Test
+    public void restoreSessions_shareSnapshotPerWorkspace() throws Exception {
+        Path jar = tmp.newFolder("jar-res").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        String proj = projectWithSkill("projR", "restore-skill", "恢复");
+        assertTrue(ws.add("R", proj, "", proj + java.io.File.separator + "skills"));
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m1 = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        m1.switchWorkspace("R");
+        m1.createSession("会话一");
+        m1.createSession("会话二");
+        m1.shutdown(); // 会话已即时落盘；shutdown 兜底并释放资源
+        SessionManager m2 = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        m2.switchWorkspace("R");
+        List<SessionHandle> restored = m2.sessions();
+        assertEquals(2, restored.size());
+        for (SessionHandle h : restored) {
+            assertEquals("恢复会话的技能快照必须来自该空间的项目技能目录",
+                    java.util.Arrays.asList("restore-skill"), namesOf(h.loop.allSkills()));
+        }
+    }
+
     /** 间谍子类：拦截 newLlm 注入 FakeLlmClient（真实 DeepSeekClient 构造不连网但无法断言关闭） */
     private static class SpyManager extends SessionManager {
         final List<FakeLlmClient> created = new ArrayList<FakeLlmClient>();
