@@ -73,7 +73,7 @@ public class GrepTool implements Tool {
         String start = args.has("path") ? args.get("path").getAsString() : ".";
         final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
         if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
-        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir,
+        ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir,
                 tmpDir == null ? null : tmpDir.toString(), root);
         if (guard != null) {
             if (confirm == null || !confirm.checkReadOutside(this, args, root.toString())) return guard;

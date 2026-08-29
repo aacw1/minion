@@ -60,7 +60,8 @@ public class WriteTool implements Tool {
 
     /** 越界守卫：已存在路径交给 PathsGuard（toRealPath 防符号链接）；不存在路径向上找最深已存在祖先做真实路径校验 */
     private ToolResult outsideGuard(Path p) {
-        if (Files.exists(p)) return PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, p);
+        if (PathsGuard.insideExtra(workspace, p)) return null;   // 额外放行目录：inside 已做真实路径校验
+        if (Files.exists(p)) return PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, p);
         Path probe = p;
         while (probe != null && !Files.exists(probe)) {
             probe = probe.getParent();

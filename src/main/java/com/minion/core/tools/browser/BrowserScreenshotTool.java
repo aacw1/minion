@@ -56,7 +56,7 @@ public class BrowserScreenshotTool implements Tool {
         if (!args.has("path")) return ToolResult.error("缺少 path 参数");
         boolean fullPage = !args.has("fullPage") || args.get("fullPage").getAsBoolean();
         Path p = PathsGuard.resolve(workspace.cwd().toString(), args.get("path").getAsString());
-        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, p);
         if (guard != null) {
             // 同 Read 工具：越界不静默拒绝，弹确认框让用户选（Y 放行本次 / N 拒绝 / W 会话放行）
             if (confirm == null || !confirm.checkWriteOutside(this, args, p.toString())) return guard;

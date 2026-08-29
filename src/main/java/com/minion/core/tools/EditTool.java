@@ -48,7 +48,7 @@ public class EditTool implements Tool {
         // T8 约定：存在性/目录检查在守卫之前；守卫的 toRealPath 对不存在的路径会误报越界
         if (!Files.exists(p)) return ToolResult.error("文件不存在: " + p);
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, p);
+        ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, p);
         if (guard != null) return guard;
 
         String oldString = args.get("oldString").getAsString();

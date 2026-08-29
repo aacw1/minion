@@ -73,7 +73,7 @@ public class GlobTool implements Tool {
         if (start != null && !start.isEmpty()) {
             final Path root = PathsGuard.resolve(workspace.cwd().toString(), start);
             if (!Files.exists(root)) return ToolResult.error("路径不存在: " + root);
-            ToolResult guard = PathsGuard.errorIfOutside(workspace.workDir(), skillsDir, tmpDir, root);
+            ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, root);
             if (guard != null) {
                 if (confirm == null || !confirm.checkReadOutside(this, args, root.toString())) return guard;
             }

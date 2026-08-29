@@ -82,7 +82,7 @@ public class PathsGuardTest {
         Path workDir = tmp.newFolder("work").toPath();
         Path tmpDir = tmp.newFolder("jar", ".session", "tmp", "s1").toPath();
         Path f = Files.write(tmpDir.resolve("bash-1.txt"), "x".getBytes(StandardCharsets.UTF_8));
-        assertNull(PathsGuard.errorIfOutside(workDir.toString(), null, tmpDir.toString(), f));
+        assertNull(PathsGuard.errorIfOutside(new Workspace(workDir.toString()), null, tmpDir.toString(), f));
     }
 
     /** tmpDir 之外（jar 目录其他位置，且不在工作路径内）仍拦截 */
@@ -92,7 +92,40 @@ public class PathsGuardTest {
         Path jar = tmp.newFolder("jar2").toPath();
         Path outside = Files.write(jar.resolve("config.txt"), "x".getBytes(StandardCharsets.UTF_8));
         String tmpDir = jar.resolve(".session").resolve("tmp").resolve("s1").toString();
-        assertNotNull(PathsGuard.errorIfOutside(workDir.toString(), null, tmpDir, outside));
+        assertNotNull(PathsGuard.errorIfOutside(new Workspace(workDir.toString()), null, tmpDir, outside));
+    }
+
+    /** 额外放行目录（项目级技能目录）内放行；其兄弟目录仍拒绝；清空后回归拒绝 */
+    @Test
+    public void errorIfOutside_extraAllowedDir() throws Exception {
+        Path work = tmp.newFolder("w-extra").toPath();
+        Path projSkills = tmp.newFolder("outside-extra").toPath().resolve("skills");
+        Path inside = projSkills.resolve("deploy/SKILL.md");
+        Files.createDirectories(inside.getParent());
+        Files.write(inside, "x".getBytes(StandardCharsets.UTF_8));
+        Path sibling = projSkills.getParent().resolve("elsewhere").resolve("x.md");
+        Files.createDirectories(sibling.getParent());
+        Files.write(sibling, "x".getBytes(StandardCharsets.UTF_8));
+
+        Workspace ws = new Workspace(work.toString());
+        ws.setExtraAllowedDirs(java.util.Collections.singletonList(projSkills.toString()));
+        assertNull(PathsGuard.errorIfOutside(ws, null, null, inside));
+        assertNotNull(PathsGuard.errorIfOutside(ws, null, null, sibling));
+
+        ws.setExtraAllowedDirs(new java.util.ArrayList<String>());   // 替换语义：清空即回归旧行为
+        assertNotNull(PathsGuard.errorIfOutside(ws, null, null, inside));
+    }
+
+    /** 无额外放行目录时等价原行为：工作路径内放行、外部拒绝 */
+    @Test
+    public void errorIfOutside_noExtra_behavesAsBefore() throws Exception {
+        Path work = tmp.newFolder("w-none").toPath();
+        Path insideFile = Files.write(work.resolve("a.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        Path outsideFile = Files.write(tmp.newFolder("out-none").toPath().resolve("b.txt"),
+                "x".getBytes(StandardCharsets.UTF_8));
+        Workspace ws = new Workspace(work.toString());
+        assertNull(PathsGuard.errorIfOutside(ws, null, null, insideFile));
+        assertNotNull(PathsGuard.errorIfOutside(ws, null, null, outsideFile));
     }
 
     private static void deleteRecursively(Path p) throws Exception {

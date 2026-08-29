@@ -127,4 +127,15 @@ public class WorkspaceTest {
         ws.setWorkDir("  ");
         assertEquals(Paths.get(workDir).toAbsolutePath().normalize(), ws.cwd());
     }
+
+    /** 额外放行目录：默认空、set 后为替换语义（不累积） */
+    @Test
+    public void extraAllowedDirs_defaultEmptyAndReplace() {
+        Workspace ws = new Workspace(".");
+        assertTrue(ws.extraAllowedDirs().isEmpty());
+        ws.setExtraAllowedDirs(java.util.Arrays.asList("D:/proj/skills"));
+        assertEquals(1, ws.extraAllowedDirs().size());
+        ws.setExtraAllowedDirs(null);
+        assertTrue(ws.extraAllowedDirs().isEmpty());
+    }
 }

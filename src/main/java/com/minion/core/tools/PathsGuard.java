@@ -36,21 +36,21 @@ public class PathsGuard {
         }
     }
 
-    /** 越界守卫：仅工作路径（技能目录传 null） */
-    public static ToolResult errorIfOutside(String workDir, Path p) {
-        return errorIfOutside(workDir, null, p);
-    }
-
-    /** 越界守卫：工作路径或技能目录内的路径均放行 */
-    public static ToolResult errorIfOutside(String workDir, String skillsDir, Path p) {
-        return errorIfOutside(workDir, skillsDir, null, p);
-    }
-
-    /** 越界守卫：工作路径/技能目录/会话临时目录内的路径均放行 */
-    public static ToolResult errorIfOutside(String workDir, String skillsDir, String tmpDir, Path p) {
-        if (!inside(workDir, p) && !inside(skillsDir, p) && !inside(tmpDir, p)) {
-            return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
+    /** 任一额外放行目录（项目级技能目录等）命中即放行；无配置时恒 false */
+    public static boolean insideExtra(Workspace ws, Path p) {
+        if (ws == null) return false;
+        for (String dir : ws.extraAllowedDirs()) {
+            if (inside(dir, p)) return true;
         }
-        return null;
+        return false;
+    }
+
+    /** 越界守卫：工作路径 / 额外放行目录 / 内置技能目录 / 会话临时目录 任一命中即放行 */
+    public static ToolResult errorIfOutside(Workspace ws, String skillsDir, String tmpDir, Path p) {
+        if (inside(ws.workDir(), p) || insideExtra(ws, p)
+                || inside(skillsDir, p) || inside(tmpDir, p)) {
+            return null;
+        }
+        return ToolResult.error("路径在工作路径之外，已拒绝: " + p);
     }
 }
