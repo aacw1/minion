@@ -2,6 +2,7 @@ package com.minion.core.agent;
 
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.Assert.*;
@@ -41,5 +42,41 @@ public class SystemPromptBuilderTest {
         String legacy = new SystemPromptBuilder("nonexistent.md", "C:/work", "C:/tmp")
                 .build(Collections.emptyList());
         assertFalse(legacy.contains("「输出内容为空」"));
+    }
+
+    private static com.minion.core.skills.Skill skill(String name, String desc, String source) {
+        return new com.minion.core.skills.Skill(name, desc, "正文", "C:/x/" + name + "/SKILL.md", source);
+    }
+
+    /** 项目技能在前并标 [项目]，内置标 [内置]，段末给出项目技能目录（模型据此知道去哪儿找） */
+    @Test
+    public void build_annotatesSourceAndAppendsProjectDir() {
+        String p = new SystemPromptBuilder("nonexistent.md", "C:/work", "C:/tmp", false, "D:/proj/skills")
+                .build(Arrays.asList(
+                        skill("deploy", "部署", com.minion.core.skills.Skill.SOURCE_PROJECT),
+                        skill("think", "思考", com.minion.core.skills.Skill.SOURCE_GLOBAL)));
+        assertTrue(p.contains("- [项目] deploy — 部署（C:/x/deploy/SKILL.md）"));
+        assertTrue(p.contains("- [内置] think — 思考（C:/x/think/SKILL.md）"));
+        assertTrue(p.contains("项目级技能目录: D:/proj/skills"));
+        assertTrue(p.contains("[项目] 来自当前工作空间的项目级技能路径"));
+    }
+
+    /** 未配置项目目录：不输出目录末行（来源说明行始终存在，它只是解释标注含义） */
+    @Test
+    public void build_withoutProjectDir_hasNoProjectLines() {
+        String p = new SystemPromptBuilder("nonexistent.md", "C:/work", "C:/tmp", false, null)
+                .build(Arrays.asList(
+                        skill("think", "思考", com.minion.core.skills.Skill.SOURCE_GLOBAL)));
+        assertFalse(p.contains("项目级技能目录:"));
+        assertTrue(p.contains("- [内置] think — 思考"));
+    }
+
+    /** 无技能时整段缺席（含项目目录也不应单独输出） */
+    @Test
+    public void build_noSkills_noCatalogSection() {
+        String p = new SystemPromptBuilder("nonexistent.md", "C:/work", "C:/tmp", false, "D:/proj/skills")
+                .build(java.util.Collections.<com.minion.core.skills.Skill>emptyList());
+        assertFalse(p.contains("=== 可用技能 ==="));
+        assertFalse(p.contains("项目级技能目录:"));
     }
 }

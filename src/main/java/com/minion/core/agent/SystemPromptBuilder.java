@@ -32,21 +32,29 @@ public class SystemPromptBuilder {
     private final String tmpDir;
     /** 工具空输出占位开关：开启时追加第 9 条规则，告知模型「输出内容为空」占位含义（与配置联动） */
     private final boolean emptyOutputPlaceholder;
+    /** 项目级技能目录绝对路径（可空=未配置，不输出目录说明行） */
+    private final String projectSkillsDir;
 
     public SystemPromptBuilder(String projectMdPath) { this(projectMdPath, null, null); }
 
     public SystemPromptBuilder(String projectMdPath, String workDir) { this(projectMdPath, workDir, null); }
 
     public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir) {
-        this(projectMdPath, workDir, tmpDir, false);
+        this(projectMdPath, workDir, tmpDir, false, null);
     }
 
     public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir,
                                boolean emptyOutputPlaceholder) {
+        this(projectMdPath, workDir, tmpDir, emptyOutputPlaceholder, null);
+    }
+
+    public SystemPromptBuilder(String projectMdPath, String workDir, String tmpDir,
+                               boolean emptyOutputPlaceholder, String projectSkillsDir) {
         this.projectMdPath = projectMdPath;
         this.workDir = workDir;
         this.tmpDir = tmpDir;
         this.emptyOutputPlaceholder = emptyOutputPlaceholder;
+        this.projectSkillsDir = projectSkillsDir;
     }
 
     public String build(List<Skill> allSkills) {
@@ -77,7 +85,12 @@ public class SystemPromptBuilder {
               .append("技能描述是路由条件——先看\"何时用/何时不用\"，匹配才加载，不匹配不要加载。")
               .append("同一技能不要重复加载；技能正文中引用的 Claude Code 专属机制（plan mode、ExitPlanMode、/loop 等）在本环境中不可用，相关审查确认用 AskUserQuestion 代替。\n");
             sb.append("技能源文件可能在工作路径之外，如需读取技能参考文档，可直接用 Read 工具读取其绝对路径：\n");
+            sb.append("[内置] 来自软件配置 skills.dir；[项目] 来自当前工作空间的项目级技能路径，同名时项目级优先。\n");
             for (Skill s : allSkills) sb.append("- ").append(s.hint()).append("（").append(s.file).append("）\n");
+            if (projectSkillsDir != null && !projectSkillsDir.trim().isEmpty()) {
+                sb.append("\n项目级技能目录: ").append(projectSkillsDir.trim())
+                  .append("（随当前工作空间变化，只包含本项目的技能）");
+            }
         }
         return sb.toString();
     }
