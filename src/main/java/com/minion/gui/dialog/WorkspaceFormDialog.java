@@ -27,11 +27,13 @@ import java.util.List;
  */
 public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
 
-    /** 标签列变长（项目主说明文件 / 项目级技能路径）后所需的最小宽度 */
-    private static final double MIN_WIDTH = 560;
+    /** 标签列变长 + 输入框加宽后的弹窗最小宽度（原 560，输入框显示宽度约翻倍） */
+    private static final double MIN_WIDTH = 920;
+    /** 路径输入框优先宽度（字符数）：JavaFX 默认 12，按要求加宽一倍以上 */
+    private static final int FIELD_PREF_COLUMNS = 38;
 
     /**
-     * @param initial       预填值；null = 新建（全空，仅名称必填）
+     * @param initial       预填值；null = 新建（全空，仅名称与项目路径必填）
      * @param existingNames 冲突名称集合：修改场景须排除自身，新建场景给全部现有名称
      */
     public WorkspaceFormDialog(String title, String header, WorkspaceConfig initial,
@@ -43,18 +45,19 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         getDialogPane().setMinWidth(MIN_WIDTH);
 
         final TextField name = new TextField(initial == null ? "" : initial.workSpaceName);
-        name.setPromptText("名称");
+        name.setPromptText("必填");
+        name.setPrefColumnCount(FIELD_PREF_COLUMNS);
 
         HBox workBox = new HBox(6);
         final TextField workDir = pathRow(workBox, initial == null ? "" : initial.workDir,
-                "项目路径（留空 = 软件所在目录）", true);
+                "必填", true);
         HBox mdBox = new HBox(6);
         final TextField projectMd = pathRow(mdBox, initial == null ? "" : initial.projectMd,
-                "项目主说明文件（留空 = 项目路径下 project.md）", false);
+                "可选", false);
         HBox skillsBox = new HBox(6);
         final TextField skillsDir = pathRow(skillsBox,
                 initial == null ? "" : initial.projectSkillsDir,
-                "项目级技能路径（留空 = 仅使用内置技能）", true);
+                "可选", true);
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
@@ -70,18 +73,29 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         nameErr.getStyleClass().add("log-error");
         nameErr.setVisible(false);
         grid.add(nameErr, 1, 4);
+        final Label workDirErr = new Label();
+        workDirErr.getStyleClass().add("log-error");
+        workDirErr.setVisible(false);
+        grid.add(workDirErr, 1, 5);
 
+        // 必填项：名称合法（非空/无非法字符/不重名）+ 项目路径非空
         final Button okBtn = (Button) getDialogPane().lookupButton(ButtonType.OK);
         okBtn.disableProperty().bind(Bindings.createBooleanBinding(
-                () -> !WorkspaceManager.isValidName(name.getText().trim(), existingNames),
-                name.textProperty()));
+                () -> !WorkspaceManager.isValidName(name.getText().trim(), existingNames)
+                        || workDir.getText().trim().isEmpty(),
+                name.textProperty(), workDir.textProperty()));
         name.textProperty().addListener((o, ov, nv) -> nameErr.setVisible(false));
+        workDir.textProperty().addListener((o, ov, nv) -> workDirErr.setVisible(false));
         // 兜底：正常路径 OK 已禁用，此处防绕过与名称快照过期竞态
         okBtn.addEventFilter(ActionEvent.ACTION, e -> {
             if (!WorkspaceManager.isValidName(name.getText().trim(), existingNames)) {
                 e.consume();
                 nameErr.setText("名称非法或已存在");
                 nameErr.setVisible(true);
+            } else if (workDir.getText().trim().isEmpty()) {
+                e.consume();
+                workDirErr.setText("项目路径不能为空");
+                workDirErr.setVisible(true);
             }
         });
 
@@ -99,6 +113,7 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
     private TextField pathRow(HBox box, String value, String prompt, boolean dir) {
         final TextField field = new TextField(value == null ? "" : value);
         field.setPromptText(prompt);
+        field.setPrefColumnCount(FIELD_PREF_COLUMNS);
         HBox.setHgrow(field, Priority.ALWAYS);
         Button btn = new Button("浏览…");
         btn.getStyleClass().add("btn-ghost");
@@ -112,7 +127,7 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
                 if (picked != null) field.setText(picked.getAbsolutePath());
             } else {
                 FileChooser fc = new FileChooser();
-                fc.setTitle(prompt);
+                fc.setTitle("选择项目主说明文件");
                 fc.getExtensionFilters().add(
                         new FileChooser.ExtensionFilter("Markdown", "*.md", "*.markdown"));
                 File f = new File(cur);

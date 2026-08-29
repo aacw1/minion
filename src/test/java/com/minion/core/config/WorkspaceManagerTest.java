@@ -208,4 +208,21 @@ public class WorkspaceManagerTest {
         assertEquals("./README.md", w.projectMd);
         assertEquals("d:/s2/.skills", w.projectSkillsDir);
     }
+
+    /** 项目路径必填：add 空白（含纯空格）被拒且不落盘；update 空白被拒且原值不变 */
+    @Test
+    public void blankWorkDir_rejectedByAddAndUpdate() throws IOException {
+        Path dir = jarDir();
+        WorkspaceManager m = WorkspaceManager.load(dir);
+        assertFalse(m.add("noDir", "   ", "./project.md", null));
+        assertNull(m.get("noDir"));
+        assertEquals(1, m.list().size()); // 默认空间之外没多出条目（add 未落盘）
+
+        assertTrue(m.add("hasDir", "d:/x", "./project.md", "d:/x/skills"));
+        assertFalse(m.update("hasDir", "", "./project.md", "d:/x/skills"));
+        WorkspaceConfig w = m.get("hasDir");
+        assertEquals("d:/x", w.workDir);                    // 原值未被清空
+        assertEquals("d:/x/skills", w.projectSkillsDir);
+        assertFalse(m.update("noSuchSpace", "d:/y", "", null));
+    }
 }

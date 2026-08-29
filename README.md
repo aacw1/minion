@@ -23,18 +23,22 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 
 | 文件 | 内容 |
 |---|---|
-| `workspace.json` | 工作空间（名称、项目路径 work.dir、项目主说明文件 project.md、项目级技能路径 projectSkillsDir）；界面「＋ 新建工作空间」创建（三个路径均可浏览选取或留空；新建/修改弹窗同样支持） |
+| `workspace.json` | 工作空间（名称、项目路径 work.dir、项目主说明文件 project.md、项目级技能路径 projectSkillsDir）；界面「＋ 新建工作空间」创建（名称与项目路径必填，另两项可选；均可浏览选取） |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；设置窗「模型」页管理 |
 | `config.properties` | browser（CDP 浏览器）、confirm（高危确认开关/白名单）、paths（读逃逸）、agent（工具空输出占位）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改（浏览器项重启生效），skills.dir 可用目录选择器浏览选取；browser.path 可用文件选择器浏览选取 |
 | `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
 
-工作空间弹窗（新建/修改）三个路径字段的含义：
+工作空间弹窗（新建/修改）各字段的填写要求与含义：
 
-- **项目路径**：会话的工作目录，文件工具与 Bash 的守卫边界（留空 = 软件所在目录）。
-- **项目主说明文件**：内容作为「项目介绍」注入系统提示词（留空 = `<项目路径>/project.md`）。
-- **项目级技能路径**：递归扫描该目录下所有 `SKILL.md` / `*.skill.md`，以 `[项目]` 标注并入
+- **名称**：必填，不能与已有空间重名（`WorkspaceManager.isValidName`）。
+- **项目路径**：必填——**界面（OK 禁用 + 行内红字）与 core 双重校验**，
+  `WorkspaceManager.add` / `update` 拒绝空白 workDir（返回 false、不落盘、原配置不变）。
+  它是会话的工作目录，也是文件工具与 Bash 的守卫边界；
+  已落盘配置若被手改成空，读取时按软件所在目录兜底（`WorkspacePaths.workDirAbs`）。
+- **项目主说明文件**：可选。内容作为「项目介绍」注入系统提示词（留空 = `<项目路径>/project.md`）。
+- **项目级技能路径**：可选。递归扫描该目录下所有 `SKILL.md` / `*.skill.md`，以 `[项目]` 标注并入
   系统提示词的可用技能清单，可用 `/skill <名>` 渐进式加载正文；同名时**项目级覆盖内置**。
-  留空即只有内置技能（`skills.dir`）。三项修改都**只对新建会话生效**。
+  留空即只有内置技能（`skills.dir`）。三项路径修改都**只对新建会话生效**。
 
 ## 快捷操作
 

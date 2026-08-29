@@ -149,17 +149,22 @@ public class WorkspaceListView extends ListView<String> {
             if (!name.equals(other.workSpaceName)) existing.add(other.workSpaceName);
         }
         WorkspaceFormDialog d = new WorkspaceFormDialog("修改工作空间",
-                "工作空间「" + name + "」（重命名会同步迁移会话目录；项目路径 / 项目主说明文件 / "
-                        + "项目级技能路径 的修改对新会话生效）",
-                w, existing);
+                "工作空间「" + name + "」", w, existing);
         Optional<WorkspaceConfig> r = d.showAndWait();
         if (!r.isPresent()) return;
         WorkspaceConfig v = r.get();
+        // 项目路径必填：core 也会拒绝，此处先拦，避免「改名成功而更新失败」的半改状态
+        if (v.workDir == null || v.workDir.trim().isEmpty()) {
+            error("修改失败", "项目路径不能为空");
+            return;
+        }
         if (!v.workSpaceName.equals(name) && !manager.renameWorkspace(name, v.workSpaceName)) {
             error("重命名失败", "名称非法或已存在");
             return;
         }
-        manager.updateWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir);
+        if (!manager.updateWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
+            error("修改失败", "项目路径不能为空");
+        }
     }
 
     private void doDelete(String name) {

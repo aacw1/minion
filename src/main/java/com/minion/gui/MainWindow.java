@@ -476,13 +476,12 @@ public class MainWindow {
         java.util.List<String> existing = new java.util.ArrayList<String>();
         for (WorkspaceConfig w : manager.workspaces().list()) existing.add(w.workSpaceName);
         WorkspaceFormDialog d = new WorkspaceFormDialog("新建工作空间",
-                "新建工作空间（三个路径均可留空；项目级技能路径下的技能会以 [项目] 标注进入提示词）",
-                null, existing);
+                "新建工作空间", null, existing);
         Optional<WorkspaceConfig> r = d.showAndWait();
         if (!r.isPresent()) return;
         WorkspaceConfig v = r.get();
         if (!manager.addWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
-            Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
+            Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在，或项目路径为空", ButtonType.OK);
             Theme.style(a);
             a.setTitle("新建失败");
             a.showAndWait();

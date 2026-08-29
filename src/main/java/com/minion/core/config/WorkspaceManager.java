@@ -78,10 +78,15 @@ public class WorkspaceManager {
 
     public String currentName() { return currentName; }
 
+    /**
+     * 新建工作空间。false = 名称非法/重名，**或项目路径为空**（workDir 必填：
+     * 它是文件工具与 Bash 的守卫边界，空值会让新空间静默落到软件所在目录）。
+     */
     public boolean add(String name, String workDir, String projectMd, String projectSkillsDir) {
         if (name == null) return false;
         name = name.trim(); // 先 trim 再校验/存储
         if (!isValidName(name, names())) return false;
+        if (trimOrNull(workDir) == null) return false; // 项目路径必填
         workspaces.add(new WorkspaceConfig(name, trimOrNull(workDir), trimOrNull(projectMd),
                 trimOrNull(projectSkillsDir)));
         save();
@@ -111,13 +116,19 @@ public class WorkspaceManager {
         return true;
     }
 
-    public void update(String name, String workDir, String projectMd, String projectSkillsDir) {
+    /**
+     * 覆盖式更新三个路径字段。false = 空间不存在，**或项目路径为空**（必填校验同 add；
+     * 拒绝时不落盘，原配置保持不变）。
+     */
+    public boolean update(String name, String workDir, String projectMd, String projectSkillsDir) {
         WorkspaceConfig w = get(name);
-        if (w == null) return;
+        if (w == null) return false;
+        if (trimOrNull(workDir) == null) return false; // 项目路径必填
         w.workDir = trimOrNull(workDir);
         w.projectMd = trimOrNull(projectMd);
         w.projectSkillsDir = trimOrNull(projectSkillsDir);
         save();
+        return true;
     }
 
     public boolean remove(String name) {

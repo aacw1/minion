@@ -596,16 +596,18 @@ public class SessionManager {
      * setWorkDir 后下一轮工具调用即按新根守卫，无需重启）；projectMd 对新会话生效（运行中会话
      * 的 system prompt 在创建时构建，不热换）。技能放行目录同样按新配置刷新，
      * 但已存活会话的技能快照与提示词不刷新（新会话才用新配置）。
+     * false = 空间不存在或项目路径为空（core 已拒绝，此处不产生任何副作用）。
      */
-    public void updateWorkspace(String name, String workDir, String projectMd, String projectSkillsDir) {
-        workspaces.update(name, workDir, projectMd, projectSkillsDir);
+    public boolean updateWorkspace(String name, String workDir, String projectMd, String projectSkillsDir) {
+        if (!workspaces.update(name, workDir, projectMd, projectSkillsDir)) return false;
         skillCache.remove(name); // 技能目录配置可能已变：空间快照缓存失效，下次解析重扫
         WorkspaceCtx ctx = ctxByName.get(name);
-        if (ctx == null) return;
+        if (ctx == null) return true;
         ctx.workspace.setWorkDir(workDir);
         String abs = projectSkillsDirOf(name);   // 按更新后的配置重新解析
         ctx.workspace.setExtraAllowedDirs(abs == null
                 ? new ArrayList<String>() : java.util.Collections.singletonList(abs));
+        return true;
     }
 
     /**
