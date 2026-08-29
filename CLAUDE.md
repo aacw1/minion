@@ -31,10 +31,10 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
         ├── llm/     DeepSeekClient（SSE 流式，close() 释放 okhttp）、LlmClient 接口（cancel/close 默认空实现）、Message（reasoningContent 原样回传）
         ├── tools/   Tool 接口 + 13 个工具 + ToolRegistry + browser/（CDP 浏览器）、mcp/（McpProxyTool）、SchemaGenerator、ConfirmGate、PathsGuard
         ├── mcp/     MCP 客户端核心：McpManager（状态机/惰性连接/路由）、StdioMcpClient、SseMcpClient、McpStore（mcp.json）、McpServer、JsonRpc
-        ├── skills/  SkillManager（skills/<名>/SKILL.md 自动发现）
+        ├── skills/  SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
         ├── context/ 上下文压缩、token 统计
         ├── storage/ 会话落盘（原子写）
-        └── config/  Config（config.properties）、WorkspaceManager（workspace.json 原子写）、ModelManager（model.json）
+        └── config/  Config（config.properties）、WorkspaceManager（workspace.json 原子写）、ModelManager（model.json）、WorkspacePaths（相对路径按项目路径解析）
 
 ## 扩展点
 
