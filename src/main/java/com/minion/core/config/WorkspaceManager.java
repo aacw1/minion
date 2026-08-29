@@ -40,7 +40,7 @@ public class WorkspaceManager {
             }
         }
         if (!loaded) {
-            m.workspaces.add(new WorkspaceConfig(DEFAULT_NAME, ".", "./project.md"));
+            m.workspaces.add(new WorkspaceConfig(DEFAULT_NAME, ".", "./project.md", null));
             m.currentName = DEFAULT_NAME;
             m.save();
         }
@@ -78,11 +78,12 @@ public class WorkspaceManager {
 
     public String currentName() { return currentName; }
 
-    public boolean add(String name, String workDir, String projectMd) {
+    public boolean add(String name, String workDir, String projectMd, String projectSkillsDir) {
         if (name == null) return false;
         name = name.trim(); // 先 trim 再校验/存储
         if (!isValidName(name, names())) return false;
-        workspaces.add(new WorkspaceConfig(name, workDir, projectMd));
+        workspaces.add(new WorkspaceConfig(name, trimOrNull(workDir), trimOrNull(projectMd),
+                trimOrNull(projectSkillsDir)));
         save();
         return true;
     }
@@ -110,11 +111,12 @@ public class WorkspaceManager {
         return true;
     }
 
-    public void update(String name, String workDir, String projectMd) {
+    public void update(String name, String workDir, String projectMd, String projectSkillsDir) {
         WorkspaceConfig w = get(name);
         if (w == null) return;
-        w.workDir = workDir;
-        w.projectMd = projectMd;
+        w.workDir = trimOrNull(workDir);
+        w.projectMd = trimOrNull(projectMd);
+        w.projectSkillsDir = trimOrNull(projectSkillsDir);
         save();
     }
 
@@ -154,6 +156,13 @@ public class WorkspaceManager {
         List<String> n = new ArrayList<String>();
         for (WorkspaceConfig w : workspaces) n.add(w.workSpaceName);
         return n;
+    }
+
+    /** 空白→null：三个路径字段统一走这里，空白等价未配置 */
+    private static String trimOrNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private List<String> namesExcept(String name) {

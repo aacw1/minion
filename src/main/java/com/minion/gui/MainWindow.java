@@ -545,7 +545,7 @@ public class MainWindow {
         });
         Optional<WorkspaceConfig> r = d.showAndWait();
         if (r.isPresent()) {
-            if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd)) {
+            if (!manager.addWorkspace(r.get().workSpaceName, r.get().workDir, r.get().projectMd, null)) {
                 Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在", ButtonType.OK);
                 Theme.style(a);
                 a.setTitle("新建失败");

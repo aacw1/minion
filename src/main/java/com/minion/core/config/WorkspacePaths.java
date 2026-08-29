@@ -1,0 +1,42 @@
+package com.minion.core.config;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * 工作空间内路径解析：一切相对路径以「该空间项目路径（workDir 绝对化后的值）」为基准。
+ * 刻意不用进程当前目录作基准——那会让多个空间共享同一份 ./project.md，导致提示词跨空间串台。
+ */
+public final class WorkspacePaths {
+
+    /** 绝对化：path 空白→null；绝对→normalize；相对→按 baseDir 拼接后 normalize。baseDir 缺失也不抛。 */
+    public static String resolve(String baseDir, String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        Path p = Paths.get(path.trim());
+        if (p.isAbsolute()) return p.normalize().toString();
+        Path base = Paths.get(baseDir == null || baseDir.trim().isEmpty() ? "." : baseDir.trim())
+                .toAbsolutePath().normalize();
+        return base.resolve(p).normalize().toString();
+    }
+
+    /** 该空间的绝对项目路径（workDir 为空按进程当前目录，与 Workspace 内部口径一致） */
+    public static String workDirAbs(WorkspaceConfig w) {
+        String wd = w == null || w.workDir == null || w.workDir.trim().isEmpty() ? "." : w.workDir.trim();
+        return Paths.get(wd).toAbsolutePath().normalize().toString();
+    }
+
+    /** 项目主说明文件绝对路径；未配置 → <项目路径>/project.md */
+    public static String projectMd(WorkspaceConfig w) {
+        if (w == null) return null;
+        String base = workDirAbs(w);
+        String md = resolve(base, w.projectMd);
+        return md != null ? md : Paths.get(base, "project.md").normalize().toString();
+    }
+
+    /** 项目级技能目录绝对路径；未配置 → null */
+    public static String projectSkillsDir(WorkspaceConfig w) {
+        return w == null ? null : resolve(workDirAbs(w), w.projectSkillsDir);
+    }
+
+    private WorkspacePaths() { }
+}

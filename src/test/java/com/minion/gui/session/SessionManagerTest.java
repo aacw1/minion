@@ -94,8 +94,8 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
-        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
+        ws.add("projB", tmp.newFolder("b").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
@@ -232,7 +232,7 @@ public class SessionManagerTest {
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
-        m.addWorkspace("projX", tmp.newFolder("x").getPath(), "");
+        m.addWorkspace("projX", tmp.newFolder("x").getPath(), "", null);
         m.switchWorkspace("projX");
         SessionHandle h = m.createSession(null);
         assertEquals(1, m.sessions().size());
@@ -245,8 +245,8 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
-        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
+        ws.add("projB", tmp.newFolder("b").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
@@ -321,7 +321,7 @@ public class SessionManagerTest {
         String oldDir = m.currentWorkspaceDir();
         String newDir = tmp.newFolder("new-root").getPath();
 
-        m.updateWorkspace("default", newDir, "");
+        m.updateWorkspace("default", newDir, "", null);
 
         assertEquals(newDir, m.currentWorkspaceDir()); // 共享 workspace 实例已换根
         assertNotEquals(oldDir, m.currentWorkspaceDir());
@@ -333,8 +333,8 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
-        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
+        ws.add("projB", tmp.newFolder("b").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
@@ -419,8 +419,8 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
-        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
+        ws.add("projB", tmp.newFolder("b").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
         m.switchWorkspace("projA");
@@ -524,7 +524,7 @@ public class SessionManagerTest {
     @Test
     public void moveWorkspace_reordersWithoutNotify() throws Exception {
         SessionManager m = newManager();
-        m.addWorkspace("projA", "d:/a", "");
+        m.addWorkspace("projA", "d:/a", "", null);
         final int[] notified = new int[] { 0 };
         m.addListener(new SessionManager.Listener() {
             @Override public void onSessionTitleChanged(SessionHandle h) { }
@@ -756,8 +756,8 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
-        ws.add("projB", tmp.newFolder("b").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
+        ws.add("projB", tmp.newFolder("b").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);
@@ -787,7 +787,7 @@ public class SessionManagerTest {
         Path jar = tmp.newFolder("jar").toPath();
         Config config = Config.load(jar);
         WorkspaceManager ws = WorkspaceManager.load(jar);
-        ws.add("projA", tmp.newFolder("a").getPath(), "");
+        ws.add("projA", tmp.newFolder("a").getPath(), "", null);
         ModelManager models = ModelManager.load(jar);
         SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
                 new ArrayList<Skill>(), null, null);

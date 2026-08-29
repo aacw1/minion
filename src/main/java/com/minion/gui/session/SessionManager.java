@@ -528,8 +528,8 @@ public class SessionManager {
     }
 
     /** 新建工作空间：配置落盘 + 建上下文（不自动切换，用户点击列表项切换）。false=名称非法或重名 */
-    public boolean addWorkspace(String name, String workDir, String projectMd) {
-        if (!workspaces.add(name, workDir, projectMd)) return false;
+    public boolean addWorkspace(String name, String workDir, String projectMd, String projectSkillsDir) {
+        if (!workspaces.add(name, workDir, projectMd, projectSkillsDir)) return false;
         ctxByName.put(name, buildCtx(workspaces.get(name)));
         return true;
     }
@@ -556,8 +556,8 @@ public class SessionManager {
      * setWorkDir 后下一轮工具调用即按新根守卫，无需重启）；projectMd 对新会话生效（运行中会话
      * 的 system prompt 在创建时构建，不热换）。
      */
-    public void updateWorkspace(String name, String workDir, String projectMd) {
-        workspaces.update(name, workDir, projectMd);
+    public void updateWorkspace(String name, String workDir, String projectMd, String projectSkillsDir) {
+        workspaces.update(name, workDir, projectMd, projectSkillsDir);
         WorkspaceCtx ctx = ctxByName.get(name);
         if (ctx != null) ctx.workspace.setWorkDir(workDir);
     }

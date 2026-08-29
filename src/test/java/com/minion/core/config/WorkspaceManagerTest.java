@@ -35,11 +35,11 @@ public class WorkspaceManagerTest {
     @Test
     public void add_rejectsDuplicateAndIllegalNames() throws IOException {
         WorkspaceManager m = WorkspaceManager.load(jarDir());
-        assertTrue(m.add("projA", "d:/a", "./project.md"));
-        assertFalse(m.add("projA", "d:/b", ""));        // 重名
-        assertFalse(m.add("", "d:/b", ""));             // 空名
-        assertFalse(m.add("bad/name", "d:/b", ""));     // 含 / 非法字符
-        assertFalse(m.add("bad:name", "d:/b", ""));     // 含 : 非法字符
+        assertTrue(m.add("projA", "d:/a", "./project.md", null));
+        assertFalse(m.add("projA", "d:/b", "", null));        // 重名
+        assertFalse(m.add("", "d:/b", "", null));             // 空名
+        assertFalse(m.add("bad/name", "d:/b", "", null));     // 含 / 非法字符
+        assertFalse(m.add("bad:name", "d:/b", "", null));     // 含 : 非法字符
         assertEquals(2, m.list().size());
     }
 
@@ -48,7 +48,7 @@ public class WorkspaceManagerTest {
     public void load_restoresPersistedState() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "./p.md");
+        m.add("projA", "d:/a", "./p.md", null);
         m.setCurrent("projA");
         WorkspaceManager m2 = WorkspaceManager.load(dir);
         assertEquals(2, m2.list().size());
@@ -60,7 +60,7 @@ public class WorkspaceManagerTest {
     public void rename_migratesSessionDir() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "");
+        m.add("projA", "d:/a", "", null);
         Files.createDirectories(WorkspaceManager.sessionDirFor(dir, "projA"));
         Files.write(WorkspaceManager.sessionDirFor(dir, "projA").resolve("s1.json"),
                 "{}".getBytes(StandardCharsets.UTF_8));
@@ -76,8 +76,8 @@ public class WorkspaceManagerTest {
     public void rename_rejectsExistingName() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "");
-        m.add("projB", "d:/b", "");
+        m.add("projA", "d:/a", "", null);
+        m.add("projB", "d:/b", "", null);
         assertFalse(m.rename("projA", "projB"));
         assertNotNull(m.get("projA"));
     }
@@ -87,7 +87,7 @@ public class WorkspaceManagerTest {
     public void remove_deletesSessionDir() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "");
+        m.add("projA", "d:/a", "", null);
         Path sdir = WorkspaceManager.sessionDirFor(dir, "projA");
         Files.createDirectories(sdir);
         assertTrue(m.remove("projA"));
@@ -110,7 +110,7 @@ public class WorkspaceManagerTest {
     public void load_currentFallsBackWhenDeleted() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "");
+        m.add("projA", "d:/a", "", null);
         m.setCurrent("projA");
         m.remove("projA");
         WorkspaceManager m2 = WorkspaceManager.load(dir);
@@ -122,7 +122,7 @@ public class WorkspaceManagerTest {
     public void update_persistsWorkDirAndProjectMd() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.update("default", "d:/x", "./x.md");
+        m.update("default", "d:/x", "./x.md", null);
         WorkspaceManager m2 = WorkspaceManager.load(dir);
         assertEquals("d:/x", m2.current().workDir);
         assertEquals("./x.md", m2.current().projectMd);
@@ -149,9 +149,9 @@ public class WorkspaceManagerTest {
     @Test
     public void add_caseInsensitiveDuplicateRejected() throws IOException {
         WorkspaceManager m = WorkspaceManager.load(jarDir());
-        assertTrue(m.add("projA", "d:/a", ""));
-        assertFalse(m.add("ProjA", "d:/b", ""));
-        assertFalse(m.add("PROJA", "d:/c", ""));
+        assertTrue(m.add("projA", "d:/a", "", null));
+        assertFalse(m.add("ProjA", "d:/b", "", null));
+        assertFalse(m.add("PROJA", "d:/c", "", null));
         assertEquals(2, m.list().size());
     }
 
@@ -173,8 +173,8 @@ public class WorkspaceManagerTest {
     public void move_reordersAndPersists() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", "d:/a", "");
-        m.add("projB", "d:/b", "");
+        m.add("projA", "d:/a", "", null);
+        m.add("projB", "d:/b", "", null);
         assertTrue(m.move("default", 2)); // 移到末尾
         assertEquals("projA", m.list().get(0).workSpaceName);
         assertEquals("projB", m.list().get(1).workSpaceName);
@@ -188,11 +188,24 @@ public class WorkspaceManagerTest {
     @Test
     public void move_rejectsInvalidIndexAndMissingName() throws IOException {
         WorkspaceManager m = WorkspaceManager.load(jarDir());
-        m.add("projA", "d:/a", "");
+        m.add("projA", "d:/a", "", null);
         assertFalse(m.move("nope", 0));     // 不存在
         assertFalse(m.move("projA", -1));   // 越界
         assertFalse(m.move("projA", 3));    // 越界
         assertTrue(m.move("projA", 1));     // 同位置
         assertEquals(2, m.list().size());
+    }
+
+    /** 项目级技能路径落盘/回读；四参 update 覆盖三个路径字段 */
+    @Test
+    public void projectSkillsDir_persistsAndUpdateOverwrites() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        assertTrue(m.add("projS", "d:/s", "./project.md", "d:/s/skills"));
+        assertEquals("d:/s/skills", m.get("projS").projectSkillsDir);
+        m.update("projS", "d:/s2", "./README.md", "d:/s2/.skills");
+        WorkspaceConfig w = m.get("projS");
+        assertEquals("d:/s2", w.workDir);
+        assertEquals("./README.md", w.projectMd);
+        assertEquals("d:/s2/.skills", w.projectSkillsDir);
     }
 }

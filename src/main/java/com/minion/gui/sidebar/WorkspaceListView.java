@@ -242,7 +242,7 @@ public class WorkspaceListView extends ListView<String> {
                 return;
             }
         }
-        manager.updateWorkspace(newName, result.get().workDir, result.get().projectMd);
+        manager.updateWorkspace(newName, result.get().workDir, result.get().projectMd, null);
     }
 
     private void doDelete(String name) {
