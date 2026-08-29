@@ -1,5 +1,6 @@
 package com.minion.core.config;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -36,6 +37,20 @@ public final class WorkspacePaths {
     /** 项目级技能目录绝对路径；未配置 → null */
     public static String projectSkillsDir(WorkspaceConfig w) {
         return w == null ? null : resolve(workDirAbs(w), w.projectSkillsDir);
+    }
+
+    /**
+     * 是否指向一个**实际存在的文件夹**：相对路径按 baseDir（null = 进程当前目录，与 workDir 口径一致）
+     * 解析后判断。非法字符（手改配置、乱填）不抛异常，一律判为不可用。
+     * core 的 add/update 与界面校验共用本方法，保证「界面拦得住、API 也绕不过」口径一致。
+     */
+    public static boolean isExistingDir(String rawPath, String baseDir) {
+        if (rawPath == null || rawPath.trim().isEmpty()) return false;
+        try {
+            return Files.isDirectory(Paths.get(resolve(baseDir, rawPath)));
+        } catch (IllegalArgumentException e) { // 含 InvalidPathException
+            return false;
+        }
     }
 
     private WorkspacePaths() { }

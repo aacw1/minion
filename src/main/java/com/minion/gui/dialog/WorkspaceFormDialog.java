@@ -2,10 +2,12 @@ package com.minion.gui.dialog;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.core.config.WorkspacePaths;
 import com.minion.gui.theme.Theme;
 import javafx.beans.binding.Bindings;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
@@ -27,10 +29,10 @@ import java.util.List;
  */
 public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
 
-    /** 标签列变长 + 输入框加宽后的弹窗最小宽度（原 560，输入框显示宽度约翻倍） */
-    private static final double MIN_WIDTH = 920;
-    /** 路径输入框优先宽度（字符数）：JavaFX 默认 12，按要求加宽一倍以上 */
-    private static final int FIELD_PREF_COLUMNS = 38;
+    /** 弹窗最小宽度（随输入框宽度按比例收缩） */
+    private static final double MIN_WIDTH = 620;
+    /** 路径输入框优先宽度（字符数） */
+    private static final int FIELD_PREF_COLUMNS = 25;
 
     /**
      * @param initial       预填值；null = 新建（全空，仅名称与项目路径必填）
@@ -78,7 +80,8 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         workDirErr.setVisible(false);
         grid.add(workDirErr, 1, 5);
 
-        // 必填项：名称合法（非空/无非法字符/不重名）+ 项目路径非空
+        // 必填项：名称合法（非空/无非法字符/不重名）+ 项目路径非空。
+        // 「填了但不是文件夹」不在此禁用——留到点击时弹框说明原因，避免按钮变灰却不知为何
         final Button okBtn = (Button) getDialogPane().lookupButton(ButtonType.OK);
         okBtn.disableProperty().bind(Bindings.createBooleanBinding(
                 () -> !WorkspaceManager.isValidName(name.getText().trim(), existingNames)
@@ -86,16 +89,27 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
                 name.textProperty(), workDir.textProperty()));
         name.textProperty().addListener((o, ov, nv) -> nameErr.setVisible(false));
         workDir.textProperty().addListener((o, ov, nv) -> workDirErr.setVisible(false));
-        // 兜底：正常路径 OK 已禁用，此处防绕过与名称快照过期竞态
+        // 兜底：名称非法/项目路径空走行内红字；两个路径「不是已存在的文件夹」各自弹框提示
         okBtn.addEventFilter(ActionEvent.ACTION, e -> {
             if (!WorkspaceManager.isValidName(name.getText().trim(), existingNames)) {
                 e.consume();
                 nameErr.setText("名称非法或已存在");
                 nameErr.setVisible(true);
-            } else if (workDir.getText().trim().isEmpty()) {
+                return;
+            }
+            if (workDir.getText().trim().isEmpty()) {
                 e.consume();
                 workDirErr.setText("项目路径不能为空");
                 workDirErr.setVisible(true);
+                return;
+            }
+            String bad = notADirectoryMessage("项目路径", workDir.getText(), null);
+            if (bad == null) {
+                bad = notADirectoryMessage("项目级技能路径", skillsDir.getText(), workDir.getText());
+            }
+            if (bad != null) {
+                e.consume();     // 表单保持打开，用户改完可直接再提交
+                alertPathInvalid(bad);
             }
         });
 
@@ -104,6 +118,27 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
             return new WorkspaceConfig(name.getText().trim(), workDir.getText().trim(),
                     projectMd.getText().trim(), skillsDir.getText().trim());
         });
+    }
+
+    /**
+     * 路径不是「已存在的文件夹」时的提示语，合法返回 null。
+     * baseDir 供技能路径的相对写法解析；raw 空白表示未填写——技能路径可选，由调用方决定语义
+     * （项目路径的空值走行内「不能为空」，不进这里）。
+     */
+    private static String notADirectoryMessage(String label, String raw, String baseDir) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        return WorkspacePaths.isExistingDir(raw, baseDir) ? null
+                : label + "必须是已存在的文件夹（该路径不存在，或指向的是文件）：\n" + raw.trim();
+    }
+
+    /** 路径无效提示框：点「确定」后回到表单继续修改（本表单不关闭） */
+    private void alertPathInvalid(String message) {
+        Alert a = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
+        a.setTitle("路径无效");
+        a.setHeaderText(null);
+        Theme.style(a);
+        if (getOwner() != null) a.initOwner(getOwner());
+        a.showAndWait();
     }
 
     /**

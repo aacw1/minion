@@ -481,7 +481,8 @@ public class MainWindow {
         if (!r.isPresent()) return;
         WorkspaceConfig v = r.get();
         if (!manager.addWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
-            Alert a = new Alert(Alert.AlertType.ERROR, "名称非法或已存在，或项目路径为空", ButtonType.OK);
+            Alert a = new Alert(Alert.AlertType.ERROR,
+                    "名称非法或已存在，或项目路径/项目级技能路径不是已存在的文件夹", ButtonType.OK);
             Theme.style(a);
             a.setTitle("新建失败");
             a.showAndWait();

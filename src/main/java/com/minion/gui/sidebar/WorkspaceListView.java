@@ -2,6 +2,7 @@ package com.minion.gui.sidebar;
 
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
+import com.minion.core.config.WorkspacePaths;
 import com.minion.gui.dialog.WorkspaceFormDialog;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionManager;
@@ -153,9 +154,14 @@ public class WorkspaceListView extends ListView<String> {
         Optional<WorkspaceConfig> r = d.showAndWait();
         if (!r.isPresent()) return;
         WorkspaceConfig v = r.get();
-        // 项目路径必填：core 也会拒绝，此处先拦，避免「改名成功而更新失败」的半改状态
-        if (v.workDir == null || v.workDir.trim().isEmpty()) {
-            error("修改失败", "项目路径不能为空");
+        // 提交前统一校验两个路径（core 同样会拒绝）：先校验再改名，避免「改名成功而更新失败」的半改状态
+        if (!WorkspacePaths.isExistingDir(v.workDir, null)) {
+            error("修改失败", "项目路径必须是已存在的文件夹（不能为空）");
+            return;
+        }
+        if (v.projectSkillsDir != null && !v.projectSkillsDir.trim().isEmpty()
+                && !WorkspacePaths.isExistingDir(v.projectSkillsDir, v.workDir)) {
+            error("修改失败", "项目级技能路径必须是已存在的文件夹");
             return;
         }
         if (!v.workSpaceName.equals(name) && !manager.renameWorkspace(name, v.workSpaceName)) {
@@ -163,7 +169,7 @@ public class WorkspaceListView extends ListView<String> {
             return;
         }
         if (!manager.updateWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
-            error("修改失败", "项目路径不能为空");
+            error("修改失败", "项目路径或项目级技能路径不是已存在的文件夹");
         }
     }
 

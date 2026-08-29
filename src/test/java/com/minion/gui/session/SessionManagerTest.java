@@ -524,7 +524,8 @@ public class SessionManagerTest {
     @Test
     public void moveWorkspace_reordersWithoutNotify() throws Exception {
         SessionManager m = newManager();
-        m.addWorkspace("projA", "d:/a", "", null);
+        // 项目路径必须是已存在文件夹（core 校验），用真实临时目录
+        m.addWorkspace("projA", tmp.newFolder("projA-workdir").getAbsolutePath(), "", null);
         final int[] notified = new int[] { 0 };
         m.addListener(new SessionManager.Listener() {
             @Override public void onSessionTitleChanged(SessionHandle h) { }

@@ -72,4 +72,19 @@ public class WorkspacePathsTest {
                 Paths.get("Z:/definitely-missing-dir").toString(), "./skills");
         assertTrue(v.endsWith("skills"));
     }
+
+    /** isExistingDir：真实目录才为 true——不存在路径、普通文件、非法字符、空白全为 false 且不抛 */
+    @Test
+    public void isExistingDir_requiresRealDirectory() throws Exception {
+        String proj = tmp.newFolder("dirProbe").getCanonicalPath();
+        assertTrue(WorkspacePaths.isExistingDir(proj, null));               // 绝对路径
+        java.nio.file.Files.createDirectory(Paths.get(proj, "sub"));
+        assertTrue(WorkspacePaths.isExistingDir("./sub", proj));            // 相对按 base 解析
+        new java.io.File(proj, "afile.txt").createNewFile();
+        assertFalse(WorkspacePaths.isExistingDir("./afile.txt", proj));     // 指向文件
+        assertFalse(WorkspacePaths.isExistingDir("./nope", proj));          // 不存在
+        assertFalse(WorkspacePaths.isExistingDir("   ", proj));             // 空白
+        assertFalse(WorkspacePaths.isExistingDir(null, proj));              // null
+        assertFalse(WorkspacePaths.isExistingDir("bad\u0000name", proj));   // 非法字符不抛
+    }
 }
