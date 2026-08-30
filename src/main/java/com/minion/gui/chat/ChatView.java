@@ -1,6 +1,5 @@
 package com.minion.gui.chat;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.gui.icon.IconFactory;
@@ -196,7 +195,11 @@ public class ChatView extends VBox {
                 break;
             case TOOL_CALL: {
                 if ("AskUserQuestion".equals(e.text)) {
-                    appendCollapsible("【工具】", "log-tool", questionSummary(), askQuestionOf(e.data));
+                    // 提问段无视长度阈值恒展开（长选项被折叠 = 「看不见提问内容」的第二类成因）
+                    String askBody = askQuestionOf(e.data);
+                    appendCollapsible("【工具】", "log-tool",
+                            statusSummary(IconFactory.help(), askSummaryText(e.data)),
+                            askBody, StreamKind.NONE, askExpanded(askBody));
                 } else {
                     appendCollapsible("【工具】", "log-tool",
                             toolSummary(toolCallSummary(e.text, e.data)), toolCallBody(e.text, e.data));
@@ -209,7 +212,7 @@ public class ChatView extends VBox {
                 appendCollapsible(ok ? "【工具】" : "【系统】", ok ? "log-tool" : "log-error",
                         statusSummary(ok ? IconFactory.success() : IconFactory.error(),
                                 e.text + (ok ? " 成功" : " 失败")),
-                        toolResultBody(data));
+                        toolResultBody(e.text, data));
                 break;
             }
             case ERROR:
@@ -283,12 +286,18 @@ public class ChatView extends VBox {
 
     /** 追加可折叠段（Node 摘要：图标+文本组合行）；正文为空则只渲染摘要行 */
     private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text) {
-        appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE);
+        appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE, false);
     }
 
     /** 追加可折叠段（含流式身份）：THINK 流式段未知最终长度，先默认展开，定稿时按长度折叠 */
     private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
                                    StreamKind kind) {
+        appendCollapsible(tagText, tagColorClass, summary, text, kind, false);
+    }
+
+    /** forcedExpanded=true：无视长度阈值默认展开（提问段——折叠成一行即「看不见提问内容」） */
+    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
+                                   StreamKind kind, boolean forcedExpanded) {
         if (text == null || text.trim().isEmpty()) {
             // 无正文（子任务行/统计行）：CollapsibleText 空内容 → 只渲染摘要行
             if (empty) {
@@ -306,7 +315,7 @@ public class ChatView extends VBox {
             getChildren().clear();
             empty = false;
         }
-        boolean expanded = kind == StreamKind.THINK ? true : defaultExpanded(text);
+        boolean expanded = forcedExpanded || kind == StreamKind.THINK ? true : defaultExpanded(text);
         Seg seg = new Seg(tagText, tagColorClass, summary, text, expanded, kind);
         attachFocusGovernance(seg);
         segs.add(seg);
@@ -415,11 +424,6 @@ public class ChatView extends VBox {
         return box;
     }
 
-    /** 提问摘要行：问号图标 + 文案（原 "❓ 模型向你提问"） */
-    private static Node questionSummary() {
-        return statusSummary(IconFactory.help(), "模型向你提问");
-    }
-
     /** 工具调用摘要行：扳手图标 + 纯文本摘要（原 "⛭ " 前缀） */
     private static Node toolSummary(String text) {
         return statusSummary(IconFactory.build(), text);
@@ -432,6 +436,15 @@ public class ChatView extends VBox {
         if (data.startsWith("ok\n")) return data.substring(3);
         if (data.startsWith("error:")) return data.substring("error:".length());
         return "";
+    }
+
+    /** 带工具名的正文判定：AskUserQuestion 的回答已由 onAskUserDone 投递 USER_SUPPLEMENT
+     *  （【输入】段）渲染，成功态再渲染一遍会让同一段回答出现两次 → 只留状态摘要行；
+     *  失败态（空参数快速失败等）无其他渲染路径，正文必须原样显示
+     *  （package-private 供单测） */
+    static String toolResultBody(String name, String data) {
+        if ("AskUserQuestion".equals(name) && data != null && data.startsWith("ok")) return "";
+        return toolResultBody(data);
     }
 
     /**
@@ -466,32 +479,35 @@ public class ChatView extends VBox {
         String thinking() { return thinking.toString(); }
     }
 
-    /** AskUserQuestion 工具调用参数 → 展示文本：问题 + 选项列表（解析失败回空串；package-private 供单测） */
+    /** 提问段强制展开上限：超此长度仍折叠（异常超长兜底原文防爆屏） */
+    static final int ASK_FORCE_EXPAND_MAX = 4000;
+
+    /** AskUserQuestion 工具调用参数 → 展示正文。委托 core AskUserQuestionTool.normalize：
+     *  容错提取（键名写错/数组退化成字符串/标签泄漏吞掉 question）+ 提不出内容时回退原始参数，
+     *  永不产出空白（旧实现在此静默 return "" → 消息区只剩「模型向你提问」一行，用户无从作答）。
+     *  package-private 供单测 */
     static String askQuestionOf(Object data) {
-        try {
-            JsonObject o = JsonParser.parseString(data == null ? "{}" : data.toString())
-                    .getAsJsonObject();
-            StringBuilder sb = new StringBuilder();
-            if (o.has("question") && !o.get("question").isJsonNull()) {
-                sb.append(o.get("question").getAsString());
-            }
-            // options 逐项渲染 "[N] label — description"（每项一行；description 缺失只显示 label）
-            if (o.has("options") && o.get("options").isJsonArray()) {
-                JsonArray arr = o.getAsJsonArray("options");
-                for (int i = 0; i < arr.size(); i++) {
-                    if (!arr.get(i).isJsonObject()) continue; // 非对象元素跳过（畸形参数防御）
-                    JsonObject opt = arr.get(i).getAsJsonObject();
-                    String label = opt.has("label") && !opt.get("label").isJsonNull()
-                            ? opt.get("label").getAsString() : "";
-                    String desc = opt.has("description") && !opt.get("description").isJsonNull()
-                            ? opt.get("description").getAsString() : "";
-                    sb.append('\n').append('[').append(i + 1).append("] ").append(label);
-                    if (!desc.isEmpty()) sb.append(" — ").append(desc);
-                }
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
+        return com.minion.core.tools.AskUserQuestionTool
+                .normalize(data == null ? "{}" : data.toString()).renderText();
+    }
+
+    /** 提问摘要行文本：「模型向你提问」+ header（header 是模型给的问题主题，此前从未渲染；超 20 字截断） */
+    static String askSummaryText(Object data) {
+        com.minion.core.tools.AskUserQuestionTool.Ask ask =
+                com.minion.core.tools.AskUserQuestionTool
+                        .normalize(data == null ? "{}" : data.toString());
+        String header = ask.header;
+        if (header == null || header.trim().isEmpty()) return "模型向你提问";
+        String h = header.trim();
+        // 只有 header 的畸形提问：normalize 已把 header 当问题正文，摘要再带一遍就重复两行
+        if (ask.question != null && h.equals(ask.question.trim())) return "模型向你提问";
+        if (h.length() > 20) h = h.substring(0, 20) + "…";
+        return "模型向你提问 · " + h;
+    }
+
+    /** 提问段默认展开判定：无视 COLLAPSE_THRESHOLD（3 个长 description 的选项轻易超 500 字被折叠，
+     *  即「看不见提问内容」的第二类成因），仅超 ASK_FORCE_EXPAND_MAX 才折叠（package-private 供单测） */
+    static boolean askExpanded(String body) {
+        return body == null || body.length() < ASK_FORCE_EXPAND_MAX;
     }
 }

@@ -77,6 +77,30 @@ public class ChatViewToolBodyTest {
         assertEquals("", ChatView.toolResultBody(null));
     }
 
+    // ---- toolResultBody(name, data)：AskUserQuestion 回答去重 ----
+    // 回答已由 SessionController.onAskUserDone 投递 USER_SUPPLEMENT（【输入】段）渲染，
+    // TOOL_RESULT 再渲染一遍 → 同一段文本在消息区出现两次
+
+    @Test
+    public void toolResultBody_askUserQuestion_suppressed() {
+        assertEquals("回答已由【输入】段渲染，不得重复",
+                "", ChatView.toolResultBody("AskUserQuestion", "ok\n方案B"));
+        assertEquals("", ChatView.toolResultBody("AskUserQuestion", "ok"));
+    }
+
+    /** 去重只针对成功态：失败原因（如空参数快速失败）没有任何其他渲染路径，吞掉即用户与模型都看不到 */
+    @Test
+    public void toolResultBody_askUserQuestion_failureStillShown() {
+        assertEquals("AskUserQuestion 缺少问题内容",
+                ChatView.toolResultBody("AskUserQuestion", "error:AskUserQuestion 缺少问题内容"));
+    }
+
+    @Test
+    public void toolResultBody_otherTool_unchanged() {
+        assertEquals("line1", ChatView.toolResultBody("Read", "ok\nline1"));
+        assertEquals("坏了", ChatView.toolResultBody("AskUserQuestionLike", "error:坏了"));
+    }
+
     // ---- defaultExpanded（折叠语义：长内容默认折叠、短内容默认展开）----
 
     @Test

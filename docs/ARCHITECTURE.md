@@ -38,7 +38,7 @@ com.minion
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停重命名/删除、工作空间项悬停修改/删除（重命名并入修改弹窗）；当前工作空间名称右侧主色圆点标记（SVG）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
-| chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读） |
+| chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读）；AskUserQuestion 提问渲染委托 core `AskUserQuestionTool.normalize`（键名写错/数组退化成字符串/参数标记吞正文皆可救回，永不产出空白），摘要行带 header，提问段无视 500 字折叠阈值恒展开（超 4000 才折叠），`toolResultBody(name,data)` 对 AskUserQuestion 成功态抑制正文（回答已由【输入】段渲染，失败态仍显示） |
 | input/InputView | 输入区 0.618 黄金比例宽居中大框（占正文面板宽 61.8%，上=块行+输入框、下=底部操作行：上传按钮左+发送按钮右，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层/终止运行；键盘经 capture 过滤器处理（弹层 ↑↓/Enter/Tab 选择优先于 TextArea 默认行为）；按钮状态机（提问挂起空输入=变淡回答箭头），发送/补充/回答/终止统一 btn-danger 红底；回形针上传按钮（FileChooser 选图→5MB/3 张校验→base64 建 IMAGE 块），带图消息跳过斜杠命令直发 send，回答模式带图拦截提示；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标）：触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间文件遍历 10 秒缓存）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
@@ -49,7 +49,7 @@ com.minion
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
-| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
+| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记（内容以 `AskUserQuestionTool.INVALID_PREFIX` 开头的失败输出不重演为回答，避免伪装成用户发言）、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
 | session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态半屏容差 eps=0.5×视口高/可滚动行程，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
 | WheelScrollAccelerator | 正文消息区滚轮加速：ScrollEvent 过滤器把滚轮增量换算为固定像素（每格 100px，Windows WHEEL_DELTA=40 基准，平滑滚轮小数增量连续换算），setVvalue + consume 阻止皮肤默认比例滚动；Ctrl/Shift 修饰或无滚动行程放行皮肤；MainWindow 构造 chatScroll 后 attach 一次（换 content 无需重挂） |

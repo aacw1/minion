@@ -251,6 +251,18 @@ public class SessionControllerTest {
         assertEquals("ok\n用户回答文本", evs.get(1).data);
     }
 
+    /** 历史 AskUserQuestion 失败输出（空参数快速失败）不得被当成用户回答重演成【输入】行：
+     *  历史 TOOL 消息无成败标记，只能靠约定的失败前缀识别 */
+    @Test
+    public void replayHistory_askUserQuestion_invalidCallFailure_notReplayedAsAnswer() {
+        String reason = com.minion.core.tools.AskUserQuestionTool.INVALID_PREFIX
+                + "必须提供非空 question，请重新发起提问";
+        List<Ev> evs = replay(Message.toolResult("id5", "AskUserQuestion", reason));
+        assertEquals("失败原因只应有一行工具结果，不得多出回答行", 1, evs.size());
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(0).kind);
+        assertTrue("失败原因仍要完整可见", ((String) evs.get(0).data).contains("必须提供非空 question"));
+    }
+
     /** 历史 TOOL 消息内容为空：统一成功态且不产生多余换行（data="ok"） */
     @Test
     public void replayHistory_toolMessage_emptyContent_okOnly() {

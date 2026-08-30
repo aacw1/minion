@@ -6,6 +6,7 @@ import com.minion.core.agent.RetryProgress;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.Message;
 import com.minion.core.llm.ToolCall;
+import com.minion.core.tools.AskUserQuestionTool;
 import com.minion.core.tools.ToolResult;
 
 import java.util.List;
@@ -76,8 +77,11 @@ public class SessionController implements AgentUi {
                 }
             } else if (m.role == Message.Role.TOOL && m.name != null) {
                 // AskUserQuestion 的回答存于 TOOL 消息 output：先重演回答行（USER_SUPPLEMENT【输入】段）
-                // 再 ✅ 行，恢复会话后提问与回答成对显示、顺序与运行时一致
-                if ("AskUserQuestion".equals(m.name) && m.content != null && !m.content.trim().isEmpty()) {
+                // 再 ✅ 行，恢复会话后提问与回答成对显示、顺序与运行时一致。
+                // 例外：带 INVALID_PREFIX 的是「提不出提问内容」的失败输出（历史无成败标记），
+                // 不能当成用户回答重演，只在 ✅ 行显示原因
+                if ("AskUserQuestion".equals(m.name) && m.content != null && !m.content.trim().isEmpty()
+                        && !m.content.startsWith(AskUserQuestionTool.INVALID_PREFIX)) {
                     events.add(new EventList.Ev(EventList.Kind.USER_SUPPLEMENT, m.content, null));
                 }
                 // 历史 TOOL 消息无成败标记（只存 output），统一按成功态重演，携带完整输出
