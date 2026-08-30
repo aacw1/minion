@@ -40,7 +40,8 @@ public class WorkspaceManager {
             }
         }
         if (!loaded) {
-            m.workspaces.add(new WorkspaceConfig(DEFAULT_NAME, ".", "./project.md", null));
+            // 主说明文件留空（null = 不使用）：不预置 ./project.md 这种可能不存在的路径
+            m.workspaces.add(new WorkspaceConfig(DEFAULT_NAME, ".", null, null));
             m.currentName = DEFAULT_NAME;
             m.save();
         }
@@ -79,8 +80,9 @@ public class WorkspaceManager {
     public String currentName() { return currentName; }
 
     /**
-     * 新建工作空间。false = 名称非法/重名，或项目路径不合法（**必填且必须是已存在的文件夹**：
-     * 它是文件工具与 Bash 的守卫边界，空值或指向文件/不存在路径都会让空间不可用）。
+     * 新建工作空间。false = 名称非法/重名，或路径不合法（校验见 {@link #pathsUsable}：
+     * 项目路径**必填且必须是已存在的文件夹**——它是文件工具与 Bash 的守卫边界；
+     * 主说明文件可选，填了必须是已存在的文件；技能路径可选，填了必须是文件夹）。
      */
     public boolean add(String name, String workDir, String projectMd, String projectSkillsDir) {
         if (name == null) return false;
@@ -94,9 +96,15 @@ public class WorkspaceManager {
         return true;
     }
 
-    /** 路径字段合法性：项目路径必须是已存在文件夹；项目级技能路径可选，填了也必须是文件夹 */
+    /**
+     * 路径字段合法性：项目路径必须是已存在文件夹；主说明文件可选，填了必须是**已存在的文件**
+     * （指向文件夹或不存在都让提示词静默失效，宁可拒绝）；项目级技能路径可选，填了也必须是文件夹。
+     */
     private static boolean pathsUsable(WorkspaceConfig c) {
         if (!WorkspacePaths.isExistingDir(c.workDir, null)) return false;
+        if (c.projectMd != null && !WorkspacePaths.isExistingFile(c.projectMd, WorkspacePaths.workDirAbs(c))) {
+            return false;
+        }
         return c.projectSkillsDir == null
                 || WorkspacePaths.isExistingDir(c.projectSkillsDir, WorkspacePaths.workDirAbs(c));
     }
@@ -125,8 +133,9 @@ public class WorkspaceManager {
     }
 
     /**
-     * 覆盖式更新三个路径字段。false = 空间不存在，或路径不合法（校验同 {@link #add}：
-     * 项目路径必须是已存在文件夹，技能路径填了也必须是文件夹）；拒绝时不落盘，原配置不变。
+     * 覆盖式更新三个路径字段。false = 空间不存在，或路径不合法（校验同 {@link #pathsUsable}：
+     * 项目路径必须是已存在文件夹，主说明文件填了必须是已存在文件，技能路径填了也必须是文件夹）；
+     * 拒绝时不落盘，原配置不变。
      */
     public boolean update(String name, String workDir, String projectMd, String projectSkillsDir) {
         WorkspaceConfig w = get(name);

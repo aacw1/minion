@@ -96,6 +96,7 @@ public class SystemPromptBuilder {
     }
 
     static String loadProjectMd(String path) {
+        if (path == null || path.trim().isEmpty()) return ""; // 未配置主说明文件：整段不注入
         try {
             Path p = Paths.get(path);
             if (Files.exists(p) && Files.isRegularFile(p)) {

@@ -50,9 +50,9 @@ public class WorkspacePathsTest {
         assertNull(WorkspacePaths.resolve(projA, "   "));
     }
 
-    /** projectMd 配置为相对写法时按项目路径解析；未配置（null/空）回落 <项目路径>/project.md */
+    /** projectMd 配置为相对写法时按项目路径解析；未配置（null/空）= 不使用主说明文件，返回 null */
     @Test
-    public void projectMd_resolvesAndFallsBack() throws Exception {
+    public void projectMd_resolvesOrReturnsNull() throws Exception {
         initDirs();
         WorkspaceConfig w = new WorkspaceConfig("a", projA, "./doc.md", "./skills");
         assertEquals(Paths.get(projA, "doc.md").toAbsolutePath().normalize().toString(),
@@ -60,8 +60,10 @@ public class WorkspacePathsTest {
         assertEquals(Paths.get(projA, "skills").toAbsolutePath().normalize().toString(),
                 WorkspacePaths.projectSkillsDir(w));
         WorkspaceConfig def = new WorkspaceConfig("b", projB, null, null);
-        assertEquals(Paths.get(projB, "project.md").toAbsolutePath().normalize().toString(),
+        assertNull("留空即不注入主说明文件（不再隐式回落 <项目路径>/project.md）",
                 WorkspacePaths.projectMd(def));
+        WorkspaceConfig blank = new WorkspaceConfig("c", projB, "   ", null);
+        assertNull(WorkspacePaths.projectMd(blank));
         assertNull(WorkspacePaths.projectSkillsDir(def));
     }
 
@@ -86,5 +88,20 @@ public class WorkspacePathsTest {
         assertFalse(WorkspacePaths.isExistingDir("   ", proj));             // 空白
         assertFalse(WorkspacePaths.isExistingDir(null, proj));              // null
         assertFalse(WorkspacePaths.isExistingDir("bad\u0000name", proj));   // 非法字符不抛
+    }
+
+    /** isExistingFile：真实文件才为 true——目录、不存在路径、非法字符、空白全为 false 且不抛 */
+    @Test
+    public void isExistingFile_requiresRealFile() throws Exception {
+        String proj = tmp.newFolder("fileProbe").getCanonicalPath();
+        new java.io.File(proj, "CLAUDE.md").createNewFile();
+        assertTrue(WorkspacePaths.isExistingFile(new java.io.File(proj, "CLAUDE.md").getAbsolutePath(), null));
+        assertTrue(WorkspacePaths.isExistingFile("./CLAUDE.md", proj));       // 相对按 base 解析
+        java.nio.file.Files.createDirectory(Paths.get(proj, "docs"));
+        assertFalse(WorkspacePaths.isExistingFile("./docs", proj));           // 指向文件夹
+        assertFalse(WorkspacePaths.isExistingFile("./nope.md", proj));        // 不存在
+        assertFalse(WorkspacePaths.isExistingFile("   ", proj));              // 空白
+        assertFalse(WorkspacePaths.isExistingFile(null, proj));               // null
+        assertFalse(WorkspacePaths.isExistingFile("bad\u0000name", proj));    // 非法字符不抛
     }
 }

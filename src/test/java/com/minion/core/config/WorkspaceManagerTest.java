@@ -40,6 +40,16 @@ public class WorkspaceManagerTest {
         return f.getAbsolutePath();
     }
 
+    /** 在真实目录下造一个确实存在的文件，返回「./文件名」相对写法（主说明文件校验用） */
+    private String mdIn(String parentDir, String name) throws IOException {
+        File f = new File(parentDir, name);
+        if (!f.getParentFile().exists() && !f.getParentFile().mkdirs()) {
+            throw new IOException("无法创建目录: " + f.getParentFile());
+        }
+        if (!f.exists() && !f.createNewFile()) throw new IOException("无法创建文件: " + f);
+        return "./" + name;
+    }
+
     /** 无文件时生成默认工作空间并落盘 */
     @Test
     public void load_createsDefaultWorkspace() throws IOException {
@@ -55,7 +65,8 @@ public class WorkspaceManagerTest {
     @Test
     public void add_rejectsDuplicateAndIllegalNames() throws IOException {
         WorkspaceManager m = WorkspaceManager.load(jarDir());
-        assertTrue(m.add("projA", dir("a"), "./project.md", null));
+        String a = dir("a");
+        assertTrue(m.add("projA", a, mdIn(a, "project.md"), null));
         assertFalse(m.add("projA", dir("b"), "", null));        // 重名
         assertFalse(m.add("", dir("b"), "", null));             // 空名
         assertFalse(m.add("bad/name", dir("b"), "", null));     // 含 / 非法字符
@@ -68,7 +79,8 @@ public class WorkspaceManagerTest {
     public void load_restoresPersistedState() throws IOException {
         Path dir = jarDir();
         WorkspaceManager m = WorkspaceManager.load(dir);
-        m.add("projA", dir("a"), "./p.md", null);
+        String a = dir("a");
+        m.add("projA", a, mdIn(a, "p.md"), null);
         m.setCurrent("projA");
         WorkspaceManager m2 = WorkspaceManager.load(dir);
         assertEquals(2, m2.list().size());
@@ -143,7 +155,7 @@ public class WorkspaceManagerTest {
         Path dir = jarDir();
         String x = dir("x");
         WorkspaceManager m = WorkspaceManager.load(dir);
-        assertTrue(m.update("default", x, "./x.md", null));
+        assertTrue(m.update("default", x, mdIn(x, "x.md"), null));
         WorkspaceManager m2 = WorkspaceManager.load(dir);
         assertEquals(x, m2.current().workDir);
         assertEquals("./x.md", m2.current().projectMd);
@@ -223,9 +235,9 @@ public class WorkspaceManagerTest {
         String s1 = dir("s1");
         String s2 = dir("s2");
         WorkspaceManager m = WorkspaceManager.load(jarDir());
-        assertTrue(m.add("projS", s1, "./project.md", sub(s1, "skills")));
+        assertTrue(m.add("projS", s1, mdIn(s1, "project.md"), sub(s1, "skills")));
         assertEquals(s1 + File.separator + "skills", m.get("projS").projectSkillsDir);
-        m.update("projS", s2, "./README.md", sub(s2, ".skills"));
+        m.update("projS", s2, mdIn(s2, "README.md"), sub(s2, ".skills"));
         WorkspaceConfig w = m.get("projS");
         assertEquals(s2, w.workDir);
         assertEquals("./README.md", w.projectMd);
@@ -243,7 +255,7 @@ public class WorkspaceManagerTest {
 
         String x = dir("x");
         String xSkills = sub(x, "skills");
-        assertTrue(m.add("hasDir", x, "./project.md", xSkills));
+        assertTrue(m.add("hasDir", x, mdIn(x, "project.md"), xSkills));
         assertFalse(m.update("hasDir", "", "./project.md", xSkills));
         WorkspaceConfig w = m.get("hasDir");
         assertEquals(x, w.workDir);                   // 原值未被清空
@@ -296,5 +308,54 @@ public class WorkspaceManagerTest {
         assertTrue(new File(root, "skills").mkdirs());
         assertTrue(m.add("rel2", root, "", "./skills"));        // 解析为 <proj>/skills → 通过
         assertEquals("./skills", m.get("rel2").projectSkillsDir);
+    }
+
+    /** 首次启动生成的 default 空间：主说明文件留空（不预置 ./project.md 假路径） */
+    @Test
+    public void load_defaultWorkspace_leavesProjectMdBlank() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        assertNull(m.get("default").projectMd);
+        WorkspaceManager m2 = WorkspaceManager.load(jarDir2()); // 重载走落盘回读，同样为空
+        assertNull(m2.get("default").projectMd);
+    }
+
+    /**
+     * 主说明文件填了才校验：必须是**已存在的文件**。
+     * 指向不存在的文件、指向文件夹 → add/update 一律拒绝且不落盘；留空合法（表示不使用主说明文件）。
+     */
+    @Test
+    public void projectMd_mustBeExistingFile() throws IOException {
+        WorkspaceManager m = WorkspaceManager.load(jarDir());
+        String root = dir("mdproj");
+
+        // 留空（含纯空格）合法：表示不使用主说明文件
+        assertTrue(m.add("blank", root, "   ", null));
+        assertNull(m.get("blank").projectMd);
+
+        // 指向不存在的文件 → 拒绝且不落盘
+        assertFalse(m.add("missingMd", root, "./no-such.md", null));
+        assertNull(m.get("missingMd"));
+
+        // 指向文件夹 → 拒绝
+        assertTrue(new File(root, "docs").mkdirs());
+        assertFalse(m.add("dirMd", root, "./docs", null));
+        assertNull(m.get("dirMd"));
+
+        // 指向真实文件 → 通过；相对写法按该空间项目路径解析，落盘存原样写法
+        assertTrue(new File(root, "CLAUDE.md").createNewFile());
+        assertTrue(m.add("okMd", root, "./CLAUDE.md", null));
+        assertEquals("./CLAUDE.md", m.get("okMd").projectMd);
+
+        // update 同口径：改为文件夹/不存在路径 → 拒绝且原值不变；清空 → 合法
+        assertFalse(m.update("okMd", root, "./docs", null));
+        assertFalse(m.update("okMd", root, "./gone.md", null));
+        assertEquals("./CLAUDE.md", m.get("okMd").projectMd);
+        assertTrue(m.update("okMd", root, "", null));
+        assertNull(m.get("okMd").projectMd);
+    }
+
+    /** 造一个独立的 jar 目录（避免与 jarDir() 用例互相回读） */
+    private Path jarDir2() throws IOException {
+        return tmp.newFolder("jar2").toPath();
     }
 }

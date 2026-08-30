@@ -79,4 +79,25 @@ public class SystemPromptBuilderTest {
         assertFalse(p.contains("=== 可用技能 ==="));
         assertFalse(p.contains("项目级技能目录:"));
     }
+
+    /**
+     * 主说明文件未配置（null/空白）：不抛 NPE、不注入「项目介绍」段；
+     * 只有指向真实文件时才注入（留空即彻底不用主说明文件，不再隐式回落 <项目路径>/project.md）。
+     */
+    @Test
+    public void build_projectMdSection_followsConfig() throws Exception {
+        assertFalse("projectMd 为 null 不得抛 NPE",
+                new SystemPromptBuilder(null, "C:/work").build(Collections.<com.minion.core.skills.Skill>emptyList())
+                        .contains("=== 项目介绍 ==="));
+        assertFalse(new SystemPromptBuilder("   ", "C:/work")
+                .build(Collections.<com.minion.core.skills.Skill>emptyList()).contains("=== 项目介绍 ==="));
+
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("mdcase");
+        java.nio.file.Path md = dir.resolve("CLAUDE.md");
+        java.nio.file.Files.write(md, "中文注释约定".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String p = new SystemPromptBuilder(md.toString(), dir.toString())
+                .build(Collections.<com.minion.core.skills.Skill>emptyList());
+        assertTrue(p.contains("=== 项目介绍 ==="));
+        assertTrue(p.contains("中文注释约定"));
+    }
 }

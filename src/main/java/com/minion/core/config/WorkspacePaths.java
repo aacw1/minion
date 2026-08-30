@@ -26,12 +26,14 @@ public final class WorkspacePaths {
         return Paths.get(wd).toAbsolutePath().normalize().toString();
     }
 
-    /** 项目主说明文件绝对路径；未配置 → <项目路径>/project.md */
+    /**
+     * 项目主说明文件绝对路径；**未配置（null/空白）返回 null = 不使用主说明文件**。
+     * 旧行为是回落 <项目路径>/project.md，会让「留空」在界面上看不出差别、
+     * 又让 core 无法校验（不存在的兜底路径照样发给读文件处），故取消回落。
+     */
     public static String projectMd(WorkspaceConfig w) {
         if (w == null) return null;
-        String base = workDirAbs(w);
-        String md = resolve(base, w.projectMd);
-        return md != null ? md : Paths.get(base, "project.md").normalize().toString();
+        return resolve(workDirAbs(w), w.projectMd);
     }
 
     /** 项目级技能目录绝对路径；未配置 → null */
@@ -48,6 +50,19 @@ public final class WorkspacePaths {
         if (rawPath == null || rawPath.trim().isEmpty()) return false;
         try {
             return Files.isDirectory(Paths.get(resolve(baseDir, rawPath)));
+        } catch (IllegalArgumentException e) { // 含 InvalidPathException
+            return false;
+        }
+    }
+
+    /**
+     * 是否指向一个**实际存在的普通文件**（主说明文件用）：解析与容错口径同
+     * {@link #isExistingDir}——空白/不存在/指向文件夹/非法字符一律 false，不抛异常。
+     */
+    public static boolean isExistingFile(String rawPath, String baseDir) {
+        if (rawPath == null || rawPath.trim().isEmpty()) return false;
+        try {
+            return Files.isRegularFile(Paths.get(resolve(baseDir, rawPath)));
         } catch (IllegalArgumentException e) { // 含 InvalidPathException
             return false;
         }

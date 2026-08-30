@@ -62,7 +62,7 @@ com.minion
 | SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集，但不注册 task 工具（防无限递归）；无轮数/输出上限 |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
-| SystemPromptBuilder | system prompt 组装：内置提示词 → project.md → 技能列表 → 已加载技能 |
+| SystemPromptBuilder | system prompt 组装：内置提示词 → 项目主说明文件（未配置则整段不注入）→ 技能列表 → 已加载技能 |
 | StatsLine | 统计行格式化：耗时 · in/out/thinking（UsageTracker 会话累计）· ctx 上下文占比（"⏱ " 前缀由 GUI 渲染层剥离为计时器图标）；formatTokens 缩写（<1000 原样/整千 "900k"/≥10 万整 k/其余 "7.8k"） |
 
 ### core/llm/

@@ -482,7 +482,9 @@ public class MainWindow {
         WorkspaceConfig v = r.get();
         if (!manager.addWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
             Alert a = new Alert(Alert.AlertType.ERROR,
-                    "名称非法或已存在，或项目路径/项目级技能路径不是已存在的文件夹", ButtonType.OK);
+                    "名称非法或已存在；或路径不合法：项目路径须为已存在文件夹、"
+                            + "主说明文件须为已存在文件、技能路径须为已存在文件夹"
+                            + "（后两项留空视为合法）", ButtonType.OK);
             Theme.style(a);
             a.setTitle("新建失败");
             a.showAndWait();

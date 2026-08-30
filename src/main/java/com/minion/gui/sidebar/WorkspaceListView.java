@@ -164,12 +164,18 @@ public class WorkspaceListView extends ListView<String> {
             error("修改失败", "项目级技能路径必须是已存在的文件夹");
             return;
         }
+        if (v.projectMd != null && !v.projectMd.trim().isEmpty()
+                && !WorkspacePaths.isExistingFile(v.projectMd, v.workDir)) {
+            error("修改失败", "项目主说明文件必须是已存在的文件（不能是文件夹或不存在的路径）");
+            return;
+        }
         if (!v.workSpaceName.equals(name) && !manager.renameWorkspace(name, v.workSpaceName)) {
             error("重命名失败", "名称非法或已存在");
             return;
         }
         if (!manager.updateWorkspace(v.workSpaceName, v.workDir, v.projectMd, v.projectSkillsDir)) {
-            error("修改失败", "项目路径或项目级技能路径不是已存在的文件夹");
+            error("修改失败", "路径不合法：项目路径须为已存在文件夹、主说明文件须为已存在文件、"
+                    + "技能路径须为已存在文件夹（后两项留空视为合法）");
         }
     }
 

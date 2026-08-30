@@ -24,8 +24,9 @@ import java.util.List;
 
 /**
  * 工作空间表单（新建与修改共用）：名称 + 项目路径 + 项目主说明文件 + 项目级技能路径。
- * 三个路径都可留空；空白如何解释由 core 的 WorkspacePaths 负责，本类不做兜底也不做校验。
- * 名称合法性在 OK 按钮上预校验（禁用 + 行内红字），不采用「先提交后弹错」。
+ * 名称与项目路径必填；主说明文件与技能路径可选，填了才校验（文件必须是已存在的**文件**，
+ * 技能路径必须是已存在的文件夹），校验口径与 core 的 add/update 同一实现（WorkspacePaths）。
+ * 名称合法性在 OK 按钮上预校验（禁用 + 行内红字）；路径不合法点击确定时弹框说明原因。
  */
 public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
 
@@ -107,6 +108,9 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
             if (bad == null) {
                 bad = notADirectoryMessage("项目级技能路径", skillsDir.getText(), workDir.getText());
             }
+            if (bad == null) {
+                bad = notAFileMessage(projectMd.getText(), workDir.getText());
+            }
             if (bad != null) {
                 e.consume();     // 表单保持打开，用户改完可直接再提交
                 alertPathInvalid(bad);
@@ -129,6 +133,23 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         if (raw == null || raw.trim().isEmpty()) return null;
         return WorkspacePaths.isExistingDir(raw, baseDir) ? null
                 : label + "必须是已存在的文件夹（该路径不存在，或指向的是文件）：\n" + raw.trim();
+    }
+
+    /**
+     * 主说明文件校验（可选字段，留空 = 不使用，合法）：填了必须是**已存在的文件**，
+     * 指向文件夹与不存在分别给出对应提示，避免用户猜是哪一种。合法返回 null。
+     * baseDir 供相对写法按项目路径解析，口径与 core 的 add/update 一致。
+     */
+    private static String notAFileMessage(String raw, String baseDir) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        String abs = WorkspacePaths.resolve(baseDir, raw);
+        if (WorkspacePaths.isExistingDir(raw, baseDir)) {
+            return "项目主说明文件必须是一个文件，但该路径是文件夹：\n" + abs;
+        }
+        if (!WorkspacePaths.isExistingFile(raw, baseDir)) {
+            return "项目主说明文件不存在：\n" + abs;
+        }
+        return null;
     }
 
     /** 路径无效提示框：点「确定」后回到表单继续修改（本表单不关闭） */
