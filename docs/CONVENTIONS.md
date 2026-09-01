@@ -17,7 +17,7 @@
 
 ### 依赖约束
 
-- 新依赖必须 JDK8 兼容、避免 Kotlin/重量级依赖（okhttp 选 3.x 而非 4.x 是既有教训）
+- 新依赖必须 JDK8 兼容（实测字节码 major ≤52）；避免 Kotlin/重量级依赖（okhttp 长期选 3.x；唯一例外：MCP 库 aj-mcp-client 编译期依赖 okhttp 4.12 + kotlin-stdlib，全项目统一升 4.12，理由见 2026-09-01-mcp-standard-client-design.md）
 - 加依赖须在设计文档写明理由
 
 ### 错误处理

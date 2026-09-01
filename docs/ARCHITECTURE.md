@@ -14,7 +14,7 @@ com.minion
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
     ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、mcp/（McpProxyTool）、PathsGuard
-    ├── mcp/                MCP 客户端核心：McpManager（状态机/惰性连接/路由）、StdioMcpClient、SseMcpClient、McpStore（mcp.json）、McpServer、JsonRpc
+    ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，stdio/SSE/Streamable 三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
     ├── skills/             SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、TokenCounter
     ├── storage/            SessionStore
@@ -89,14 +89,16 @@ com.minion
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `example/ExampleTool`：新工具模板示例（未注册）
 
-### core/mcp/（MCP 客户端核心，JDK8 自研，无官方 SDK 依赖）
+### core/mcp/（MCP 客户端核心，基于 aj-mcp-client 1.5 标准实现，JDK8）
 
-- `McpManager`：状态机（DISCONNECTED/CONNECTING/CONNECTED/FAILED）+ 惰性连接（首次 ensureConnectedAsync 才 spawn 进程，幂等去重）+ 全局工具表 + call 路由（未连接先同步重连 ≤10s）+ `save()`（配置持久化）+ shutdown；`addListener` 连接线程回调（GUI 层 Platform.runLater 刷新）
-- `StdioMcpClient`：spawn 子进程 + stdin/stdout 按行 JSON-RPC（`.cmd/.bat` 自动 `cmd /c` 包装）；按 id 关联 pending 队列同步等待响应；调用超时 120s
-- `SseMcpClient`：okhttp-sse EventSource（GET /sse 流）+ POST 响应体作为 JSON-RPC 响应
+- `McpManager`：状态机（DISCONNECTED/CONNECTING/CONNECTED/FAILED）+ 惰性连接（幂等去重）+ 全局工具表 + call 路由（未连接先同步重连 ≤10s，连接层异常自动断开待下次重建）+ `save()` + shutdown；`addListener` 连接线程回调（GUI 层 Platform.runLater 刷新）
+- `AjMcpClient`：包装库客户端——`McpClient.builder().transport(t)` 完成握手/版本协商/JSON-RPC 帧；`tools/list`（游标分页）与 `tools/call` 走同一 transport 的原始请求取 JsonNode 转 gson（inputSchema 零损耗；非 text 内容序列化为 JSON 文本）；传输失败抛 `McpConnectionException`（区别于工具业务错误）
+- `McpTransports` 工厂逻辑在 `McpManager.transportOf`：stdio → `StdioTransport`（命令经 `McpCommands` 组装，Windows npx→cmd /c）；sse → `HttpMcpTransport`（旧版 endpoint 事件握手）；streamable → `StreamableHttpTransport`（`Mcp-Session-Id`/`MCP-Protocol-Version` 头 + 请求头）
+- `McpCommands`：stdio 命令组装（Windows `.cmd/.bat` 自动 `cmd /c` 包装，PATH 探测 npx→npx.cmd）
+- `McpJson`：Jackson JsonNode → gson 转换（仅转换不解析）
 - `McpStore`：jarDir/mcp.json 单文件多服务器（原子写，损坏备份 .bak）
-- `McpServer`：配置字段（name/transport/command/args/env/url/headers/enabled，gson 落盘）+ transient 运行时状态（state/failReason/tools/skippedTools）
-- `McpToolInfo` / `JsonRpc`：工具元数据 / JSON-RPC 2.0 消息编解码（request/response/responseError/notification）
+- `McpServer`：配置字段（name/transport(stdio|sse|streamable)/command/args/env/url/headers/enabled）+ transient 状态
+- `McpToolInfo` / `McpException` / `McpConnectionException`：工具元数据 / 业务异常 / 连接层异常
 
 ### core/skills/ · core/context/ · core/storage/ · core/config/
 

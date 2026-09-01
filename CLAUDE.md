@@ -1,7 +1,7 @@
 # CLAUDE.md — minion 开发指引
 
 minion：类 Claude Code 的代码开发助手（GUI），Java 实现，对接多供应商 LLM（deepseek/qwen，OpenAI 兼容协议）。
-JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）。依赖：gson、okhttp 3.14、okhttp-sse 3.14.9、snakeyaml、flexmark 0.62.2（测试：junit4、mockwebserver）。
+JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）。依赖：gson、okhttp 4.12、okhttp-sse 4.12、aj-mcp-client 1.5（MCP 标准客户端，含 jackson/slf4j-simple）、snakeyaml、flexmark 0.62.2（测试：junit4、mockwebserver 4.12）。
 
 ## 常用命令
 
@@ -30,7 +30,7 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
         ├── agent/   AgentLoop（主循环，构造器自动注册 TaskTool/TodoWriteTool）、SubAgentLoop、Session、TodoList
         ├── llm/     DeepSeekClient（SSE 流式，close() 释放 okhttp）、LlmClient 接口（cancel/close 默认空实现）、Message（reasoningContent 原样回传）
         ├── tools/   Tool 接口 + 13 个工具 + ToolRegistry + browser/（CDP 浏览器）、mcp/（McpProxyTool）、SchemaGenerator、ConfirmGate、PathsGuard
-        ├── mcp/     MCP 客户端核心：McpManager（状态机/惰性连接/路由）、StdioMcpClient、SseMcpClient、McpStore（mcp.json）、McpServer、JsonRpc
+        ├── mcp/     MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
         ├── skills/  SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
         ├── context/ 上下文压缩、token 统计
         ├── storage/ 会话落盘（原子写）

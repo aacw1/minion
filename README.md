@@ -1,6 +1,6 @@
 # minion
 
-win7&jdk8代码开发工具，使用 java8开发，含有子 agent、工具（包含网页抓取）、MCP 工具扩展（stdio/SSE）、上下文压缩、风险操作确认、使用技能等功能。
+win7&jdk8代码开发工具，使用 java8开发，含有子 agent、工具（包含网页抓取）、MCP 工具扩展（stdio/SSE/Streamable HTTP）、上下文压缩、风险操作确认、使用技能等功能。
 
 ## 启动（GUI）
 
@@ -102,19 +102,23 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 
 登录示例:对话里告知账号密码 → 模型用 BrowserEval 填表提交 → 登录态保存在 userDataDir,下次会话保留。
 
-## MCP 工具扩展（stdio / SSE）
+## MCP 工具扩展（stdio / SSE / Streamable HTTP）
 
 对接 MCP（Model Context Protocol）服务器，把服务器上的工具暴露给模型调用。标准 JSON-RPC 2.0 协议，兼容 Claude Code / 千问等生态的 MCP 服务器。配置在设置窗「MCP」页管理（服务器列表 + 状态点 + 启用开关 + 新建/编辑/删除/重连），落盘 `mcp.json`。
 
 字段：
 
     name=playwright            # 服务器名（工具名前缀区分来源）
-    transport=stdio            # stdio 或 sse
-    command=npx                # stdio：可执行命令（Windows 下 .cmd/.bat 自动以 cmd /c 包装）
+    transport=stdio            # stdio（本地进程）| sse（旧版 HTTP+SSE）| streamable（Streamable HTTP，推荐远程）
+    command=npx                # stdio：可执行命令（Windows 下 npx 自动解析为 npx.cmd 并以 cmd /c 包装）
     args=@playwright/mcp       # 参数，每行一个
-    env=KEY=VALUE              # 环境变量，每行一个
-    url=                       # sse：服务端点（此时命令/参数区禁用）
-    headers=K:V                # sse：请求头，每行一个
+    env=KEY=VALUE              # 环境变量，每行一个（仅 stdio：传给子进程，如 GITHUB_PERSONAL_ACCESS_TOKEN）
+    url=                       # sse：SSE 端点（如 http://host:port/sse）；streamable：MCP 端点（如 http://host:port/mcp）
+    headers=K:V                # 请求头，每行一个（仅 streamable；旧版 SSE 传输不支持自定义头，需鉴权请用 streamable）
+
+传输方式为单选：选中一种后其余字段隐藏并清空（表单按传输类型裁剪保存）。
+
+实现说明：MCP 客户端基于 aj-mcp-client 1.5 标准实现（JDK8 兼容）：握手、协议版本协商（2024-11-05/2025-03-26/2025-06-18）、stdio/SSE/Streamable 三传输由库完成；tools/list 与 tools/call 取原始 JSON（inputSchema 原样透传，非文本内容不丢）。依赖变化：okhttp 升 4.12（与库对齐，单份 okhttp + kotlin-stdlib），新增 jackson、slf4j-simple（warn 级日志），产物体积约 2.75 MB → 8 MB。
 
 连接时机：启用服务器后首次新建/恢复会话时后台预连接（不阻塞界面），连接完成后该服务器的工具自动补充注册进所有会话（下一轮请求即可被模型调用）；与内置工具重名的自动跳过并在列表标注。
 
