@@ -466,6 +466,7 @@ public class SettingsDialog {
             out.env = parsePairs(envArea.getText());
             out.url = url.getText().trim();
             out.headers = parsePairs(headerArea.getText());
+            out.transport = selectedTransport(transportGroup); // 单选结果必须落盘（trim 只归一化不取值）
             out.enabled = s != null && s.enabled; // 新建默认禁用（用户勾选启用时再连接）
             McpFormPolicy.trim(out);   // 只保留本传输相关字段，其余清空
             return out;
@@ -554,14 +555,13 @@ public class SettingsDialog {
                 : "URL(SSE 端点，如 http://host:port/sse):");
     }
 
-    /** 隐藏某 GridPane 行（行内所有控件 setVisible+setManaged=false 并清空文本） */
+    /** 隐藏某 GridPane 行（行内所有控件 setVisible+setManaged=false）；不清空文本——初始回显时隐藏行里的旧值必须保留，清空只发生在用户切换传输（clearHiddenRows） */
     private static void setRowVisible(GridPane grid, int row, boolean on) {
         for (javafx.scene.Node n : new ArrayList<javafx.scene.Node>(grid.getChildren())) {
             Integer r = GridPane.getRowIndex(n);
             if (r == null || r != row) continue;
             n.setVisible(on);
             n.setManaged(on);
-            if (!on && n instanceof TextInputControl) ((TextInputControl) n).clear();
         }
     }
 

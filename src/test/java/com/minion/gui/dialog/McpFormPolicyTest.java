@@ -57,6 +57,68 @@ public class McpFormPolicyTest {
         assertTrue(s.headers.isEmpty());
     }
 
+    /** stdio：保留命令组，清空 URL/请求头 */
+    @Test
+    public void trim_stdio_keepsCommandGroupClearsRemoteFields() {
+        McpServer s = new McpServer();
+        s.transport = "stdio";
+        s.command = "npx";
+        s.args = new ArrayList<String>(Arrays.asList("@playwright/mcp"));
+        s.env = new HashMap<String, String>();
+        s.env.put("K", "V");
+        s.url = "http://h/mcp";
+        s.headers = new HashMap<String, String>();
+        s.headers.put("A", "b");
+        McpFormPolicy.trim(s);
+        assertEquals("npx", s.command);
+        assertEquals(1, s.args.size());
+        assertEquals(1, s.env.size());
+        assertEquals("", s.url);
+        assertTrue(s.headers.isEmpty());
+    }
+
+    /** streamable：保留 URL+请求头，清空命令组 */
+    @Test
+    public void trim_streamable_keepsUrlHeadersClearsCommandGroup() {
+        McpServer s = new McpServer();
+        s.transport = "streamable";
+        s.command = "npx";
+        s.args = new ArrayList<String>(Arrays.asList("@playwright/mcp"));
+        s.env = new HashMap<String, String>();
+        s.env.put("K", "V");
+        s.url = "http://h/mcp";
+        s.headers = new HashMap<String, String>();
+        s.headers.put("A", "b");
+        McpFormPolicy.trim(s);
+        assertEquals("", s.command);
+        assertTrue(s.args.isEmpty());
+        assertTrue(s.env.isEmpty());
+        assertEquals("http://h/mcp", s.url);
+        assertEquals(1, s.headers.size());
+    }
+
+    /** 防回归：trim 不改变用户已选的传输值（仅归一化），表单保存时传输选择必须落盘 */
+    @Test
+    public void trim_keepsChosenTransportNormalized() {
+        McpServer s = new McpServer();
+        s.transport = "STREAMABLE";
+        s.url = "http://h/mcp";
+        McpFormPolicy.trim(s);
+        assertEquals("streamable", s.transport);
+        assertEquals("http://h/mcp", s.url);
+    }
+
+    /** 新建对象（transport 未赋值）trim 后归一到 stdio，不产生脏传输值 */
+    @Test
+    public void trim_nullTransportFallsBackStdio() {
+        McpServer s = new McpServer();
+        s.command = "npx";
+        McpFormPolicy.trim(s);
+        assertEquals("stdio", s.transport);
+        assertEquals("npx", s.command);
+        assertEquals("", s.url);
+    }
+
     @Test
     public void labelOf_friendlyNames() {
         assertEquals("stdio", McpFormPolicy.labelOf("stdio"));
