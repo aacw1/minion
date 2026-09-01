@@ -22,9 +22,13 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.RadioButton;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
+import javafx.scene.control.Toggle;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -39,6 +43,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / MCP / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
@@ -295,7 +300,7 @@ public class SettingsDialog {
                 IconFactory.size(dot, 8);
                 dot.setStyle("-fx-fill: " + color + ";");
                 Label name = new Label(item.name);
-                String metaText = item.transport
+                String metaText = McpFormPolicy.labelOf(item.transport)
                         + (item.state == McpServer.State.CONNECTED
                             ? "  " + (item.tools.size() - item.skippedTools) + " 工具"
                             : item.state == McpServer.State.FAILED ? "  失败: " + shorten(item.failReason)
@@ -396,12 +401,19 @@ public class SettingsDialog {
         grid.setVgap(8);
         grid.setPadding(new Insets(10));
         TextField name = new TextField(s == null ? "" : s.name);
-        ComboBox<String> transport = new ComboBox<String>();
-        transport.getItems().addAll("stdio", "sse");
-        transport.setValue(s == null ? "stdio" : s.transport);
+        ToggleGroup transportGroup = new ToggleGroup();
+        RadioButton rbStdio = transportRadio("stdio（本地进程）", McpServer.STDIO, transportGroup);
+        RadioButton rbSse = transportRadio("SSE（旧版 HTTP+SSE）", McpServer.SSE, transportGroup);
+        RadioButton rbStream = transportRadio("Streamable HTTP（推荐远程）", McpServer.STREAMABLE, transportGroup);
+        HBox transportBox = new HBox(10, rbStdio, rbSse, rbStream);
+        String t0 = McpServer.normalizedTransport(s == null ? McpServer.STDIO : s.transport);
+        selectTransport(transportGroup, t0);
         TextField command = new TextField(s == null ? "npx" : s.command);
         TextArea argsArea = new TextArea(s == null ? "@playwright/mcp" : joinLines(s.args));
         TextArea envArea = new TextArea(s == null ? "" : pairLines(s.env));
+        Label urlLabel = new Label(McpServer.STREAMABLE.equals(t0)
+                ? "URL(MCP 端点，如 http://host:port/mcp):"
+                : "URL(SSE 端点，如 http://host:port/sse):");
         TextField url = new TextField(s == null ? "" : s.url);
         TextArea headerArea = new TextArea(s == null ? "" : pairLines(s.headers));
         // TextArea 默认 pref 高 231px/宽 683px，3 个会把表单撑到 ~900px 超屏；
@@ -412,24 +424,36 @@ public class SettingsDialog {
         envArea.setPrefColumnCount(20);
         headerArea.setPrefRowCount(2);
         headerArea.setPrefColumnCount(20);
-        // 传输为 sse 时命令/参数区禁用（命令只对 stdio 有意义）
-        transport.valueProperty().addListener((obs, ov, nv) -> {
-            boolean stdio = "stdio".equals(nv);
-            command.setDisable(!stdio);
-            argsArea.setDisable(!stdio);
-        });
-        boolean stdio0 = "stdio".equals(transport.getValue());
-        command.setDisable(!stdio0);
-        argsArea.setDisable(!stdio0);
+
+        Label envTip = new Label("传给 stdio 子进程的环境变量，如 GITHUB_PERSONAL_ACCESS_TOKEN=…（仅 stdio 生效）");
+        envTip.getStyleClass().add("msg-thinking");
+        Label headerTip = new Label("随请求头发送（如 Authorization: Bearer …）；旧版 SSE 传输不支持自定义头，仅 Streamable 生效");
+        headerTip.getStyleClass().add("msg-thinking");
 
         grid.addRow(0, new Label("名称:"), name);
-        grid.addRow(1, new Label("传输:"), transport);
+        grid.addRow(1, new Label("传输:"), transportBox);
         grid.addRow(2, new Label("命令:"), command);
         grid.addRow(3, new Label("参数(每行一个):"), argsArea);
         grid.addRow(4, new Label("环境变量(KEY=VALUE):"), envArea);
-        grid.addRow(5, new Label("URL(SSE):"), url);
-        grid.addRow(6, new Label("请求头(K:V):"), headerArea);
+        grid.addRow(5, envTip);
+        grid.addRow(6, urlLabel, url);
+        grid.addRow(7, new Label("请求头(K:V):"), headerArea);
+        grid.addRow(8, headerTip);
         d.getDialogPane().setContent(grid);
+
+        Runnable applyTransport = () -> {
+            String t = selectedTransport(transportGroup);
+            Set<McpFormPolicy.Field> keep = McpFormPolicy.fieldsOf(t);
+            showRows(grid, t, keep, urlLabel);
+        };
+        // 用户切换传输：先清空「不再属于本传输」的行，再按新口径显隐
+        transportGroup.selectedToggleProperty().addListener((obs, ov, nv) -> {
+            String t = selectedTransport(transportGroup);
+            Set<McpFormPolicy.Field> keep = McpFormPolicy.fieldsOf(t);
+            clearHiddenRows(grid, keep);
+            applyTransport.run();
+        });
+        applyTransport.run();
 
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
@@ -437,13 +461,13 @@ public class SettingsDialog {
             if (nm.isEmpty()) return null; // 名称空视为取消
             McpServer out = s == null ? new McpServer() : s;
             out.name = nm;
-            out.transport = transport.getValue() == null ? "stdio" : transport.getValue();
             out.command = command.getText().trim();
             out.args = splitLines(argsArea.getText());
             out.env = parsePairs(envArea.getText());
             out.url = url.getText().trim();
             out.headers = parsePairs(headerArea.getText());
             out.enabled = s != null && s.enabled; // 新建默认禁用（用户勾选启用时再连接）
+            McpFormPolicy.trim(out);   // 只保留本传输相关字段，其余清空
             return out;
         });
         Optional<McpServer> r = d.showAndWait();
@@ -492,9 +516,74 @@ public class SettingsDialog {
         return out;
     }
 
+    /** 传输单选按钮工厂 */
+    private static RadioButton transportRadio(String text, String value, ToggleGroup group) {
+        RadioButton rb = new RadioButton(text);
+        rb.setToggleGroup(group);
+        rb.setUserData(value);
+        return rb;
+    }
+
+    /** 按值选中（旧配置打开时回显） */
+    private static void selectTransport(ToggleGroup group, String value) {
+        for (Toggle t : group.getToggles()) {
+            if (value.equals(t.getUserData())) { t.setSelected(true); return; }
+        }
+    }
+
+    /** 当前选中传输（未选回退 stdio） */
+    private static String selectedTransport(ToggleGroup group) {
+        Toggle t = group.getSelectedToggle();
+        return t == null ? McpServer.STDIO : String.valueOf(t.getUserData());
+    }
+
+    /** 按联动口径显隐行：命令组(2-4) / URL(6) / 请求头(7-8)；隐藏行清空；URL 文案按传输区分 sse 与 streamable */
+    private static void showRows(GridPane grid, String transport, Set<McpFormPolicy.Field> keep, Label urlLabel) {
+        boolean stdio = keep.contains(McpFormPolicy.Field.COMMAND);
+        boolean url = keep.contains(McpFormPolicy.Field.URL);
+        boolean headers = keep.contains(McpFormPolicy.Field.HEADERS);
+        setRowVisible(grid, 2, stdio);
+        setRowVisible(grid, 3, stdio);
+        setRowVisible(grid, 4, stdio);
+        setRowVisible(grid, 5, stdio);     // 环境变量提示行
+        setRowVisible(grid, 6, url);
+        setRowVisible(grid, 7, headers);
+        setRowVisible(grid, 8, headers);   // 请求头提示行
+        urlLabel.setText(McpServer.STREAMABLE.equals(transport)
+                ? "URL(MCP 端点，如 http://host:port/mcp):"
+                : "URL(SSE 端点，如 http://host:port/sse):");
+    }
+
+    /** 隐藏某 GridPane 行（行内所有控件 setVisible+setManaged=false 并清空文本） */
+    private static void setRowVisible(GridPane grid, int row, boolean on) {
+        for (javafx.scene.Node n : new ArrayList<javafx.scene.Node>(grid.getChildren())) {
+            Integer r = GridPane.getRowIndex(n);
+            if (r == null || r != row) continue;
+            n.setVisible(on);
+            n.setManaged(on);
+            if (!on && n instanceof TextInputControl) ((TextInputControl) n).clear();
+        }
+    }
+
+    /** 切换传输时：把「当前不再保留」的行清空（showRows 会再隐藏） */
+    private static void clearHiddenRows(GridPane grid, Set<McpFormPolicy.Field> keep) {
+        boolean stdio = keep.contains(McpFormPolicy.Field.COMMAND);
+        boolean url = keep.contains(McpFormPolicy.Field.URL);
+        boolean headers = keep.contains(McpFormPolicy.Field.HEADERS);
+        if (!stdio) { clearRowText(grid, 2); clearRowText(grid, 3); clearRowText(grid, 4); }
+        if (!url) clearRowText(grid, 6);
+        if (!headers) clearRowText(grid, 7);
+    }
+
+    private static void clearRowText(GridPane grid, int row) {
+        for (javafx.scene.Node n : grid.getChildren()) {
+            Integer r = GridPane.getRowIndex(n);
+            if (r != null && r == row && n instanceof TextInputControl) ((TextInputControl) n).clear();
+        }
+    }
+
     /** 失败原因截断（列表显示）：null→空、取首行、超 40 字符截断加省略号 */
-    static String shorten(String s) {
-        if (s == null) return "";
+    static String shorten(String s) {        if (s == null) return "";
         int i = s.indexOf('\n');
         String first = i < 0 ? s : s.substring(0, i);
         return first.length() > 40 ? first.substring(0, 40) + "…" : first;
