@@ -58,12 +58,14 @@ public class SettingsDialogTest {
         assertEquals("3", m.get("C"));
     }
 
-    /** 失败原因列表显示：null→空、取首行、超 40 字符截断加省略号 */
+    /** 失败原因列表显示：null→空、取首行并去首尾空白、超 40 字符截断加省略号 */
     @Test
     public void shorten_takesFirstLineAndTruncates() {
         assertEquals("", SettingsDialog.shorten(null));
         assertEquals("short", SettingsDialog.shorten("short"));
         assertEquals("first", SettingsDialog.shorten("first\nsecond line"));
+        assertEquals("padded", SettingsDialog.shorten("  padded  \nsecond line"));   // 首行首尾空白剥掉
+        assertEquals("", SettingsDialog.shorten("   \nsecond"));                     // 首行纯空白 → 空
         String longLine = "aVeryLongFailureReasonThatExceedsFortyCharactersByFar!!!";
         String s = SettingsDialog.shorten(longLine + "\nsecond");
         assertEquals(41, s.length()); // 40 字符 + …

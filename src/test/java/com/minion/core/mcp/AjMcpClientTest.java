@@ -39,9 +39,24 @@ public class AjMcpClientTest {
     @Test
     public void connect_thenListTools_mergesPages() throws Exception {
         List<McpToolInfo> tools = client.listTools();
-        assertEquals(5, tools.size());   // 第一页 4 + 第二页 1
+        assertEquals(5, tools.size());   // 第一页 4 + 第二页 1（畸形缺 name 条目被跳过，不 NPE）
         assertTrue(tools.stream().anyMatch(t -> "paged_tool".equals(t.name)));
         assertTrue(tools.stream().anyMatch(t -> "fake_tool".equals(t.name)));
+    }
+
+    @Test
+    public void listTools_skipsMalformedEntryWithoutNpe() throws Exception {
+        List<McpToolInfo> tools = client.listTools();
+        // 服务端混入缺 name 的工具条目：不抛 NPE，且畸形条目不进入结果
+        assertFalse(tools.stream().anyMatch(t -> t.name == null || t.name.isEmpty()));
+    }
+
+    @Test
+    public void callTool_contentMissingType_noNpe() throws Exception {
+        // content 项缺 type / text 为 null：不抛 NPE；缺 type 项按原样 JSON 兜底，正常 text 照常拼接
+        String out = client.callTool("tool_malformed", new JsonObject());
+        assertTrue(out.contains("\"text\":\"orphan\""));
+        assertTrue(out.endsWith("ok"));
     }
 
     @Test

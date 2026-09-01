@@ -582,10 +582,12 @@ public class SettingsDialog {
         }
     }
 
-    /** 失败原因截断（列表显示）：null→空、取首行、超 40 字符截断加省略号 */
-    static String shorten(String s) {        if (s == null) return "";
+    /** 失败原因截断（列表显示）：null→空、取首行并去首尾空白、超 40 字符截断加省略号 */
+    static String shorten(String s) {
+        if (s == null) return "";
         int i = s.indexOf('\n');
         String first = i < 0 ? s : s.substring(0, i);
+        first = first.trim();   // 首行去空白（stdio stderr / 多行异常常带换行缩进）
         return first.length() > 40 ? first.substring(0, 40) + "…" : first;
     }
 

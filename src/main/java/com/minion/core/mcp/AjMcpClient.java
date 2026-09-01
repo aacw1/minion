@@ -69,7 +69,8 @@ public class AjMcpClient implements McpHandle {
             if (cursor != null) req.setParams(new Cursor(cursor));
             JsonObject result = resultOf(req);
             for (JsonElement e : arrayOf(result, "tools")) {
-                JsonObject t = e.getAsJsonObject();
+                JsonObject t = e.isJsonObject() ? e.getAsJsonObject() : null;
+                if (t == null || t.get("name") == null || t.get("name").isJsonNull()) continue;  // 畸形条目（缺 name/非对象）：跳过，不 NPE
                 out.add(new McpToolInfo(
                         t.get("name").getAsString(),
                         t.has("description") ? t.get("description").getAsString() : "",
@@ -92,10 +93,11 @@ public class AjMcpClient implements McpHandle {
         for (JsonElement e : arrayOf(result, "content")) {
             JsonObject c = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
             if (sb.length() > 0) sb.append('\n');
-            if ("text".equals(c.get("type").getAsString()) && c.has("text")) {
+            String type = c.has("type") && !c.get("type").isJsonNull() ? c.get("type").getAsString() : null;
+            if ("text".equals(type) && c.has("text") && !c.get("text").isJsonNull()) {
                 sb.append(c.get("text").getAsString());
             } else {
-                sb.append(c.toString());   // image/audio/resource 等：原样 JSON 文本
+                sb.append(c.toString());   // image/audio/resource 或缺 type 的畸形项：原样 JSON 文本
             }
         }
         boolean isError = result.has("isError") && result.get("isError").getAsBoolean();

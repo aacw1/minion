@@ -42,7 +42,8 @@ public class FakeMcpServer {
                         + "\"nested\":{\"type\":\"object\",\"properties\":{\"k\":{\"type\":\"integer\"}}},"
                         + "\"list\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"q\"]}},"
                         + "{\"name\":\"tool_image\",\"description\":\"image\",\"inputSchema\":{\"type\":\"object\"}},"
-                        + "{\"name\":\"tool_error\",\"description\":\"error\",\"inputSchema\":{\"type\":\"object\"}}"
+                        + "{\"name\":\"tool_error\",\"description\":\"error\",\"inputSchema\":{\"type\":\"object\"}},"
+                        + "{\"description\":\"no name\",\"inputSchema\":{\"type\":\"object\"}}"   // 畸形条目：缺 name，客户端应跳过
                         + "],\"nextCursor\":\"PAGE2\"}}";
             }
             return "{\"jsonrpc\":\"2.0\",\"id\":" + idOf(line) + ",\"result\":{\"tools\":["
@@ -60,6 +61,13 @@ public class FakeMcpServer {
         if (line.contains("\"tools/call\"") && line.contains("\"name\":\"tool_die\"")) {
             return "{\"jsonrpc\":\"2.0\",\"id\":" + idOf(line) + ",\"result\":{\"content\":["
                     + "{\"type\":\"text\",\"text\":\"dying\"}]}}";
+        }
+        if (line.contains("\"tools/call\"") && line.contains("\"name\":\"tool_malformed\"")) {
+            // 畸形 content：一项缺 type、一项缺 text 的 null 值；客户端不得 NPE
+            return "{\"jsonrpc\":\"2.0\",\"id\":" + idOf(line) + ",\"result\":{\"content\":["
+                    + "{\"text\":\"orphan\"},"
+                    + "{\"type\":\"text\",\"text\":null},"
+                    + "{\"type\":\"text\",\"text\":\"ok\"}],\"isError\":false}}";
         }
         if (line.contains("\"tools/call\"") && line.contains("\"name\":\"fake_tool\"")) {
             return "{\"jsonrpc\":\"2.0\",\"id\":" + idOf(line) + ",\"result\":{\"content\":["
