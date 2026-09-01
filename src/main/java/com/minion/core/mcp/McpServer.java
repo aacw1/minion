@@ -28,7 +28,7 @@ public class McpServer {
     public String name;
     /** "stdio" | "sse" | "streamable"（读入时经 normalizedTransport 归一） */
     public String transport;
-    /** stdio：可执行命令（Windows 下 .cmd/.bat 由 StdioMcpClient 以 cmd /c 包装） */
+    /** stdio：可执行命令（Windows 下 .cmd/.bat 由 McpCommands 以 cmd /c 包装） */
     public String command;
     public List<String> args = new ArrayList<String>();
     public Map<String, String> env = new HashMap<String, String>();

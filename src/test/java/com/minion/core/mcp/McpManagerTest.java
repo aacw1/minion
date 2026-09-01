@@ -61,8 +61,9 @@ public class McpManagerTest {
     @Test
     public void ensureConnected_connectsAndFillsTools() throws Exception {
         McpServer s = waitForState(manager, "fake", McpServer.State.CONNECTED);
-        assertEquals(1, s.tools.size());
+        assertEquals(5, s.tools.size());   // FakeMcpServer 第一页 4 个 + 第二页 1 个
         assertEquals("fake_tool", s.tools.get(0).name);
+        assertTrue(s.tools.stream().anyMatch(t -> "paged_tool".equals(t.name)));
     }
 
     @Test

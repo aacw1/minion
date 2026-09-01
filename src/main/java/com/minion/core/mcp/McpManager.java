@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** MCP 管理器：状态机 + 惰性连接（首次 ensureConnectedAsync 才 spawn 进程）+ 全局工具表 + 退出关停 */
+/** MCP 管理器：状态机 + 惰性连接（首次 ensureConnectedAsync 才建连接）+ 全局工具表 + 路由（基于 aj-mcp-client 标准实现） */
 public class McpManager {
 
     /** 重连（同步等待）上限：设置页「重连」与 call 路由的等待时间 */
@@ -54,9 +54,7 @@ public class McpManager {
     /** 连接流程（连接线程内执行）：建客户端 → 握手 → 工具清单 → CONNECTED；异常 → FAILED + 原因 */
     private void doConnect(McpServer s) {
         try {
-            McpHandle client = "sse".equalsIgnoreCase(s.transport) && s.url != null
-                    ? new SseMcpClient(s.url, s.headers)
-                    : new StdioMcpClient(commandParts(s), s.env);
+            McpHandle client = new AjMcpClient(transportOf(s));
             try {
                 client.connect();
                 List<McpToolInfo> tools = client.listTools();
@@ -78,12 +76,29 @@ public class McpManager {
         notifyListeners(s);
     }
 
-    /** stdio 命令组装：command + args（含 .cmd/.bat 的包装由 StdioMcpClient 负责） */
-    private static List<String> commandParts(McpServer s) {
-        List<String> parts = new ArrayList<String>();
-        parts.add(s.command);
-        if (s.args != null) parts.addAll(s.args);
-        return parts;
+    /** 按传输类型构造库传输：stdio 经 McpCommands 组装命令；streamable 带请求头；sse 为旧版端点 */
+    private static com.ajaxjs.mcp.client.transport.McpTransport transportOf(McpServer s) throws McpException {
+        String t = McpServer.normalizedTransport(s.transport);
+        if (McpServer.STREAMABLE.equals(t) || McpServer.SSE.equals(t)) {
+            if (s.url == null || s.url.trim().isEmpty())
+                throw new McpException("MCP 服务器缺少 URL 配置: " + s.name);
+        }
+        if (McpServer.STREAMABLE.equals(t)) {
+            return com.ajaxjs.mcp.client.transport.StreamableHttpTransport.builder()
+                    .endpointUrl(s.url.trim())
+                    .openEventStream(false)
+                    .timeout(java.time.Duration.ofMillis(McpHandle.CALL_TIMEOUT_MS))
+                    .requestHeaders(s.headers)
+                    .build();
+        }
+        if (McpServer.SSE.equals(t)) {
+            return com.ajaxjs.mcp.client.transport.HttpMcpTransport.builder().sseUrl(s.url.trim()).build();
+        }
+        return com.ajaxjs.mcp.client.transport.StdioTransport.builder()
+                .command(McpCommands.build(s.command, s.args))
+                .environment(s.env)
+                .logEvents(false)
+                .build();
     }
 
     /** 关闭连接：进程销毁 + 状态 DISCONNECTED + 清工具表 */
@@ -141,7 +156,13 @@ public class McpManager {
             String reason = s.failReason == null ? "未连接" : s.failReason;
             throw new McpException("MCP 服务器不可用(" + serverName + "): " + reason);
         }
-        return c.callTool(toolName, args);
+        try {
+            return c.callTool(toolName, args);
+        } catch (McpConnectionException e) {
+            // 连接层失败（进程退出/流断开/空闲超时）：断开置 DISCONNECTED，下次调用走 reconnect 自动重建
+            disconnect(serverName);
+            throw e;
+        }
     }
 
     /** 退出关停：全部断开 */
