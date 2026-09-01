@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** stdio 传输：spawn 子进程，stdin 写请求（按行 JSON-RPC），stdout 读响应；Windows 下 .cmd/.bat 用 cmd /c 包装 */
-public class StdioMcpClient implements McpClient {
+public class StdioMcpClient implements McpHandle {
 
     private final Process process;
     private final Writer stdin;

@@ -21,7 +21,7 @@ public class McpManager {
     private final McpStore store;
     private final List<Listener> listeners = new ArrayList<Listener>();
     /** name → 已建立的客户端（连接成功后放入，disconnect/shutdown 移除） */
-    private final Map<String, McpClient> clients = new HashMap<String, McpClient>();
+    private final Map<String, McpHandle> clients = new HashMap<String, McpHandle>();
 
     public McpManager(McpStore store) {
         this.store = store;
@@ -54,7 +54,7 @@ public class McpManager {
     /** 连接流程（连接线程内执行）：建客户端 → 握手 → 工具清单 → CONNECTED；异常 → FAILED + 原因 */
     private void doConnect(McpServer s) {
         try {
-            McpClient client = "sse".equalsIgnoreCase(s.transport) && s.url != null
+            McpHandle client = "sse".equalsIgnoreCase(s.transport) && s.url != null
                     ? new SseMcpClient(s.url, s.headers)
                     : new StdioMcpClient(commandParts(s), s.env);
             try {
@@ -90,7 +90,7 @@ public class McpManager {
     public void disconnect(String name) {
         final McpServer s = find(name);
         if (s == null) return;
-        McpClient c;
+        McpHandle c;
         synchronized (this) {
             c = clients.remove(name);
             s.state = McpServer.State.DISCONNECTED;
@@ -127,7 +127,7 @@ public class McpManager {
     public String call(String serverName, String toolName, JsonObject args) throws Exception {
         McpServer s = find(serverName);
         if (s == null) throw new McpException("MCP 服务器不存在: " + serverName);
-        McpClient c;
+        McpHandle c;
         synchronized (this) {
             c = clients.get(serverName);
         }

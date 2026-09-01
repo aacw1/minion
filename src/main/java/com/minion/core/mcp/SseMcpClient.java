@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** SSE/HTTP 传输：POST 发请求（响应体即 JSON-RPC 响应），GET /sse 事件流（data: 行也是 JSON-RPC 消息） */
-public class SseMcpClient implements McpClient {
+public class SseMcpClient implements McpHandle {
 
     private static final MediaType JSON = MediaType.parse("application/json");
 

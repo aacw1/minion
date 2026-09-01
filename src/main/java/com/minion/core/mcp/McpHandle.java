@@ -5,8 +5,8 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Map;
 
-/** MCP 传输客户端：握手 + 工具清单 + 工具调用（stdio 与 sse 两实现） */
-public interface McpClient {
+/** MCP 连接抽象：握手 + 工具清单 + 工具调用（实现基于 aj-mcp-client，stdio/SSE/Streamable 三传输） */
+public interface McpHandle {
 
     /** 工具调用超时（含 SSE 等待响应；playwright 导航可能较慢） */
     long CALL_TIMEOUT_MS = 120_000;
