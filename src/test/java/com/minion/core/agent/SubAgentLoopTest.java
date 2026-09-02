@@ -382,9 +382,9 @@ public class SubAgentLoopTest {
         assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
     }
 
-    /** 子 agent 429 长重试中遇非 429 错误（网络/超时）：退出重试并复位指示器，不残留"正在重试中" */
+    /** 子 agent 429 长重试中遇永久性网络错误（retryable=false，DNS 解析失败）：退出重试并复位指示器 */
     @Test
-    public void subAgent_rateLimit_thenNetworkError_resetsRetryProgress() throws Exception {
+    public void subAgent_rateLimit_thenPermanentNetwork_resetsRetryProgress() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
         FakeLlmClient llm = new FakeLlmClient();
         ToolRegistry registry = new ToolRegistry();
@@ -394,21 +394,92 @@ public class SubAgentLoopTest {
         RecordingUi ui = new RecordingUi();
 
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
-        llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK, "连接超时", true));
+        llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK,
+                "网络错误: no-host.invalid（域名无法解析，请检查设置中的 API 地址）", false));
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 20, 60000); // 测试短退避，总时长充裕
+        sub.retryPolicy = new RetryPolicy(10, 10, 20, 60000);
         String result = sub.run();
-        // 非 429 错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
+        // 永久性网络错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
         assertTrue(result.contains("失败"));
-        assertTrue(result.contains("连接超时"));
+        assertTrue(result.contains("域名无法解析"));
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("连接超时"));
+        assertTrue(ui.errors.get(0).contains("域名无法解析"));
         // 指示器复位：末位必须为 0，不残留"429限流，正在重试中...N次"
         assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
         assertTrue(ui.warnings.isEmpty());
+    }
+
+    /** 子 agent 网络超时：进入长重试，成功后静默恢复（与主循环一致） */
+    @Test
+    public void subAgent_networkTimeout_retryThenSuccess() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时：60 秒内未收到模型输出", true));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        assertEquals(2, llm.requests.size());
+        assertEquals("网络超时", ui.retryProgress.get(0).label);
+        assertTrue(ui.errors.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+    }
+
+    /** 子 agent 零增量闸门：已吐字后网络掉断 → 不重试 */
+    @Test
+    public void subAgent_partialOutputThenNetwork_noRetry() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnPartialThenThrow("半截正文",
+                new LlmException(LlmException.Type.NETWORK, "网络错误: Connection reset", true));
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.run();
+        assertEquals(1, llm.requests.size());
+        assertTrue(ui.retryAttempts().isEmpty());
+        assertEquals(1, ui.errors.size());
+    }
+
+    /** 子 agent 网络类耗尽：总结文案用中文标签前缀 */
+    @Test
+    public void subAgent_networkTimeout_exhausted_usesLabel() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时", true));
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 0, 10, 50);
+        String result = sub.run();
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).startsWith("子 agent 网络超时 重试了"));
+        assertTrue(result.contains("网络超时"));
     }
 
     /** 子 agent 429 重试成功但流中断（onError 回调）：错误已在回调提示，指示器复位 */
