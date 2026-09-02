@@ -72,9 +72,15 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 重试文案：冻结基础文案 + 错误码/次数/错误体后缀（如"正在加载中...(429限流，重试第3次)"） */
+    /** 重试文案：冻结基础文案 + 错误标签/次数/错误详情后缀
+     *  （如"正在加载中...(429限流，重试第3次)"、"...(网络超时，重试第3次：60 秒内未收到模型输出)"） */
     static String retryText(RetryProgress p, String base) {
-        return base + "(" + codeLabel(p.httpCode) + "，重试第" + p.attempt + "次" + bodyPart(p) + ")";
+        return base + "(" + labelOf(p) + "，重试第" + p.attempt + "次" + bodyPart(p) + ")";
+    }
+
+    /** 错误标签：网络类直接用 RetryProgress.label（无 HTTP 码）；HTTP 类按状态码查表 */
+    static String labelOf(RetryProgress p) {
+        return p.label != null ? p.label : codeLabel(p.httpCode);
     }
 
     /** 错误码标签：429 限流 / 500 服务报错 / 502 网关报错；未知码防御性显示 HTTP xxx */
@@ -85,10 +91,24 @@ public class RunningIndicator extends HBox {
         return "HTTP " + httpCode;
     }
 
-    /** 错误体后缀：body 非空时显示（429/500/502 一致，服务返回内容可帮助诊断），截断 BODY_MAX_CHARS */
+    /** 错误详情后缀：HTTP 类直拼服务响应体（json，可诊断）；网络类剥掉与标签重复的
+     *  自带前缀后用"："分隔。均截断 BODY_MAX_CHARS */
     static String bodyPart(RetryProgress p) {
         if (p.body == null || p.body.isEmpty()) return "";
-        return p.body.length() > BODY_MAX_CHARS ? p.body.substring(0, BODY_MAX_CHARS) : p.body;
+        if (p.label == null) {
+            return p.body.length() > BODY_MAX_CHARS ? p.body.substring(0, BODY_MAX_CHARS) : p.body;
+        }
+        String detail = stripNetworkPrefix(p.body);
+        detail = detail.length() > BODY_MAX_CHARS ? detail.substring(0, BODY_MAX_CHARS) : detail;
+        return "：" + detail;
+    }
+
+    /** 网络类异常消息自带"网络错误: "/"请求超时: "前缀，与标签重复，展示时剥除 */
+    static String stripNetworkPrefix(String s) {
+        if (s.startsWith("网络错误: ")) return s.substring("网络错误: ".length());
+        if (s.startsWith("请求超时: ")) return s.substring("请求超时: ".length());
+        if (s.startsWith("请求超时：")) return s.substring("请求超时：".length());
+        return s;
     }
 
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
@@ -129,7 +149,7 @@ public class RunningIndicator extends HBox {
     }
 
     /** 瞬时错误重试进度：attempt ≥ 1 → 首次进入随机取一条基础文案并冻结（停轮换），
-     *  之后每次更新后缀（错误码/错误体随最近一次失败更新）；attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
+     *  之后每次更新后缀（错误标签/详情随最近一次失败更新）；attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
     public void setRetryProgress(RetryProgress p) {
         if (!running) return;
         retryProgress = p;

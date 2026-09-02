@@ -80,4 +80,46 @@ public class RunningIndicatorTest {
     public void retryText_unknownCode_defensive() {
         assertEquals("HTTP 503", RunningIndicator.codeLabel(503));
     }
+
+    /** 网络超时：中文标签 + "："分隔 + 剥掉与标签重复的自带前缀 */
+    @Test
+    public void retryText_networkTimeout() {
+        RetryProgress p = RetryProgress.ofNetwork(3, "网络超时", "请求超时：60 秒内未收到模型输出");
+        assertEquals("正在加载中...(网络超时，重试第3次：60 秒内未收到模型输出)",
+                RunningIndicator.retryText(p, "正在加载中..."));
+    }
+
+    /** 网络错误：剥 "网络错误: " 前缀 */
+    @Test
+    public void retryText_networkError() {
+        RetryProgress p = RetryProgress.ofNetwork(7, "网络错误", "网络错误: Failed to connect to api.xx.com");
+        assertEquals("可随时补充信息...(网络错误，重试第7次：Failed to connect to api.xx.com)",
+                RunningIndicator.retryText(p, "可随时补充信息..."));
+    }
+
+    /** 半角冒号前缀同样剥除（okhttp 消息形态不一） */
+    @Test
+    public void stripNetworkPrefix_bothColonForms() {
+        assertEquals("timeout", RunningIndicator.stripNetworkPrefix("请求超时: timeout"));
+        assertEquals("timeout", RunningIndicator.stripNetworkPrefix("请求超时：timeout"));
+        assertEquals("reset", RunningIndicator.stripNetworkPrefix("网络错误: reset"));
+        assertEquals("裸消息", RunningIndicator.stripNetworkPrefix("裸消息"));
+    }
+
+    /** HTTP 类后缀不回归：响应体原样直拼，无 "：" 分隔 */
+    @Test
+    public void bodyPart_httpError_unchanged() {
+        assertEquals("{\"e\":1}", RunningIndicator.bodyPart(RetryProgress.of(1, 500, "{\"e\":1}")));
+        assertEquals("", RunningIndicator.bodyPart(RetryProgress.of(1, 429, null)));
+    }
+
+    /** 网络类详情同样截断 200 字符（"：" 不计入截断长度） */
+    @Test
+    public void bodyPart_networkTruncatedAt200() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 250; i++) sb.append('y');
+        RetryProgress p = RetryProgress.ofNetwork(1, "网络错误", sb.toString());
+        assertEquals(201, RunningIndicator.bodyPart(p).length());
+        assertTrue(RunningIndicator.bodyPart(p).startsWith("："));
+    }
 }
