@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -435,5 +436,98 @@ public class DeepSeekClientTest {
         assertFalse(json.has("reasoning_effort"));
         assertFalse(json.has("enable_thinking"));
         assertFalse(json.has("stream_options"));
+    }
+
+    /** 无任何响应：首增量看门狗在阈值内 cancel 请求，归类 TIMEOUT（不得误判为 NETWORK） */
+    @Test
+    public void streamChat_noFirstDeltaWithinThreshold_throwsTimeout() throws Exception {
+        server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+        DeepSeekClient c = newClient();
+        c.firstTokenTimeoutMs = 300;
+        try {
+            c.streamChat(Collections.<Message>singletonList(Message.user("hi")), null, new StreamHandler() {
+                @Override public void onThinking(String delta) { }
+                @Override public void onContent(String delta) { }
+                @Override public void onFinish(String f, Usage u, List<ToolCall> t) { }
+            });
+            fail("应在阈值内判定超时");
+        } catch (LlmException e) {
+            assertEquals(LlmException.Type.TIMEOUT, e.type);
+            assertTrue(e.retryable);
+            assertTrue(e.getMessage(), e.getMessage().contains("内未收到模型输出"));
+        } finally {
+            c.close();
+        }
+    }
+
+    /** 阈值内正常吐字：看门狗不得干扰流式（子线程提前 cancel，后续 chunk 照常） */
+    @Test
+    public void streamChat_firstDeltaInTime_watchdogStaysQuiet() throws Exception {
+        String sse = "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\"世界\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                + "data: [DONE]\n\n";
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream").setChunkedBody(sse, 1));
+        DeepSeekClient c = newClient();
+        c.firstTokenTimeoutMs = 2000;
+        final StringBuilder out = new StringBuilder();
+        try {
+            c.streamChat(Collections.<Message>singletonList(Message.user("hi")), null, new StreamHandler() {
+                @Override public void onContent(String delta) { out.append(delta); }
+                @Override public void onFinish(String f, Usage u, List<ToolCall> t) { }
+            });
+        } finally {
+            c.close();
+        }
+        assertEquals("你好世界", out.toString());
+    }
+
+    /** 用户 cancel：仍是网络错误而非超时（保证调用方按 interrupted 分支走，不进长重试） */
+    @Test
+    public void streamChat_userCancel_isNetworkNotTimeout() throws Exception {
+        server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+        final DeepSeekClient c = newClient();
+        c.firstTokenTimeoutMs = 60000; // 看门狗远不到期
+        final LlmException[] thrown = new LlmException[1];
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    c.streamChat(Collections.<Message>singletonList(Message.user("hi")), null, new StreamHandler() {
+                        @Override public void onContent(String delta) { }
+                        @Override public void onFinish(String f, Usage u, List<ToolCall> x) { }
+                    });
+                } catch (LlmException e) {
+                    thrown[0] = e;
+                }
+            }
+        });
+        t.start();
+        Thread.sleep(300);
+        c.cancel();
+        t.join(5000);
+        assertNotNull(thrown[0]);
+        assertEquals(LlmException.Type.NETWORK, thrown[0].type);
+        c.close();
+    }
+
+    /** 域名解析失败：永久性网络故障，retryable=false（主/子循环据此短路不重试） */
+    @Test
+    public void unresolvableHost_isNonRetryableNetworkError() {
+        DeepSeekClient c = new DeepSeekClient("http://minion-nonexistent-host.invalid/v1/chat/completions",
+                "sk-test", "m", false, "low", "deepseek");
+        try {
+            c.streamChat(Collections.<Message>singletonList(Message.user("hi")), null, new StreamHandler() {
+                @Override public void onContent(String delta) { }
+                @Override public void onFinish(String f, Usage u, List<ToolCall> t) { }
+            });
+            fail("解析不出的域名必须报错");
+        } catch (LlmException e) {
+            assertEquals(LlmException.Type.NETWORK, e.type);
+            assertFalse("DNS 失败属永久性故障，不得进长重试", e.retryable);
+            assertTrue(e.getMessage(), e.getMessage().contains("请检查设置中的 API 地址"));
+        } finally {
+            c.close();
+        }
     }
 }

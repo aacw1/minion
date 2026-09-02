@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /** OpenAI 兼容 Chat Completions 流式客户端（SSE），内置 deepseek/qwen 思考参数适配。 */
@@ -26,6 +29,13 @@ public class DeepSeekClient implements LlmClient {
     private static final int CONNECT_TIMEOUT = 30;
     private static final int READ_TIMEOUT = 300;
 
+    /** 首增量等待上限默认值：60s 内没收到任何有效增量即判定请求卡死 */
+    private static final long DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 60_000L;
+
+    /** 首增量（首个非空 delta）超时阈值：超时即抛 TIMEOUT 交调用方长重试。
+     *  包级可见供单测改小；与 CONNECT/READ_TIMEOUT 同风格，硬编码不进 config.properties */
+    long firstTokenTimeoutMs = DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
+
     private final String url;
     private final String apiKey;
     private final String model;
@@ -33,7 +43,21 @@ public class DeepSeekClient implements LlmClient {
     private final String reasoningEffort;
     private final String provider;
     private final OkHttpClient http;
+    /** 看门狗调度池（实例级，随 close 释放）：单线程 daemon，取消即出队、空闲可回收 */
+    private final ScheduledExecutorService watchdogScheduler = newWatchdogScheduler();
     private volatile boolean closed;
+
+    private static ScheduledExecutorService newWatchdogScheduler() {
+        ScheduledThreadPoolExecutor ex = new ScheduledThreadPoolExecutor(1, r -> {
+            Thread t = new Thread(r, "llm-first-token-watchdog");
+            t.setDaemon(true);
+            return t;
+        });
+        ex.setRemoveOnCancelPolicy(true);                     // 长流式期间不留已取消任务
+        ex.setKeepAliveTime(60, TimeUnit.SECONDS);            // 配合下面允许核心线程超时回收
+        ex.allowCoreThreadTimeOut(true);
+        return ex;
+    }
 
     public DeepSeekClient(String url, String apiKey, String model,
                           boolean thinking, String reasoningEffort, String provider) {
@@ -132,8 +156,16 @@ public class DeepSeekClient implements LlmClient {
         StringBuilder thinkingSb = new StringBuilder();
         Usage usage = null;
         String finish = "stop";
-        okhttp3.Call call = http.newCall(buildRequest(messages, tools));
+        final okhttp3.Call call = http.newCall(buildRequest(messages, tools));
         inFlightCalls.add(call);
+        // 首增量看门狗：READ_TIMEOUT 管的是"两个 SSE chunk 之间的间隔"（300s），
+        // 治不了"连上了但模型迟迟不产出"。此处独立计时，到点 cancel 解除阻塞并归为 TIMEOUT。
+        // READ_TIMEOUT 保持 300s 不变，避免误杀正在持续吐字的慢流
+        final boolean[] watchdogFired = new boolean[1];
+        final ScheduledFuture<?> watchdog = watchdogScheduler.schedule(() -> {
+            watchdogFired[0] = true;
+            call.cancel();
+        }, firstTokenTimeoutMs, TimeUnit.MILLISECONDS);
         try (Response response = call.execute()) {
             if (!response.isSuccessful()) throw LlmException.of(response.code(), responseBody(response));
             if (response.body() == null) throw new LlmException(LlmException.Type.OTHER, "空响应", false);
@@ -157,6 +189,7 @@ public class DeepSeekClient implements LlmClient {
                         if (delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull()) {
                             String d = delta.get("reasoning_content").getAsString();
                             if (!d.isEmpty()) {
+                                watchdog.cancel(false); // 首个有效增量到达：计时职责交回 READ_TIMEOUT
                                 thinkingSb.append(d);
                                 handler.onThinking(d);
                             }
@@ -164,11 +197,13 @@ public class DeepSeekClient implements LlmClient {
                         if (delta.has("content") && !delta.get("content").isJsonNull()) {
                             String d = delta.get("content").getAsString();
                             if (!d.isEmpty()) {
+                                watchdog.cancel(false);
                                 content.append(d);
                                 handler.onContent(d);
                             }
                         }
                         if (delta.has("tool_calls") && delta.get("tool_calls").isJsonArray()) {
+                            watchdog.cancel(false); // 工具调用增量同样是"模型已产出"的信号
                             accumulateToolCalls(delta.getAsJsonArray("tool_calls"), acc);
                         }
                     }
@@ -182,11 +217,22 @@ public class DeepSeekClient implements LlmClient {
                 }
             }
         } catch (IOException e) {
+            // 顺序敏感：okhttp 被 cancel 抛的是 IOException("canceled")，既不 instanceof SocketTimeout，
+            // 也分不清是看门狗还是用户中断——故必须最先查 watchdogFired 标志
+            if (watchdogFired[0]) {
+                throw new LlmException(LlmException.Type.TIMEOUT,
+                        "请求超时：" + thresholdText() + "内未收到模型输出", true);
+            }
             if (isTimeout(e)) {
                 throw new LlmException(LlmException.Type.TIMEOUT, "请求超时: " + e.getMessage(), true);
             }
+            if (isDnsFailure(e)) {
+                throw new LlmException(LlmException.Type.NETWORK,
+                        "网络错误: " + e.getMessage() + "（域名无法解析，请检查设置中的 API 地址）", false);
+            }
             throw new LlmException(LlmException.Type.NETWORK, "网络错误: " + e.getMessage(), true);
         } finally {
+            watchdog.cancel(false); // 幂等兜底（正常完成/异常路径都要摘掉定时任务）
             inFlightCalls.remove(call);
         }
         if (usage == null) {
@@ -246,6 +292,24 @@ public class DeepSeekClient implements LlmClient {
     private boolean isTimeout(IOException e) {
         return e instanceof java.net.SocketTimeoutException
                 || (e.getCause() != null && e.getCause() instanceof java.net.SocketTimeoutException);
+    }
+
+    /** 阈值展示文本：整秒说"N 秒"，不足秒说"N 毫秒"（单测把阈值改到亚秒级时文案不失真） */
+    private String thresholdText() {
+        return firstTokenTimeoutMs % 1000 == 0 && firstTokenTimeoutMs >= 1000
+                ? (firstTokenTimeoutMs / 1000) + " 秒" : firstTokenTimeoutMs + " 毫秒";
+    }
+
+    /** 域名解析失败（API 地址配错 / 本机断网）：永久性故障，标记 retryable=false 交调用方短路。
+     *  okhttp 可能直抛 UnknownHostException，也可能包成 IOException，故沿 cause 链查（限深 5 层防自环）。
+     *  只认 DNS——ConnectException（服务重启期必然短暂拒连）与 SSLException 仍按可恢复处理 */
+    private boolean isDnsFailure(Throwable e) {
+        Throwable t = e;
+        for (int i = 0; i < 5 && t != null; i++) {
+            if (t instanceof java.net.UnknownHostException) return true;
+            t = t.getCause();
+        }
+        return false;
     }
 
     private String responseBody(Response r) {
