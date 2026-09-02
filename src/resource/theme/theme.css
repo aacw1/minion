@@ -332,6 +332,18 @@
 .dialog-pane .check-box { -fx-text-fill: #e6e8ee; }
 .dialog-pane .check-box .box { -fx-background-color: #1a1d24; -fx-border-color: #232733; }
 .dialog-pane .check-box:selected .mark { -fx-background-color: #4f8cff; }
+/* 单选按钮（MCP 表单「传输」三选项）：modena 默认 -fx-text-fill: -fx-text-background-color
+   由浅灰底派生出黑字，且 RadioButton 无 .label 类不被上面规则命中 → 深底上看不清，显式改白；
+   圆圈与选中点按 check-box 同口径上色（深底 + 蓝点） */
+.dialog-pane .radio-button { -fx-text-fill: #ffffff; }
+.dialog-pane .radio-button .radio {
+    -fx-background-color: #1a1d24;
+    -fx-border-color: #232733;
+    -fx-background-radius: 1.0em;
+    -fx-border-radius: 1.0em;
+}
+.dialog-pane .radio-button:focused .radio { -fx-border-color: #4f8cff; }
+.dialog-pane .radio-button:selected .radio .dot { -fx-background-color: #4f8cff; -fx-background-insets: 0; }
 .dialog-pane .combo-box { -fx-background-color: #1a1d24; }
 .dialog-pane .combo-box .list-cell { -fx-text-fill: #e6e8ee; }
 .dialog-pane .button {
