@@ -11,7 +11,7 @@ com.minion
 ├── Main                    入口：装配配置/技能/浏览器/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
 ├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、图标、会话管理
 └── core/
-    ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator
+    ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（长重试策略）、RetryProgress（重试进度值对象）
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
     ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、mcp/（McpProxyTool）、PathsGuard
     ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，stdio/SSE/Streamable 三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
@@ -178,6 +178,11 @@ com.minion
 | Grep 单行截断 LINE_MAX | 1000 字符 | GrepTool |
 | Grep 结果条数 MAX_RESULTS / 显示层 DISPLAY_CHARS | 250 条 / 30k 字符 | GrepTool |
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |
+| HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
+| CdpClient 连接超时 | 10000ms | Main.java |
+
+> 改动以上常量须在设计阶段说明理由，不随手改。
+
 | HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
 | CdpClient 连接超时 | 10000ms | Main.java |
 
