@@ -28,6 +28,7 @@ import com.minion.core.tools.EditTool;
 import com.minion.core.tools.GlobTool;
 import com.minion.core.tools.GrepTool;
 import com.minion.core.tools.ReadTool;
+import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.WebFetchTool;
 import com.minion.core.tools.Workspace;
@@ -332,17 +333,24 @@ public class SessionManager {
     }
 
     /**
-     * 注册 MCP 服务器工具：与内置工具重名者跳过并计数（设置页展示 skippedTools）。
-     * 幂等：重复调用只补充新增工具。
+     * 注册 MCP 服务器工具：与内置/其它服务器工具重名者跳过并计数（设置页展示 skippedTools）。
+     * 幂等：本服务器工具已注册（重连/兜底路径重复回调）→ 跳过且不计跳过数，
+     * 只把「真冲突」（内置或其它 MCP 服务器占名）计入 skipped——否则重复注册会把
+     * 全部工具算成跳过，设置页「N 工具」显示 0 而工具实际可用。
      */
     private void registerMcpTools(ToolRegistry registry, McpServer server) {
         int skipped = 0;
         for (McpToolInfo info : server.tools) {
-            if (registry.get(info.name) != null) {
-                skipped++;
+            Tool exist = registry.get(info.name);
+            if (exist == null) {
+                registry.register(new McpProxyTool(mcp, server.name, info));
                 continue;
             }
-            registry.register(new McpProxyTool(mcp, server.name, info));
+            if (exist instanceof McpProxyTool
+                    && server.name.equals(((McpProxyTool) exist).serverName())) {
+                continue; // 本服务器此前已注册（连接完成回调/兜底路径），幂等跳过
+            }
+            skipped++; // 与内置工具或其它 MCP 服务器同名：本服务器此工具注册不上
         }
         server.skippedTools = skipped;
     }

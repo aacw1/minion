@@ -23,6 +23,9 @@ public class McpProxyTool implements Tool {
     @Override public String description() { return info.description; }
     @Override public JsonObject schema() { return info.schema; }
 
+    /** 所属服务器名（注册冲突判定：同名已注册工具是否本服务器旧注册） */
+    public String serverName() { return serverName; }
+
     @Override
     public ToolResult execute(JsonObject args) {
         try {

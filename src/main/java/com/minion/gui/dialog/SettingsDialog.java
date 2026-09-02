@@ -89,7 +89,8 @@ public class SettingsDialog {
         HBox box = new HBox(0);
         box.getChildren().addAll(nav, content);
         HBox.setHgrow(content, Priority.ALWAYS);
-        box.setPrefSize(620, 500);
+        // 需求：右侧内容区宽为原 1.5 倍（导航 120 不变：500 → 750，总宽 620 → 870）
+        box.setPrefSize(870, 500);
         d.getDialogPane().setContent(box);
         d.showAndWait();
     }
@@ -313,6 +314,7 @@ public class SettingsDialog {
                     item.enabled = nv;
                     if (nv) mcp.ensureConnectedAsync(item.name);
                     else mcp.disconnect(item.name);
+                    mcp.save(); // 启用/停用立即落盘：否则重启按 mcp.json 旧值自动启用（取消勾选不生效的根因）
                 });
                 HBox box = new HBox(8, dot, name, meta, on);
                 HBox.setHgrow(meta, Priority.ALWAYS);
@@ -402,9 +404,10 @@ public class SettingsDialog {
         grid.setPadding(new Insets(10));
         TextField name = new TextField(s == null ? "" : s.name);
         ToggleGroup transportGroup = new ToggleGroup();
-        RadioButton rbStdio = transportRadio("stdio（本地进程）", McpServer.STDIO, transportGroup);
-        RadioButton rbSse = transportRadio("SSE（旧版 HTTP+SSE）", McpServer.SSE, transportGroup);
-        RadioButton rbStream = transportRadio("Streamable HTTP（推荐远程）", McpServer.STREAMABLE, transportGroup);
+        // 单选项去掉括号解释（仅留传输名，口径同列表 meta 的 labelOf）
+        RadioButton rbStdio = transportRadio("stdio", McpServer.STDIO, transportGroup);
+        RadioButton rbSse = transportRadio("SSE", McpServer.SSE, transportGroup);
+        RadioButton rbStream = transportRadio("Streamable HTTP", McpServer.STREAMABLE, transportGroup);
         HBox transportBox = new HBox(10, rbStdio, rbSse, rbStream);
         String t0 = McpServer.normalizedTransport(s == null ? McpServer.STDIO : s.transport);
         selectTransport(transportGroup, t0);
@@ -425,20 +428,13 @@ public class SettingsDialog {
         headerArea.setPrefRowCount(2);
         headerArea.setPrefColumnCount(20);
 
-        Label envTip = new Label("传给 stdio 子进程的环境变量，如 GITHUB_PERSONAL_ACCESS_TOKEN=…（仅 stdio 生效）");
-        envTip.getStyleClass().add("msg-thinking");
-        Label headerTip = new Label("随请求头发送（如 Authorization: Bearer …）；旧版 SSE 传输不支持自定义头，仅 Streamable 生效");
-        headerTip.getStyleClass().add("msg-thinking");
-
         grid.addRow(0, new Label("名称:"), name);
         grid.addRow(1, new Label("传输:"), transportBox);
         grid.addRow(2, new Label("命令:"), command);
         grid.addRow(3, new Label("参数(每行一个):"), argsArea);
         grid.addRow(4, new Label("环境变量(KEY=VALUE):"), envArea);
-        grid.addRow(5, envTip);
-        grid.addRow(6, urlLabel, url);
-        grid.addRow(7, new Label("请求头(K:V):"), headerArea);
-        grid.addRow(8, headerTip);
+        grid.addRow(5, urlLabel, url);
+        grid.addRow(6, new Label("请求头(K:V):"), headerArea);
         d.getDialogPane().setContent(grid);
 
         Runnable applyTransport = () -> {
@@ -538,7 +534,7 @@ public class SettingsDialog {
         return t == null ? McpServer.STDIO : String.valueOf(t.getUserData());
     }
 
-    /** 按联动口径显隐行：命令组(2-4) / URL(6) / 请求头(7-8)；隐藏行清空；URL 文案按传输区分 sse 与 streamable */
+    /** 按联动口径显隐行：命令组(2-4) / URL(5) / 请求头(6)；隐藏行清空；URL 文案按传输区分 sse 与 streamable */
     private static void showRows(GridPane grid, String transport, Set<McpFormPolicy.Field> keep, Label urlLabel) {
         boolean stdio = keep.contains(McpFormPolicy.Field.COMMAND);
         boolean url = keep.contains(McpFormPolicy.Field.URL);
@@ -546,10 +542,8 @@ public class SettingsDialog {
         setRowVisible(grid, 2, stdio);
         setRowVisible(grid, 3, stdio);
         setRowVisible(grid, 4, stdio);
-        setRowVisible(grid, 5, stdio);     // 环境变量提示行
-        setRowVisible(grid, 6, url);
-        setRowVisible(grid, 7, headers);
-        setRowVisible(grid, 8, headers);   // 请求头提示行
+        setRowVisible(grid, 5, url);
+        setRowVisible(grid, 6, headers);
         urlLabel.setText(McpServer.STREAMABLE.equals(transport)
                 ? "URL(MCP 端点，如 http://host:port/mcp):"
                 : "URL(SSE 端点，如 http://host:port/sse):");
@@ -571,8 +565,8 @@ public class SettingsDialog {
         boolean url = keep.contains(McpFormPolicy.Field.URL);
         boolean headers = keep.contains(McpFormPolicy.Field.HEADERS);
         if (!stdio) { clearRowText(grid, 2); clearRowText(grid, 3); clearRowText(grid, 4); }
-        if (!url) clearRowText(grid, 6);
-        if (!headers) clearRowText(grid, 7);
+        if (!url) clearRowText(grid, 5);
+        if (!headers) clearRowText(grid, 6);
     }
 
     private static void clearRowText(GridPane grid, int row) {

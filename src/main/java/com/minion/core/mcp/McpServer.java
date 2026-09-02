@@ -42,6 +42,6 @@ public class McpServer {
     public transient volatile String failReason;
     /** 连接成功后 tools/list 的结果（由 McpManager 填充） */
     public transient volatile List<McpToolInfo> tools = new ArrayList<McpToolInfo>();
-    /** 因与内置工具重名被跳过的工具数（设置页展示） */
+    /** 因与内置工具/其它 MCP 服务器重名被跳过的工具数（设置页展示；本服务器已注册的幂等跳过不计入） */
     public transient volatile int skippedTools;
 }

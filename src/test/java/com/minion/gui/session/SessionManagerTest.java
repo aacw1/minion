@@ -684,6 +684,51 @@ public class SessionManagerTest {
         mcp.shutdown();
     }
 
+    /** 回归：连接断开后重连（设置页重连/调用自动重建），补注册不能把本服务器全部工具计为
+     *  skippedTools —— 否则设置页「N 工具」显示 0 而工具实际可用（注册表未清）。 */
+    @Test
+    public void reconnectMcp_doesNotPolluteSkippedTools() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        McpStore store = McpStore.load(jar);
+        McpServer server = new McpServer();
+        server.name = "fake";
+        server.transport = "stdio";
+        server.command = System.getProperty("java.home") + "/bin/java";
+        server.args = new ArrayList<String>();
+        server.args.add("-cp");
+        server.args.add(System.getProperty("java.class.path"));
+        server.args.add(FakeMcpServer.class.getName());
+        server.enabled = true;
+        store.list().add(server);
+        McpManager mcp = new McpManager(store);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, mcp);
+        SessionHandle h = m.createSession(null);
+        long deadline = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < deadline && h.loop.registry().get("fake_tool") == null) {
+            Thread.sleep(50);
+        }
+        assertNotNull("首次连接后工具应注册", h.loop.registry().get("fake_tool"));
+
+        // 断开 → 重连（模拟设置页重连/工具调用自动重建）：注册表保留旧 McpProxyTool
+        mcp.disconnect("fake");
+        mcp.ensureConnectedAsync("fake");
+        deadline = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < deadline
+                && (server.state != McpServer.State.CONNECTED || server.tools.isEmpty())) {
+            Thread.sleep(50);
+        }
+        assertEquals("重连应回到 CONNECTED", McpServer.State.CONNECTED, server.state);
+        assertEquals("重连注册不得把本服务器工具计为跳过（设置页显示 0 的根因）",
+                0, server.skippedTools);
+        assertEquals("显示口径：工具数 = listTools 全量", server.tools.size(), server.tools.size() - server.skippedTools);
+        assertNotNull("重连后工具应仍可用", h.loop.registry().get("fake_tool"));
+        mcp.shutdown();
+    }
+
     /** 页签关闭语义：deactivateSession 取消激活（currentSession 置空），再次 activate 可重新激活 */
     @Test
     public void deactivateSession_clearsCurrentAndAllowsReactivate() throws Exception {
