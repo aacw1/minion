@@ -544,19 +544,22 @@ public class AgentLoopTest {
     }
 
     /** 真实网络错误路径（streamChat 抛 retryable 异常，与 DeepSeekClient 断线一致）：
-     *  模型每轮先调工具、下一轮网络失败 → 用户重发 → 网络再失败。
-     *  验证失败轮的工具结果只入历史一次，无重复叠加。 */
+     *  每轮：调工具成功入史 → 下一请求网络失败 → 长重试至耗尽报错收场；用户重发第二轮同构。
+     *  验证失败轮的工具结果只入历史一次，无重复叠加（重试 N 次请求后历史仍恰好 3 条/轮）。
+     *  ScriptedNetFailLlm 按"请求末尾是否 user 消息"识别轮起始，重试次数交给墙钟自然耗尽，
+     *  不受脚本长度/游标漂移影响（NETWORK 纳入长重试后重试轮数不定，线性剧本无法对齐轮边界） */
     @Test
     public void networkFailure_toolTurnThenFail_repeatedTurns_noAccumulation() {
-        ScriptedNetFailLlm net = new ScriptedNetFailLlm(Arrays.asList(
-                "TOOL", "NETWORK", "NETWORK",   // runUserTurn#1：调工具 → 网络失败 → 重试失败 → break
-                "TOOL", "NETWORK", "NETWORK")); // runUserTurn#2：同上
+        ScriptedNetFailLlm net = new ScriptedNetFailLlm();
         AgentLoop loop = new AgentLoop(net, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, null,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
+        // NETWORK 已纳入长重试：用短墙钟快速耗尽，避免用例跑 20 分钟。
+        // 100ms 而非计划初稿的 25ms——Thread.sleep 精度下 25ms 每轮只够重试 1~2 次，断言偏脆
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 100);
         loop.runUserTurn("任务一");
         loop.runUserTurn("任务二");
         // 每轮：user + assistant(tool_calls) + tool(result) = 3 条；2 轮共 6 条，无叠加
@@ -568,13 +571,17 @@ public class AgentLoopTest {
         assertEquals(Message.Role.USER, msgs.get(3).role);
         assertEquals(Message.Role.ASSISTANT, msgs.get(4).role);
         assertEquals(Message.Role.TOOL, msgs.get(5).role);
-        // 每次 runUserTurn 首请求失败后重试一次（共 2 次请求），随后 break
-        assertEquals(6, net.calls);
+        // 本用例的真命题是"失败轮工具结果不重复入历史"（上面的 msgs.size()==6）；
+        // 长重试的请求次数取决于墙钟与 sleep 精度，只断言"进过长重试"且"退出时复位"
+        assertTrue("每轮都进了长重试: calls=" + net.calls, net.calls > 4);
+        assertTrue(!ui.retryAttempts().isEmpty());
+        assertTrue(ui.retryAttempts().get(0) >= 1);
+        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
         assertEquals(2, ui.errors.size());
     }
 
-    /** 网络失败发生在流式中途（已回调部分 content）：半截内容不得入历史（非用户中断），
-     *  重试成功后仅一条完整 assistant 消息 */
+    /** 流式中途网络失败（已吐半截）：零增量闸门拦住长重试与快速重试——
+     *  半截不入历史、不重发（防 ChatView 重复输出），一次性报错结束本轮 */
     @Test
     public void networkFailure_midStreamPartialContent_notDuplicated() throws Exception {
         MidStreamFailLlm net = new MidStreamFailLlm();
@@ -584,46 +591,39 @@ public class AgentLoopTest {
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 充裕墙钟：证明不重试是闸门所致而非耗尽
         loop.runUserTurn("任务");
-        // 第一次请求：回调半截后抛网络异常 → 重试成功
-        // 历史 = user + assistant(完整回复)，半截不入历史
-        assertEquals(2, loop.messages().size());
-        assertEquals(Message.Role.ASSISTANT, loop.messages().get(1).role);
-        assertEquals("完整回复", loop.messages().get(1).content);
-        assertEquals(2, net.calls);
-        assertEquals(1, ui.warnings.size()); // 仅重试提示
+        assertEquals("闸门下不得重发出第二条 assistant", 1, loop.messages().size());
+        assertEquals(Message.Role.USER, loop.messages().get(0).role);
+        assertEquals(1, net.calls);
+        assertTrue("不得出现『自动重试 1 次』", ui.warnings.isEmpty());
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.retryAttempts().isEmpty()); // 未进长重试
     }
 
-    /** 脚本化网络错误客户端：TOOL=输出工具调用；NETWORK=抛 retryable 网络异常；OK=正常回复 */
+    /** 每轮结构固定的脚本化网络错误客户端：轮起始请求（历史末尾为 user 消息）回一次工具调用，
+     *  此后该轮内其余请求（末尾为 tool 消息，含长重试重发）全部抛 retryable 网络异常，
+     *  耗尽与否交给 RetryPolicy 墙钟决定——不依赖线性剧本长度，杜绝游标漂移 */
     public static class ScriptedNetFailLlm implements LlmClient {
-        private final List<String> script;
-        private int cursor = 0;
         public int calls = 0;
-
-        public ScriptedNetFailLlm(List<String> script) { this.script = script; }
 
         @Override
         public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
                 throws LlmException {
             calls++;
-            String step = script.get(Math.min(cursor, script.size() - 1));
-            cursor++;
-            if ("NETWORK".equals(step)) {
+            Message last = messages.get(messages.size() - 1);
+            if (last.role != Message.Role.USER) {
+                // 工具结果已入史：本轮的 LLM 请求一律网络失败（含长重试期间的每次重发）
                 throw new LlmException(LlmException.Type.NETWORK, "模拟网络错误", true);
             }
             Usage u = new Usage();
             u.inputTokens = 10;
             u.outputTokens = 5;
-            if ("TOOL".equals(step)) {
-                ToolCall tc = new ToolCall();
-                tc.id = "c" + cursor;
-                tc.name = "example";
-                tc.arguments = "{\"text\":\"x\"}";
-                handler.onFinish("tool_calls", u, Collections.singletonList(tc));
-                return;
-            }
-            handler.onContent("最终回复");
-            handler.onFinish("stop", u, new ArrayList<ToolCall>());
+            ToolCall tc = new ToolCall();
+            tc.id = "c" + calls;
+            tc.name = "example";
+            tc.arguments = "{\"text\":\"x\"}";
+            handler.onFinish("tool_calls", u, Collections.singletonList(tc));
         }
 
         @Override
@@ -632,7 +632,7 @@ public class AgentLoopTest {
         }
     }
 
-    /** 流式中途网络失败客户端：首次请求回调半截 content 后抛网络异常（重试成功） */
+    /** 流式中途网络失败客户端：首次请求回调半截 content 后抛网络异常（验证零增量闸门拦截重发） */
     public static class MidStreamFailLlm implements LlmClient {
         public int calls = 0;
         public List<Message> lastRequest = new ArrayList<Message>();
@@ -1447,5 +1447,102 @@ public class AgentLoopTest {
         assertEquals(500, ui.retryProgress.get(2).httpCode);
         assertEquals("{\"error\":\"boom\"}", ui.retryProgress.get(2).body);
         assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue()); // 末位复位
+    }
+
+    /** 网络超时（TIMEOUT）：进入长重试，成功后静默恢复；指示器标签为中文 */
+    @Test
+    public void networkTimeout_retryThenSuccess() {
+        llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时：60 秒内未收到模型输出", true));
+        llm.addTurn("最终回复");
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(2, llm.requests.size());
+        assertTrue(ui.errors.isEmpty());
+        assertTrue(ui.warnings.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertEquals("网络超时", ui.retryProgress.get(0).label);
+    }
+
+    /** 可恢复网络错误（NETWORK retryable=true）：进入长重试 */
+    @Test
+    public void networkError_retryThenSuccess() {
+        llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK, "网络错误: Connection reset", true));
+        llm.addTurn("最终回复");
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(2, llm.requests.size());
+        assertEquals("网络错误", ui.retryProgress.get(0).label);
+        assertEquals(0, ui.retryProgress.get(0).httpCode);
+        assertTrue(ui.errors.isEmpty());
+    }
+
+    /** DNS 解析失败（NETWORK retryable=false）：不重试，一次即报错并给出配置指向 */
+    @Test
+    public void dnsFailure_noRetryFailsFast() {
+        llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK,
+                "网络错误: minion-nonexistent.invalid（域名无法解析，请检查设置中的 API 地址）", false));
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(1, llm.requests.size());         // 无重发
+        assertTrue(ui.retryAttempts().isEmpty());      // 未进长重试
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("请检查设置中的 API 地址"));
+    }
+
+    /** 零增量闸门：已吐字后断流 → 长重试与快速重试都不走，一次报错收场 */
+    @Test
+    public void partialOutputThenNetwork_noRetryAtAll() {
+        llm.addTurnPartialThenThrow("已经吐出的半截正文",
+                new LlmException(LlmException.Type.NETWORK, "网络错误: Connection reset", true));
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(1, llm.requests.size());
+        assertTrue(ui.retryAttempts().isEmpty());
+        assertTrue("闸门下不得出现『自动重试 1 次』", ui.warnings.isEmpty());
+        assertEquals(1, ui.errors.size());
+    }
+
+    /** 闸门不影响 429：零增量失败仍正常长重试（与既有用例同源，防误伤） */
+    @Test
+    public void partialOutputThen503_noFastRetry() {
+        llm.addTurnPartialThenThrow("半截", LlmException.of(503, "unavailable"));
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(1, llm.requests.size());
+        assertTrue(ui.warnings.isEmpty());
+    }
+
+    /** 429 → 网络超时混发：指示器标签随最近一次错误切换 */
+    @Test
+    public void retry_429ToNetworkTimeout_labelFollowsLatest() {
+        llm.addTurnThrow(LlmException.of(429, null));
+        llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时", true));
+        llm.addTurn("最终回复");
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(3, ui.retryProgress.size());
+        assertNull(ui.retryProgress.get(0).label);
+        assertEquals(429, ui.retryProgress.get(0).httpCode);
+        assertEquals("网络超时", ui.retryProgress.get(1).label);
+        assertEquals(0, ui.retryProgress.get(1).httpCode);
+        assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue());
+    }
+
+    /** 网络类耗尽：总结文案用中文标签，不得输出"0 重试了 N 次" */
+    @Test
+    public void networkTimeout_exhausted_summaryUsesLabel() {
+        llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时", true));
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(10, 0, 10, 50); // 墙钟 ~5 次内耗尽
+        loop.runUserTurn("任务");
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).startsWith("网络超时 重试了"));
+        assertTrue(ui.errors.get(0).contains("仍失败"));
     }
 }

@@ -465,24 +465,25 @@ public class AgentLoop {
                         appendPartialAssistant(content, thinking);
                         break;
                     }
-                    if (isTransientError(e)) {
-                        // 瞬时错误长重试（内网模型资源差）：固定 5s/次，总时长 20 分钟（RetryPolicy.transientErrors）；
-                        // 429 限流 / 500 服务端报错 / 502 网关报错；进度经 onRetryProgress 进左下角指示器
-                        // （基础文案+错误码+次数），成功/首个流式增量静默恢复，超时一次性总结停止
+                    if (isTransientError(e) && noOutputYet(content, thinking)) {
+                        // 瞬时错误长重试（内网模型资源差）：固定 5s/次，墙钟总时长 20 分钟（RetryPolicy.transientErrors）；
+                        // 覆盖 429/500/502 + 网络超时 + 可恢复网络错误；进度经 onRetryProgress 进左下角指示器，
+                        // 成功/首个流式增量静默恢复，超时一次性总结停止。
+                        // 零增量闸门：本次请求已吐过正文/思考即不重试——重试复用同一 handler 与累加器，
+                        // ChatView 已渲染的半截无法回退，重来必然重复输出
                         int attempts = 0;
-                        long waited = 0;
-                        int lastCode = e.httpCode;
-                        String lastBody = e.body;
+                        long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次请求自身耗时
+                        LlmException last = e;
                         inRetry[0] = true;
                         while (true) {
                             attempts++;
-                            ui.onRetryProgress(RetryProgress.of(attempts, lastCode, lastBody)); // 尝试前立即更新指示器
+                            ui.onRetryProgress(RetryProgress.from(attempts, last)); // 尝试前立即更新指示器
                             long delay = retryPolicy.delayMs(attempts);
                             if (!sleepWithInterruptCheck(delay)) break; // 用户中断
-                            waited += delay;
-                            if (retryPolicy.isExhausted(waited)) {
-                                ui.onError(lastCode + " 重试了 " + attempts + " 次，持续 "
-                                        + (waited / 60000) + " 分钟仍失败，已停止重试");
+                            long elapsed = System.currentTimeMillis() - retryStart;
+                            if (retryPolicy.isExhausted(elapsed)) {
+                                ui.onError(RetryProgress.tag(last) + " 重试了 " + attempts + " 次，持续 "
+                                        + (elapsed / 60000) + " 分钟仍失败，已停止重试");
                                 break;
                             }
                             try {
@@ -492,12 +493,11 @@ public class AgentLoop {
                                 break;
                             } catch (LlmException re) {
                                 if (interrupted) break;
-                                if (!isTransientError(re)) {
+                                if (!isTransientError(re) || !noOutputYet(content, thinking)) {
                                     ui.onError("请求失败: " + re.getMessage());
                                     break;
                                 }
-                                lastCode = re.httpCode; // 仍可重试：更新错误码/错误体，指示器后缀随最近失败更新
-                                lastBody = re.body;
+                                last = re; // 仍可重试：指示器标签/错误体随最近一次失败更新
                             }
                         }
                         if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 退出重试态统一复位（幂等）
@@ -509,13 +509,13 @@ public class AgentLoop {
                             break; // 未成功（超时/换错已提示），结束本轮
                         }
                         // 重试成功：落入下方正常处理（usage 记录、回复入历史）
-                    } else if (e.retryable && retries < 1) {
+                    } else if (e.retryable && retries < 1 && noOutputYet(content, thinking)) {
                         retries++;
                         ui.onWarning("请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避：429 限流 2s，其余（网络/超时）0.5s；立即重试 429 几乎必然再 429
                         Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
                         continue; // 消息未变，直接重发本轮
-                    } else if (degradeImagesOnFailure()) {
+                    } else if (noOutputYet(content, thinking) && degradeImagesOnFailure()) {
                         continue; // 带图请求失败：清图降级纯文本重试
                     } else {
                         ui.onError(e.getMessage());
@@ -525,7 +525,7 @@ public class AgentLoop {
 
                 if (usage[0] != null) session.usage.record(usage[0]);
                 if ("error".equals(finish[0])) {
-                    if (degradeImagesOnFailure()) continue; // 同上：onError 回调路径（如 API 400）
+                    if (noOutputYet(content, thinking) && degradeImagesOnFailure()) continue; // 同上：onError 回调路径（如 API 400）——闸门在前，degrade 有清图+警告副作用
                     ui.onError(err[0] == null ? "请求失败" : err[0].getMessage());
                     break;
                 }
@@ -631,9 +631,20 @@ public class AgentLoop {
         ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
     }
 
-    /** 瞬时错误（429 限流 / 500 服务端报错 / 502 网关报错）：可进长重试 */
+    /** 瞬时错误（429 限流 / 500 服务端报错 / 502 网关报错 / 网络超时 / 可恢复网络错误）：可进长重试。
+     *  网络类靠 retryable 区分永久性故障——DNS 解析失败在 DeepSeekClient 置 retryable=false，此处不放行。
+     *  与 SubAgentLoop 同名方法保持字面一致（两处重复，本次不抽公共组件） */
     private boolean isTransientError(LlmException e) {
-        return e.type == LlmException.Type.RATE_LIMIT || e.httpCode == 500 || e.httpCode == 502;
+        return e.type == LlmException.Type.RATE_LIMIT
+                || e.type == LlmException.Type.TIMEOUT
+                || (e.type == LlmException.Type.NETWORK && e.retryable)
+                || e.httpCode == 500 || e.httpCode == 502;
+    }
+
+    /** 零增量闸门：本次请求是否还没吐出任何可见内容。tool_calls 不参与判定——
+     *  它累积在 DeepSeekClient 方法内的局部变量里，onFinish 前既不对外暴露也不渲染，重来无重复显示风险 */
+    private boolean noOutputYet(StringBuilder content, StringBuilder thinking) {
+        return content.length() == 0 && thinking.length() == 0;
     }
 
     /** 可中断等待：100ms 小片轮询 interrupted 标志（interrupt() 只设标志不中断线程，

@@ -30,6 +30,9 @@ public class FakeLlmClient implements LlmClient {
         public final String thinking;
         public final LlmException error;
         public final boolean throwOnCall; // true = streamChat 直接抛 error（响应码异常路径）
+        /** 非 null：抛错/回调前先吐这段增量（模拟流式中途断流） */
+        public final String partialContent;
+
         public ScriptedTurn(List<ToolCall> toolCalls, String content) {
             this(toolCalls, content, null, null, false);
         }
@@ -41,11 +44,16 @@ public class FakeLlmClient implements LlmClient {
         }
         public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking,
                             LlmException error, boolean throwOnCall) {
+            this(toolCalls, content, thinking, error, throwOnCall, null);
+        }
+        public ScriptedTurn(List<ToolCall> toolCalls, String content, String thinking,
+                            LlmException error, boolean throwOnCall, String partialContent) {
             this.toolCalls = toolCalls;
             this.content = content;
             this.thinking = thinking;
             this.error = error;
             this.throwOnCall = throwOnCall;
+            this.partialContent = partialContent;
         }
     }
 
@@ -79,6 +87,11 @@ public class FakeLlmClient implements LlmClient {
         turns.add(new ScriptedTurn(null, null, null, error, true));
     }
 
+    /** 脚本化"已吐字后断流"：回调增量后抛异常（验证零增量闸门拦截长重试/快速重试） */
+    public void addTurnPartialThenThrow(String delta, LlmException error) {
+        turns.add(new ScriptedTurn(null, null, null, error, true, delta));
+    }
+
     @Override
     public void streamChat(List<Message> messages, List<JsonObject> tools, StreamHandler handler)
             throws LlmException {
@@ -88,6 +101,8 @@ public class FakeLlmClient implements LlmClient {
         ScriptedTurn turn = turns.get(Math.min(cursor, turns.size() - 1));
         cursor++;
         if (turn.error != null) {
+            // 先吐增量再失败：与 DeepSeekClient 真实形态一致（readUtf8Line 抛 IOException → throw LlmException）
+            if (turn.partialContent != null) handler.onContent(turn.partialContent);
             if (turn.throwOnCall) throw turn.error;
             handler.onError(turn.error);
             return;
