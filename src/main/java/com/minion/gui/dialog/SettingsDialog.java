@@ -29,6 +29,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -390,6 +391,13 @@ public class SettingsDialog {
         list.getItems().addAll(mcp.servers());
     }
 
+    /** 表单标签统一 150px 宽：输入控件列起点对齐；150 可容纳最长标签（环境变量(KEY=VALUE): 约 140px）不截断 */
+    private static Label formLabel(String text) {
+        Label l = new Label(text);
+        l.setPrefWidth(150);
+        return l;
+    }
+
     /** 新建（null 带默认值）/ 编辑（预填）MCP 服务器表单；OK 返回服务器对象（编辑回写原对象），取消 null */
     private static McpServer form(McpServer s, final Window owner) {
         Dialog<McpServer> d = new Dialog<McpServer>();
@@ -414,27 +422,30 @@ public class SettingsDialog {
         TextField command = new TextField(s == null ? "npx" : s.command);
         TextArea argsArea = new TextArea(s == null ? "@playwright/mcp" : joinLines(s.args));
         TextArea envArea = new TextArea(s == null ? "" : pairLines(s.env));
-        Label urlLabel = new Label(McpServer.STREAMABLE.equals(t0)
-                ? "URL(MCP 端点，如 http://host:port/mcp):"
-                : "URL(SSE 端点，如 http://host:port/sse):");
+        Label urlLabel = formLabel("URL:");
         TextField url = new TextField(s == null ? "" : s.url);
         TextArea headerArea = new TextArea(s == null ? "" : pairLines(s.headers));
-        // TextArea 默认 pref 高 231px/宽 683px，3 个会把表单撑到 ~900px 超屏；
-        // 与基础设置页白名单一致压到 2 行 20 列（表单高 ~400px 放得下）
+        // 宽度：标签列 150 + hgap 8 + 输入 430 + 内边距 20 ≈ 600（原自适应 ~350 偏窄，看不全）；
+        // 高度：TextArea 压 2 行（3 个各默认 ~231px 会把表单撑到 ~900px 超屏，表单高 ~400px 放得下）
         argsArea.setPrefRowCount(2);
-        argsArea.setPrefColumnCount(20);
         envArea.setPrefRowCount(2);
-        envArea.setPrefColumnCount(20);
         headerArea.setPrefRowCount(2);
-        headerArea.setPrefColumnCount(20);
+        name.setPrefWidth(430);
+        command.setPrefWidth(430);
+        url.setPrefWidth(430);
+        argsArea.setPrefWidth(430);
+        envArea.setPrefWidth(430);
+        headerArea.setPrefWidth(430);
 
-        grid.addRow(0, new Label("名称:"), name);
-        grid.addRow(1, new Label("传输:"), transportBox);
-        grid.addRow(2, new Label("命令:"), command);
-        grid.addRow(3, new Label("参数(每行一个):"), argsArea);
-        grid.addRow(4, new Label("环境变量(KEY=VALUE):"), envArea);
+        grid.addRow(0, formLabel("名称:"), name);
+        grid.addRow(1, formLabel("传输:"), transportBox);
+        grid.addRow(2, formLabel("命令:"), command);
+        grid.addRow(3, formLabel("参数(每行一个):"), argsArea);
+        grid.addRow(4, formLabel("环境变量(KEY=VALUE):"), envArea);
         grid.addRow(5, urlLabel, url);
-        grid.addRow(6, new Label("请求头(K:V):"), headerArea);
+        Label headerLabel = formLabel("请求头(K:V):");
+        headerLabel.setTooltip(new Tooltip("K:V 或\nKEY=VALUE\n每行一条\n空行忽略"));
+        grid.addRow(6, headerLabel, headerArea);
         d.getDialogPane().setContent(grid);
 
         Runnable applyTransport = () -> {
@@ -534,7 +545,7 @@ public class SettingsDialog {
         return t == null ? McpServer.STDIO : String.valueOf(t.getUserData());
     }
 
-    /** 按联动口径显隐行：命令组(2-4) / URL(5) / 请求头(6)；隐藏行清空；URL 文案按传输区分 sse 与 streamable */
+    /** 按联动口径显隐行：命令组(2-4) / URL(5) / 请求头(6)；隐藏行清空；URL 标签固定文案（括号示例已去掉） */
     private static void showRows(GridPane grid, String transport, Set<McpFormPolicy.Field> keep, Label urlLabel) {
         boolean stdio = keep.contains(McpFormPolicy.Field.COMMAND);
         boolean url = keep.contains(McpFormPolicy.Field.URL);
@@ -544,9 +555,7 @@ public class SettingsDialog {
         setRowVisible(grid, 4, stdio);
         setRowVisible(grid, 5, url);
         setRowVisible(grid, 6, headers);
-        urlLabel.setText(McpServer.STREAMABLE.equals(transport)
-                ? "URL(MCP 端点，如 http://host:port/mcp):"
-                : "URL(SSE 端点，如 http://host:port/sse):");
+        urlLabel.setText("URL:");
     }
 
     /** 隐藏某 GridPane 行（行内所有控件 setVisible+setManaged=false）；不清空文本——初始回显时隐藏行里的旧值必须保留，清空只发生在用户切换传输（clearHiddenRows） */
