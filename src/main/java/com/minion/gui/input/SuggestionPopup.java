@@ -159,14 +159,18 @@ public class SuggestionPopup {
     /** 重建弹层窗口：换新 Popup + 新 ListView 实例，强制重建 scene 与 skin/VirtualFlow。
      *  popup.show 的 hide+show 复用旧 scene 与旧 Control——实测行高变化时残留
      *  旧 cell 高度，出现行高混合、行距错位、内容裁剪；新实例保证与首开完全一致。
-     *  新 ListView 沿用当前 items 与选中项（调用方在 rebuild 前/后设置的选中均生效）。 */
+     *  新 ListView 沿用当前 items 与选中项（调用方在 rebuild 前/后设置的选中均生效）。
+     *  关闭/显示顺序：先 show 新窗口、再 hide 旧窗口（而非先 hide 后 show）——
+     *  hide→show 序列中旧原生窗口关闭与新窗口创建跨合成帧，视觉上弹层"先消失再
+     *  重现"（选中项在窗口边缘按键触发滑动时每按一次闪一次）；先开后关时新旧窗口
+     *  同位置同尺寸同内容（rebuild 前 items 已就绪），重叠切换画面连续无间隙 */
     private void rebuild() {
         List<Suggestion> items = new ArrayList<Suggestion>(list.getItems());
         int sel = Math.max(0, list.getSelectionModel().getSelectedIndex());
         // 继承旧 list 的宽度/高度：校准后的 prefHeight 若被 createList 默认值覆盖，
         // 重建后弹层高度回落（行高不变但窗口缩小，末行被裁剪）
         double pw = list.getPrefWidth(), mw = list.getMinWidth(), ph = list.getPrefHeight();
-        if (popup.isShowing()) popup.hide();
+        Popup old = popup; // 旧窗口句柄：先开新窗后关旧窗（防闪烁，见方法注释）
         popup = new Popup();
         list = createList();
         list.setPrefWidth(pw);
@@ -177,6 +181,7 @@ public class SuggestionPopup {
         popup.getContent().add(list);
         popup.setAutoHide(false);
         popup.show(lastOwner, lastX, lastY);
+        if (old != null && old != popup && old.isShowing()) old.hide();
     }
 
     /** 首帧后校准弹层高度：按实际渲染行高取整到整行（末行不再只显示一半）。
@@ -202,6 +207,7 @@ public class SuggestionPopup {
                 }
                 // 收缩窗口到内容行 + 1 项：初始窗口按 MAX_VISIBLE 估算（最多 8 项）超出
                 // 视口行数，底部多出半截项并触发垂直滚动条；首帧实测行高后收缩
+                int countBefore = list.getItems().size(); // 收缩前后数量变化 = 需要重建
                 list.getItems().setAll(window());
                 list.getSelectionModel().select(0);
                 // 弹窗高度 = 内容行 + 1 行余量：第 7 行显示窗口下一项作预览（光标不可达），
@@ -213,6 +219,7 @@ public class SuggestionPopup {
                 double h = (visibleRows() + 1) * rowH + 3;
                 // 非整高才减半像素：防窗口向上取整后多出残行（整高如 280.0 保持精确，不裁剪末行）
                 if (Math.abs(h - Math.rint(h)) > 0.05) h -= 0.5;
+                boolean resized = false;
                 if (Math.abs(h - list.getPrefHeight()) >= 0.6) {
                     list.setPrefHeight(h);
                     calibratedH = h;
@@ -220,10 +227,14 @@ public class SuggestionPopup {
                     double y = b.getMinY() - h; // 上方优先
                     if (y < 0) y = b.getMaxY(); // 屏幕顶部空间不足时放下方
                     lastY = y;
+                    resized = true;
                 }
-                // 收缩后强制重建：换新 ListView 清除 items 收缩（8→6）残留的旧 cell——
-                // VirtualFlow 复用 cell 池不移除多余 cell，行高变化时出现混合高度/行距错位
-                rebuild();
+                // 仅在确有变化时重建：items 收缩（8→7）后须换新 ListView 清除残留旧
+                // cell（VirtualFlow 复用 cell 池不移除多余 cell，行高变化时出现混合
+                // 高度/行距错位），或高度调整需重定位。内容与高度都未变的再次校准
+                // （重试帧/重复 show 同内容）直接跳过——避免每次 show 后多一次
+                // hide+show 重建造成弹层闪动
+                if (resized || list.getItems().size() != countBefore) rebuild();
             }
         };
         Platform.runLater(task[0]);
