@@ -34,8 +34,11 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
+ *  @文件确认后内联进输入框（@路径 文本，所见即所得；扫描异步后台线程，不卡输入）；/命令、/技能、粘贴、图片为块。
  *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）；
  *  背景按状态取色（btn-send-empty #f48771 / btn-send-full #ff947c）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
@@ -66,6 +69,18 @@ public class InputView extends VBox {
     private boolean reconciling;
     private VBox frame; // 大框（弹层锚点）
     private CompletionParser.Token lastToken; // 弹层可见时待替换的词
+    /** 最近一次 @文件确认内联插入的完整文本（@路径）：该词保持原样时抑制弹层重开 */
+    private String inlineJustInserted;
+    /** @文件列表后台加载中（防抖：同时只跑一次 walk，完成后自动续载排队目录） */
+    private volatile boolean fileLoading;
+    /** 加载期间的排队目录（切工作空间连打 @ 时登记，完成后自动续载） */
+    private String pendingLoadDir;
+    /** @文件扫描线程（daemon 单线程）：同步遍历移出 FX 线程，大项目首次 @ 不卡输入框 */
+    private final ExecutorService filePool = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "file-suggester");
+        t.setDaemon(true);
+        return t;
+    });
     private volatile SessionHandle current;
     // FX 线程缓存的状态（bindSession/onRunningChanged/onAskChanged 维护）
     private boolean running;
@@ -220,6 +235,16 @@ public class InputView extends VBox {
         return mode == CompletionParser.Mode.FILE && !insert.startsWith("@") ? "@" + insert : insert;
     }
 
+    /** 内联确认后的安静态：光标处解析出的 FILE 词恰好等于刚插入的 @路径 全文时不重开弹层。
+     *  词被改动（增删字符）、光标移到别的词、插入文本为空时自然恢复。纯静态可脱离 JavaFX 单测 */
+    static boolean isInlineQuietState(String text, int caret, String inlineJustInserted) {
+        if (inlineJustInserted == null || inlineJustInserted.isEmpty() || text == null) return false;
+        CompletionParser.Token t = CompletionParser.parse(text, caret);
+        if (t.mode != CompletionParser.Mode.FILE) return false;
+        if (t.start < 0 || t.end > text.length() || t.end <= t.start) return false;
+        return text.substring(t.start, t.end).equals(inlineJustInserted);
+    }
+
     /** 块行占位开关：无块时 unmanaged（VBox 布局忽略，不产生多余间距） */
     private void refreshChipRow() {
         boolean has = !chips.isEmpty();
@@ -360,7 +385,11 @@ public class InputView extends VBox {
     /** 文本/光标变化 → 重新解析补全模式并刷新弹层（弹层异常不得打断输入，兜底隐藏） */
     private void onTextChanged() {
         try {
-            CompletionParser.Token t = CompletionParser.parse(input.getText(), input.getCaretPosition());
+            String text = input.getText();
+            int caret = input.getCaretPosition();
+            // 内联确认安静态：刚插入的 @路径 词未改动时不再弹层（词被改动/光标移走自然恢复）
+            if (isInlineQuietState(text, caret, inlineJustInserted)) return;
+            CompletionParser.Token t = CompletionParser.parse(text, caret);
             switch (t.mode) {
                 case SLASH:
                     popup.show(frame, SlashSuggester.all(manager.currentSkills()), t.query);
@@ -371,10 +400,10 @@ public class InputView extends VBox {
                     lastToken = t;
                     break;
                 case FILE: {
+                    lastToken = t;
                     String dir = manager.currentWorkspaceDir();
                     if (dir == null) { popup.hide(); lastToken = null; break; }
-                    popup.show(frame, fileSuggester.list(dir), t.query);
-                    lastToken = t;
+                    showFilePopup(dir, t); // 缓存命中同步显示；未命中后台扫描后刷新
                     break;
                 }
                 default:
@@ -387,15 +416,100 @@ public class InputView extends VBox {
         }
     }
 
-    /** 鼠标点击弹层条目：按 token 建块并删除已输入的部分词，焦点还回输入框（防后续键盘事件落入弹层列表） */
-    private void confirmInsert(String insert) {
-        if (insert == null || lastToken == null) return;
-        addChipFor(lastToken, insert);
-        lastToken = null;
-        input.requestFocus();
+    /** @文件弹层数据源：任何缓存（含过期）先即时显示，输入零等待；过期/无缓存时
+     *  派 requestFileLoad 后台刷新，完成后列表有变化才替换弹层（showsSame 免闪烁） */
+    private void showFilePopup(final String dir, final CompletionParser.Token t) {
+        List<Suggestion> any = fileSuggester.listStaleOk(dir);
+        if (any != null) {
+            popup.show(frame, any, t.query); // 即时显示：过期也先用旧缓存
+            if (fileSuggester.isFresh(dir)) return; // 新鲜缓存，无需后台刷新
+        }
+        requestFileLoad(dir);
     }
 
-    /** 按 token 建块并追加：@ 模式补回 @ 前缀（FileSuggester insertText 为纯路径）；
+    /** 请求后台扫描某工作空间文件列表（新鲜缓存视为完成，直接返回）。
+     *  同一时刻至多一次 walk（fileLoading 防抖）；加载中再收到新目录则排队（pendingLoadDir），
+     *  完成后自动续载——切项目连打 @ 不丢首词弹层。加载完成回调用最新词统一刷新 */
+    private void requestFileLoad(final String dir) {
+        if (dir == null || fileSuggester.isFresh(dir)) return;
+        if (fileLoading) {
+            pendingLoadDir = dir;
+            return;
+        }
+        fileLoading = true;
+        filePool.execute(new Runnable() {
+            @Override public void run() {
+                final List<Suggestion> files = fileSuggester.load(dir); // IO 在后台线程
+                Platform.runLater(new Runnable() {
+                    @Override public void run() {
+                        fileLoading = false;
+                        String next = pendingLoadDir;
+                        pendingLoadDir = null;
+                        maybeShowFilePopup(dir, files);
+                        if (next != null && !next.equals(dir)) requestFileLoad(next); // 续载排队目录
+                    }
+                });
+            }
+        });
+    }
+
+    /** 扫描完成回调：上下文仍有效（词仍是 @文件、非内联安静态、工作空间未切换）才以最新词刷新弹层；
+     *  刷新结果与当前展示一致（showsSame）则跳过重建；过期结果一律丢弃 */
+    private void maybeShowFilePopup(String dir, List<Suggestion> files) {
+        CompletionParser.Token cur = lastToken;
+        if (cur == null || cur.mode != CompletionParser.Mode.FILE) return; // 词已改/弹层已关
+        if (isInlineQuietState(input.getText(), input.getCaretPosition(), inlineJustInserted)) return;
+        String dirNow = manager.currentWorkspaceDir();
+        if (dirNow == null || !dirNow.equals(dir)) return; // 工作空间已切换
+        if (!popup.showsSame(files, cur.query)) popup.show(frame, files, cur.query);
+    }
+
+    /** 鼠标点击弹层条目回调：统一 hide + runLater 确认（与键盘同序，插入由 confirmApply 执行） */
+    private void confirmInsert(String insert) {
+        if (insert == null || lastToken == null) return;
+        final CompletionParser.Token t = lastToken;
+        lastToken = null;
+        popup.hide();
+        confirmApply(t, insert);
+    }
+
+    /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 统一确认。
+     *  runLater 保持原时序（KEY_PRESSED 派发期间改输入区与 behavior 竞争的老规避惯例，统一路径） */
+    private void confirmPopup() {
+        if (lastToken == null) return;
+        final CompletionParser.Token t = lastToken;
+        final String insert = popup.confirmSelected();
+        popup.hide();
+        lastToken = null;
+        if (insert == null) return;
+        confirmApply(t, insert);
+    }
+
+    /** 统一确认执行：@文件内联进输入框（不建块，所见即所得）；其余模式（/命令、/技能）建块。
+     *  runLater 执行避免事件派发期间改输入区 */
+    private void confirmApply(final CompletionParser.Token t, final String insert) {
+        if (t == null || insert == null || insert.isEmpty()) return;
+        Platform.runLater(new Runnable() {
+            @Override public void run() {
+                if (t.mode == CompletionParser.Mode.FILE) {
+                    // 内联：token 区间整体替换为 @路径，光标置于插入文本末尾；不再建块
+                    final String inline = insertionText(t.mode, insert);
+                    inlineJustInserted = inline; // 先于 replaceText：其触发的解析命中安静态不重开弹层
+                    try {
+                        input.replaceText(t.start, t.end, inline);
+                        input.positionCaret(t.start + inline.length());
+                    } catch (RuntimeException ex) {
+                        inlineJustInserted = null; // 坐标越界：用户已改文本，静默放弃
+                    }
+                    input.requestFocus();
+                } else {
+                    addChipFor(t, insert); // 命令/技能块：删 token 并建块
+                }
+            }
+        });
+    }
+
+    /** 按 token 建块并追加（/命令、/技能 等非 @文件模式）：@ 模式补回 @ 前缀；
      *  先删除 token 区间已输入的部分词（坐标过期=用户已改文本，整体放弃不建块）；空插入忽略 */
     private void addChipFor(CompletionParser.Token t, String insert) {
         if (insert == null || insert.isEmpty()) return;
@@ -408,20 +522,6 @@ public class InputView extends VBox {
         addChip(InputChip.textChip(InputChip.modeToType(t.mode), text));
     }
 
-    /** 键盘确认弹层选中：取插入文本 → 关弹层 → runLater 建块追加。
-     *  runLater 保持原时序（KEY_PRESSED 派发期间改输入区与 behavior 竞争的老规避惯例，统一路径） */
-    private void confirmPopup() {
-        if (lastToken == null) return;
-        final CompletionParser.Token t = lastToken;
-        final String insert = popup.confirmSelected();
-        popup.hide();
-        if (insert == null) return;
-        Platform.runLater(new Runnable() {
-            @Override public void run() { addChipFor(t, insert); }
-        });
-    }
-
-    /** MainWindow 激活会话时调用 */
     public void bindSession(SessionHandle h) {
         this.current = h;
         Platform.runLater(() -> {
@@ -430,6 +530,10 @@ public class InputView extends VBox {
             askQuestion = h == null ? null : h.askQuestion;
             updateButton();
             updatePrompt();
+            // @文件列表预热：绑定会话即后台扫描所属工作空间（每项目独立缓存 5 分钟；
+            // 缓存命中零开销——同项目内切会话/切回均不再扫描）
+            final String dir = manager.currentWorkspaceDir();
+            if (dir != null) requestFileLoad(dir);
             // 环形圈：切会话先隐藏，初始估算放会话线程（全量估算较重，防卡 UI），完成后 runLater 填充
             contextRing.setCompressing(false);
             contextRing.setVisible(false);
@@ -506,6 +610,8 @@ public class InputView extends VBox {
         pasteSeq = 0;
         refreshChipRow();
         popup.hide();
+        lastToken = null;
+        inlineJustInserted = null;
         input.clear();
         updateButton();
     }

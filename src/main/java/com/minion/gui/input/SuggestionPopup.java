@@ -18,7 +18,8 @@ import java.util.function.Consumer;
 
 /** 通用补全弹层：Popup+ListView，锚定输入大框正上方、同宽（Claude Code 风格）。
  *  Popup 不抢焦点：键盘事件由 TextArea 拦截转发（move/confirm/hide）；
- *  鼠标点击条目经 onConfirm 回调把插入文本交给输入框（插入逻辑在 InputView 侧）。 */
+ *  鼠标点击条目（cell 级取本行，与选中态解耦）经 onConfirm 把插入文本交给输入框
+ *  （hide 与插入统一在 InputView 侧执行，与键盘路径同序）。 */
 public class SuggestionPopup {
 
     /** 行高估算（首帧校准前的初始定位用；校准后按实际行高取整） */
@@ -47,28 +48,32 @@ public class SuggestionPopup {
         // 不可聚焦：鼠标点击条目后焦点不得落入 ListView——否则后续键盘事件全被列表吞掉
         // （↑↓ 由列表内置导航响应、Enter/Tab 无默认动作），输入框的补全键处理全部失效
         l.setFocusTraversable(false);
-        l.setCellFactory(lv -> new ListCell<Suggestion>() {
-            @Override protected void updateItem(Suggestion item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) { setGraphic(null); return; }
-                HBox row = new HBox(8);
-                Label l = new Label(item.label);
-                l.getStyleClass().add("suggest-label");
-                HBox.setHgrow(l, Priority.ALWAYS);
-                row.getChildren().add(l);
-                if (item.desc != null && !item.desc.isEmpty()) {
-                    Label d = new Label(item.desc);
-                    d.getStyleClass().add("suggest-desc");
-                    row.getChildren().add(d);
+        l.setCellFactory(lv -> {
+            final ListCell<Suggestion> cell = new ListCell<Suggestion>() {
+                @Override protected void updateItem(Suggestion item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) { setGraphic(null); return; }
+                    HBox row = new HBox(8);
+                    Label l = new Label(item.label);
+                    l.getStyleClass().add("suggest-label");
+                    HBox.setHgrow(l, Priority.ALWAYS);
+                    row.getChildren().add(l);
+                    if (item.desc != null && !item.desc.isEmpty()) {
+                        Label d = new Label(item.desc);
+                        d.getStyleClass().add("suggest-desc");
+                        row.getChildren().add(d);
+                    }
+                    setGraphic(row);
                 }
-                setGraphic(row);
-            }
-        });
-        // 鼠标点击条目：hide + 回调插入文本（根因修复：旧实现仅返回文本不插入，点击后输入框无变化）
-        l.setOnMouseClicked(e -> {
-            Suggestion sel = l.getSelectionModel().getSelectedItem();
-            hide();
-            if (sel != null && onConfirm != null) onConfirm.accept(sel.insertText);
+            };
+            // 鼠标点击确认：cell 级直接取本行条目（所见即所得），不依赖 ListView 选中态
+            // ——旧实现读 selectionModel 在 MouseClicked 时的瞬时选中，点击行与选中行存在
+            // 竞态（部分行点击后无插入）。hide 与插入统一由 InputView 执行（与键盘路径同序）。
+            cell.setOnMouseClicked(e -> {
+                Suggestion it = cell.getItem();
+                if (it != null && onConfirm != null) onConfirm.accept(it.insertText);
+            });
+            return cell;
         });
         return l;
     }
@@ -81,7 +86,8 @@ public class SuggestionPopup {
         popup.setAutoHide(false);
     }
 
-    /** 鼠标点击确认回调注册：收到选中项 insertText（弹层负责 hide，插入由输入框执行） */
+    /** 鼠标点击确认回调注册：收到选中条目 insertText（弹层不 hide，由 InputView 统一
+     *  hide + 插入，保证与键盘确认同一时序，规避事件派发期间改输入区的竞争） */
     public void setOnConfirm(Consumer<String> c) { this.onConfirm = c; }
 
     /** 过滤+排序（纯静态，可单测）：大小写不敏感 contains；前缀匹配优先 → 标签短优先 → 字典序 */
@@ -116,6 +122,13 @@ public class SuggestionPopup {
     private double calibratedH = -1;
     /** 弹层锚点（校准后重新定位用） */
     private Node lastAnchor;
+
+    /** 给定全量列表+过滤词过滤后的内容是否与当前弹层展示一致（全等比较含顺序）。
+     *  后台刷新结果未变时调用方据此跳过 show，避免弹层重建闪烁；未显示/内容不同返回 false */
+    public boolean showsSame(List<Suggestion> allItems, String query) {
+        if (!popup.isShowing()) return false;
+        return filter(allItems, query).equals(all);
+    }
 
     /** 显示弹层：过滤为空自动隐藏；锚定 anchor 正上方同宽，空间不足时放下方 */
     public void show(Node anchor, List<Suggestion> all, String query) {
