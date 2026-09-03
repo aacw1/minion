@@ -419,8 +419,8 @@ public class SettingsDialog {
         HBox transportBox = new HBox(10, rbStdio, rbSse, rbStream);
         String t0 = McpServer.normalizedTransport(s == null ? McpServer.STDIO : s.transport);
         selectTransport(transportGroup, t0);
-        TextField command = new TextField(s == null ? "npx" : s.command);
-        TextArea argsArea = new TextArea(s == null ? "@playwright/mcp" : joinLines(s.args));
+        TextField command = new TextField(s == null ? "" : s.command);
+        TextArea argsArea = new TextArea(s == null ? "" : joinLines(s.args));
         TextArea envArea = new TextArea(s == null ? "" : pairLines(s.env));
         Label urlLabel = formLabel("URL:");
         TextField url = new TextField(s == null ? "" : s.url);
