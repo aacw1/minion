@@ -7,9 +7,12 @@ import static org.junit.Assert.*;
 /**
  * 只读 SQL 校验：白名单首词 / 注释剥离与注释绕过 / 字面量掩码与多语句 / 危险子串。
  *
- * 两组用例专门盯 round 1 评审指出的两类问题：
- *  - 注释绕过：危险短语被注释切开（FOR + 块注释 + UPDATE）、可执行注释注入语句；
- *  - 字面量分号：字符串里的分号被当多语句、字符串里的 for update 被当锁语句。
+ * 用例按评审轮次分组，盯的都是同一类问题——「某库真会执行的文本被某项检查看漏」：
+ *  - round 1：危险短语被注释切开（FOR + 块注释 + UPDATE）、可执行注释注入语句、字面量里的分号/关键字；
+ *  - round 2：一项检查只认一份视图（`#` 与不接空白的 `--` 之后的内容对短语判定失明）；
+ *  - round 3：首词只认 stripped 一份，而 stripped 会把可执行注释的内容内联 →
+ *    首词能从注释里借（「斜杠星感叹号 SELECT 星斜杠 DROP TABLE t」在 PG/Oracle 里真执行 DROP），
+ *    补第三视图 plain（可执行注释按普通注释整段剥掉）后逐视图复检。
  */
 public class SqlGuardTest {
 
@@ -228,7 +231,7 @@ public class SqlGuardTest {
         assertNull(SqlGuard.check("SELECT outfile FROM t"));
     }
 
-    // ============ round 2 必修：--/# 注释不变式（内容级检查在两份视图上各跑一遍） ============
+    // ============ round 2 必修：--/# 注释不变式（内容级检查在每份视图上各跑一遍） ============
 
     @Test
     public void commentMarkedOnlyBySomeDialectMustNotHideDangerousPhrase() {
@@ -258,7 +261,7 @@ public class SqlGuardTest {
 
     @Test
     public void bothViewsMustStillCatchPhraseSplitByComment() {
-        // 反向：注释把短语切开时，靠「剥注释」那份视图命中——两份视图缺一不可
+        // 反向：注释把短语切开时，靠「剥注释」那份视图命中——几份视图缺一不可
         assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
                 SqlGuard.check("SELECT * FROM t FOR--c\nUPDATE"));
         assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
@@ -331,7 +334,7 @@ public class SqlGuardTest {
 
     @Test
     public void invariantNoCheckReadsOnlyOneView() {
-        // 同一句载荷换个「方言存疑注释」写法，结果必须一致（都拒）：内容级检查两份视图都跑
+        // 同一句载荷换个「方言存疑注释」写法，结果必须一致（都拒）：内容级检查每份视图都跑
         String payload = " , 2 INTO OUTFILE '/tmp/poc.txt' FROM t";
         for (String hidden : new String[]{"--1", "#1", "# 1", "/*1*/", "/* 1 */"}) {
             String sql = "SELECT 1" + hidden + payload;
@@ -339,5 +342,70 @@ public class SqlGuardTest {
         }
         // 只有「三库都当注释」的写法才可以把载荷剥掉（-- 后接空白：没有一库会执行它）
         assertNull(SqlGuard.check("SELECT 1" + "-- 1" + payload));
+    }
+
+    // ===== round 3 必修：第三视图 plain —— 首词不许从可执行注释的内容里「借」 =====
+
+    @Test
+    public void headMustNotBeBorrowedFromExecutableCommentBody() {
+        // /*!…*/ 只有 MySQL/MariaDB 执行其内容，在 PG/Oracle 里就是普通块注释：
+        // 首词一旦是从注释内容里借来的（SELECT），注释一失效，真被执行的首词就是它后面的写动词。
+        String[] sqls = {"/*!SELECT*/DROP TABLE t", "/*!SELECT*/DELETE FROM t",
+                "/*M!1SELECT*/DROP TABLE t", "/*MARIADB!SELECT*/DROP TABLE t",
+                "/*!SELECT*/SET GLOBAL read_only=0", "/*!SHOW*/TRUNCATE TABLE t",
+                "/*!EXPLAIN*/DROP TABLE t", "/*!SELECT*/DROP TABLE t;",
+                "/*!SELECT*/CALL p()", "/*!WITH*/ALTER TABLE t ADD c INT"};
+        for (String sql : sqls) {
+            String why = SqlGuard.check(sql);
+            assertNotNull("首词不许从可执行注释里借: " + sql, why);
+            assertTrue("原因要点出「剥掉可执行注释后」的真首词: " + why, why.contains("可执行注释"));
+        }
+        // 对照组 1：整句都是可执行注释 —— plain 读法下没有任何语句，不该因此打死
+        assertNull(SqlGuard.check("/*!40000 SELECT * FROM t*/"));
+        // 拒绝文案要点破「首词不是你写的那个」，否则模型会当成误拒
+        assertEquals("只读工具拒绝执行：把可执行注释当普通注释看时，语句以 DROP 开头"
+                        + "（仅允许 SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN）",
+                SqlGuard.check("/*!SELECT*/DROP TABLE t"));
+        // 对照组 2：可执行注释在句中/词后，剥掉它仍得到白名单首词
+        assertNull(SqlGuard.check("SELECT /*!80000 SHOW CREATE TABLE t*/ FROM dual"));
+        assertNull(SqlGuard.check("SELECT/*!32340 1*/FROM t"));
+        assertNull(SqlGuard.check("# mysqldump 风格\n/*!40101 SELECT 1*/"));
+    }
+
+    @Test
+    public void executableCommentMustNotSplitDangerousPhrase() {
+        // 内联进来的注释内容会把短语撑开：PG/Oracle 里 /*!x*/ 就是普通注释，这句的真身是 FOR UPDATE（锁行）
+        assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
+                SqlGuard.check("SELECT * FROM t FOR/*!x*/UPDATE"));
+        assertEquals("只读工具拒绝执行：语句含 INTO OUTFILE",
+                SqlGuard.check("SELECT * FROM t INTO/*!x*/OUTFILE '/tmp/poc.txt'"));
+        assertEquals("只读工具拒绝执行：语句含 LOCK IN SHARE MODE",
+                SqlGuard.check("SELECT * FROM t LOCK/*!x*/IN SHARE MODE"));
+        // 空内容的可执行注释本来就命中（回归保护）
+        assertNotNull(SqlGuard.check("SELECT * FROM t FOR/*!*/UPDATE"));
+        // 首词从注释里借来的恰好也是白名单词（SELECT）时，靠 plain 喂给短语检查兜住：
+        // 这句在 PG/Oracle 里就是 SELECT 1 INTO OUTFILE …
+        assertEquals("只读工具拒绝执行：语句含 INTO OUTFILE",
+                SqlGuard.check("/*!SELECT*/SELECT 1 INTO OUTFILE '/tmp/poc.txt'"));
+    }
+
+    @Test
+    public void execSegmentMustPassEveryReadingToo() {
+        // 片段自身也有「内层 /*!…*/ 其实不生效」的读法：内联让首词变成 x，把内层当注释剥掉才露出 DROP
+        assertEquals("只读工具拒绝执行：可执行注释内含 DROP 语句",
+                SqlGuard.check("SELECT 1 /*!/*M!1x*/DROP TABLE t*/"));
+        // 片段自己的视图也要过内容级检查：MySQL 执行外层、内层当普通注释 → FOR UPDATE
+        assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
+                SqlGuard.check("SELECT 1 /*!FOR/*M!1c*/UPDATE*/"));
+    }
+
+    @Test
+    public void explainTargetMustPassEveryReading() {
+        // EXPLAIN 之后的第一个实词在 plain 读法里才是真身：/*!x*/ 一失效就是 EXPLAIN ANALYZE DELETE
+        String why = SqlGuard.check("EXPLAIN /*!x*/ANALYZE DELETE FROM t");
+        assertNotNull("EXPLAIN 的目标在 plain 读法里是写动词应拒", why);
+        assertTrue("原因应说明 EXPLAIN: " + why, why.startsWith("只读工具拒绝执行：EXPLAIN"));
+        assertNotNull(SqlGuard.check("EXPLAIN /*!SELECT*/DELETE FROM t"));
+        assertNull(SqlGuard.check("EXPLAIN /*!80000 ANALYZE*/ SELECT 1"));
     }
 }

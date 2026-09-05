@@ -17,25 +17,42 @@ import java.util.regex.Pattern;
  *
  * ============================ 一条不变式 ============================
  * 三种方言对「什么算注释」并不一致（# 只 MySQL 认；-- 只有后接空白/行尾时三库都认；
- * /*! 开头的注释 MySQL/MariaDB 会真执行），所以归一化产出**两份文本、两种视图**：
- *   - stripped：所有注释（含方言存疑的）一律剥成一个空格 —— 用来取语句首关键词；
+ * 斜杠星紧跟感叹号的可执行注释只有 MySQL/MariaDB 会真执行，PG/Oracle 只当它是普通块注释），
+ * 所以归一化产出**三份文本、三种读法**：
+ *   - stripped：所有注释（含方言存疑的）一律剥成一个空格，但可执行注释的**内容内联进来**
+ *     —— 可执行注释「确实生效」那批库（MySQL/MariaDB）的读法；
  *   - conservative：只有「三库都当注释」的片段才剥掉，# 与不接空白的 -- 按代码原样保留
- *     —— 用来判分号、危险短语、EXPLAIN 后的写动词。
- * 不变式：**凡某库可能真执行的文本，必须被每一项检查看到**。因此内容级检查（多语句、
- * 危险短语、EXPLAIN 目标）在两份文本上各跑一遍，任一命中即拒 —— 单项检查不得只认一份文本。
+ *     —— 方言存疑注释的读法；
+ *   - plain（第三视图）：连可执行注释也当普通注释**整段剥掉、内容绝不内联**
+ *     —— 可执行注释「其实不生效」那批库（PG/Oracle，以及 MySQL 见到斜杠星 + 字母前缀的
+ *     MariaDB 形态时）的读法，也就是「任何一库都至少会执行」的那份最小文本。
+ * 不变式：**凡某库可能真执行的文本，必须被每一项检查看到**。因此首关键词与内容级检查
+ * （多语句、危险短语、EXPLAIN 目标）都得在对应的几份读法上各跑一遍，任一命中即拒 ——
+ * 单项检查不得只认一份文本。
  * round 1 的洞正出在这里：分号判定看 conservative（留原文），短语判定只看 stripped，
  * 于是 "SELECT 1--1 INTO OUTFILE '/tmp/x'"（MySQL 里 --1 是取负、不是注释）被漏判成只读。
- * 唯一例外是首关键词：它只在 stripped 上判 —— 以 # 或不接空白的 -- 起手的语句，
- * 在非 MySQL 库里必然是语法错误（运算符/取负没有左操作数），藏不住可执行的写语句。
+ * round 3 的洞出在首词只认 stripped 一份 —— 而 stripped 会把可执行注释的内容内联：
+ *   「感叹号 + SELECT + 星斜杠 + DROP TABLE t」这句的首词是**从注释内容里借来的 SELECT**，
+ *   但它在 PG/Oracle 里整段只是注释，真被执行的首词是 DROP，白名单首词反倒替写语句打了掩护。
+ *   同一处内联还会把短语撑开：「FOR + 可执行注释 + UPDATE」在 PG 里就是 FOR UPDATE（锁行）。
+ * 所以首词现在要在 stripped 与 plain 上双双过白名单（plain 整份为空 = 该读法下只剩注释、
+ * 没有任何语句可执行，此时跳过，不给「整句都是版本门控注释」这种合法写法添堵）；
+ * 内容级检查也补跑 plain，并且**递归跑在每个可执行注释片段自己的三份视图上**
+ * （片段的 plain 视图不在根视图里，「外层被真执行、内层只是注释」这种混合读法只能这样看到）。
+ * plain 只会比 stripped 少文本，不会凭空多出分号，多出来的命中全是「跨注释拼回原形」的短语。
+ * 首词仍不看 conservative：以 # 或不接空白的 -- 起手的语句，在非 MySQL 库里必然是语法错误
+ * （运算符/取负没有左操作数），而那份文本里行首注释是普通词，用它取首词会打死 "# 注释\nSELECT 1"。
  * ===================================================================
  *
  * 归一化细则：
  *  - 注释替换成「一个空格」而不是删空：被注释切开的关键字压平后仍能拼成短语命中
  *    （FOR + 块注释 + UPDATE → "FOR UPDATE"）。块注释按层内嵌套配对。
  *  - 可执行注释（斜杠星紧跟可选 ASCII 字母/数字前缀再接感叹号）里的内容会被 MySQL 真执行，
- *    故不当注释删：去掉前缀与版本号后，内容递归归一化并内联进对应的视图，片段自身还须过一遍
- *    「首词不得是写动词」的检查（见 checkExecComments）。前缀不设长度上限 —— round 1 只认
- *    三个字母，「斜杠星 + MARIADB + 感叹号」这类形态因此整类绕过（评审 round 2 建议 1）。
+ *    故在 stripped/conservative 两份视图里不当注释删：去掉前缀与版本号后递归归一化、内联进
+ *    对应视图，片段自身还要过一遍「首词不得是写动词」+「三份视图的内容级检查」（见 checkExecs）。
+ *    但 plain 视图里它跟普通注释一样整段剥掉 —— 并非每个库都会执行它，见上面的不变式。
+ *    前缀不设长度上限 —— round 1 只认三个字母，「斜杠星 + MARIADB + 感叹号」这类形态因此
+ *    整类绕过（评审 round 2 建议 1）。
  *  - 字符串字面量与引号标识符（单引号、双引号、反引号）一律掩码成占位空串：修「字面量里的
  *    分号被当多语句、字面量里的 for update 被当锁语句」。只认「引号加倍」转义、不认反斜杠转义——
  *    PG 标准模式下反斜杠不是转义符，认了反而会把真实分号藏进假字符串里；MySQL 侧最坏是误拒。
@@ -48,11 +65,20 @@ import java.util.regex.Pattern;
  * 已知取舍（全是误拒方向）：
  *  - 方言存疑注释里出现危险短语会被拒：SELECT 1 # 说明 for update 会锁行。判不出方言，
  *    与「这类注释里出现分号也拒」保持同一口径。
+ *  - 以可执行注释起手、剥掉它之后首词就不在白名单的写法会被拒（如「感叹号 + SELECT + 星斜杠 + 1」
+ *    这种只在 MySQL 才成立的语句）：判不出目标方言，就不能让首词从注释内容里借。
  *  - PG 美元引用（$$…$$）、Oracle q 引号不识别，其内部分号按字面量外处理。
  *  - 改写型 CTE（WITH x AS (DELETE FROM t RETURNING *)）不拦；PG 的 "SELECT … INTO t"（建表写入）
  *    与 MySQL 无副作用的 "SELECT … INTO @var" 无法在不引入误拒的前提下区分，也不进危险短语表；
  *    Oracle EXPLAIN PLAN FOR 后接 SELECT 仍放行（它写 plan_table）。这三条连同 LOAD_FILE() 一类
  *    外读面，由第二层 setReadOnly + executeQuery 和数据源侧只读账号兜底；最终兜底应是只读账号。
+ *
+ * 残余缺口（同上由第二层兜底；本轮未动，登记备查）：
+ *  - **块注释配对只按 PG 的「可嵌套」实现**：Oracle（以及按文档不认嵌套的 MySQL）在第一个
+ *    星斜杠处就结束了注释，其后文本我们三份视图都看不见，例
+ *    「SELECT 1 斜杠星a斜杠星感叹号星斜杠 INTO OUTFILE 引号路径 斜杠星b星斜杠 减号减号 c 星斜杠」
+ *    在三份视图里都只是「一句 SELECT 加一堆注释」。堵法是给 plain 再换一种配对（按首个星斜杠收尾），
+ *    属另一条方言轴（注释配对而非可执行注释），不改本轮成果，留待下一轮评审定夺。
  */
 public final class SqlGuard {
 
@@ -64,6 +90,12 @@ public final class SqlGuard {
             "SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN"));
 
     private static final String ALLOWED_TEXT = "SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN";
+
+    /**
+     * 首词在 plain 读法（把可执行注释当普通注释）上被拒时加在原因里的说明：
+     * 模型看到的「首词」跟它写的不一样，不点破会被当成误拒。
+     */
+    private static final String PLAIN_MARK = "把可执行注释当普通注释看时，";
 
     /** EXPLAIN 系首词（MySQL 的 EXPLAIN DML 与 PG 的 EXPLAIN ANALYZE 会真执行目标语句） */
     private static final String EXPLAIN = "EXPLAIN";
@@ -88,14 +120,21 @@ public final class SqlGuard {
     /** 可执行注释递归的最大层数，超出直接拒（防超长嵌套把真实内容藏进「注释」里） */
     private static final int MAX_EXEC_DEPTH = 4;
 
-    /** 归一化模式：剥掉一切注释（取首词用） */
+    /** 归一化模式：剥掉一切注释、可执行注释内容内联（MySQL/MariaDB 读法，取首词 + 拼回短语用） */
     private static final int MODE_STRIPPED = 0;
 
     /** 归一化模式：只剥三库通用注释，方言存疑注释按代码保留（内容级检查用） */
     private static final int MODE_CONSERVATIVE = 1;
 
-    /** 归一化模式：行内存疑区（存疑注释之后到行尾），注释标记按普通字符、未闭合构造不报错 */
+    /** 行内存疑区（存疑注释之后到行尾），注释标记按普通字符、未闭合构造不报错 */
     private static final int MODE_IN_DOUBT = 2;
+
+    /**
+     * 归一化模式：第三视图 plain —— 连可执行注释也当普通注释整段剥掉（内容绝不内联）。
+     * 它是「可执行注释不生效」那批库（PG/Oracle）的读法，也是任何库都至少会执行的最小文本，
+     * 专治「首词从可执行注释内容里借」与「内联内容把危险短语撑开」两类漏判。
+     */
+    private static final int MODE_PLAIN = 3;
 
     /** EXPLAIN 的解释选项词：判「EXPLAIN 后面是不是写语句」时先跳过它们 */
     private static final Set<String> EXPLAIN_OPTIONS = new HashSet<String>(Arrays.asList(
@@ -111,7 +150,7 @@ public final class SqlGuard {
 
     /**
      * 整词匹配：前后不能是字母/数字/下划线（防 information 里的 for、for_update_at 列名误伤）。
-     * 两份视图各跑一次，见类注释的不变式说明。
+     * 每份读法的视图各跑一次，见类注释的不变式说明。
      */
     private static final Pattern[] FORBIDDEN_PATTERNS = new Pattern[FORBIDDEN.length];
 
@@ -137,32 +176,58 @@ public final class SqlGuard {
         } catch (ParseFail e) {
             return REJECT + e.getMessage();
         }
+        String why = checkHead(root);
+        if (why == null) why = checkViews(root);
+        if (why == null) why = checkExecs(root);
+        return why;
+    }
 
-        // 首关键词：注释不可能是语句的一部分，故只在 stripped 视图上判（见类注释的不变式说明）
-        String stripped = root.stripped.toString().trim();
+    /**
+     * 首关键词：必须在 stripped（可执行注释内容内联）与 plain（可执行注释当普通注释）
+     * 两份读法上双双落进白名单 —— 首词不许从注释内容里「借」，详见类注释的不变式说明。
+     * plain 整份为空 = 该读法下只剩注释、没有任何语句可执行，跳过这一项（不给合法写法添堵）。
+     */
+    private static String checkHead(Scan scan) {
+        String stripped = scan.stripped.toString().trim();
         if (stripped.isEmpty()) return "SQL 不能为空";
-        String head = firstKeyword(stripped);
-        if (head.isEmpty()) return REJECT + "无法识别语句首关键词";
-        if (!ALLOWED.contains(head)) {
-            return REJECT + "语句以 " + head + " 开头（仅允许 " + ALLOWED_TEXT + "）";
+        String why = headMustBeAllowed(stripped, "");
+        if (why == null) {
+            String plain = scan.plain.toString().trim();
+            if (!plain.isEmpty()) why = headMustBeAllowed(plain, PLAIN_MARK);
         }
+        return why;
+    }
 
-        String conservative = root.conservative.toString();
-        // 以下三项检查两份视图都要跑：任一命中即拒
-        String why = checkSingleStatement(conservative);
-        if (why == null) why = checkSingleStatement(stripped);
-        if (why != null) return why;
+    private static String headMustBeAllowed(String text, String mark) {
+        String head = firstKeyword(text);
+        if (head.isEmpty()) return REJECT + mark + "无法识别语句首关键词";
+        if (!ALLOWED.contains(head)) {
+            return REJECT + mark + "语句以 " + head + " 开头（仅允许 " + ALLOWED_TEXT + "）";
+        }
+        return null;
+    }
 
-        why = checkPhrases(stripped);
-        if (why == null) why = checkPhrases(conservative);
-        if (why != null) return why;
-
-        if (EXPLAIN.equals(head)) {
-            why = checkExplainTarget(conservative);
-            if (why == null) why = checkExplainTarget(stripped);
+    /**
+     * 内容级检查（多语句、危险短语、EXPLAIN 目标）：这份文本每份读法各跑一遍，任一命中即拒。
+     * 可执行注释片段自己的三份视图同样要跑（片段的 plain 视图不出现在根视图里）。
+     */
+    private static String checkViews(Scan scan) {
+        String[] views = {scan.stripped.toString(), scan.conservative.toString(), scan.plain.toString()};
+        for (int v = 0; v < views.length; v++) {
+            String why = checkSingleStatement(views[v]);
             if (why != null) return why;
         }
-        return checkExecComments(root);
+        for (int v = 0; v < views.length; v++) {
+            String why = checkPhrases(views[v]);
+            if (why != null) return why;
+        }
+        for (int v = 0; v < views.length; v++) {
+            // 只看「这份读法下首词真是 EXPLAIN」的视图：EXPLAIN 会连带执行目标语句
+            if (!EXPLAIN.equals(firstKeyword(views[v].trim()))) continue;
+            String why = checkExplainTarget(views[v]);
+            if (why != null) return why;
+        }
+        return null;
     }
 
     /**
@@ -207,40 +272,55 @@ public final class SqlGuard {
         return null;
     }
 
-    /** 可执行注释内容会被真执行：片段首词是写动词即拒；嵌套片段同样递归检查 */
-    private static String checkExecComments(Scan scan) {
+    /**
+     * 可执行注释内容会被 MySQL/MariaDB 真执行：片段首词（内联读法与剥掉读法各判一次）不得是写动词，
+     * 片段自己的三份视图也要过内容级检查（「外层被真执行、内层只是普通注释」这种混合读法只有在这里才看得到），
+     * 嵌套片段同样递归检查。
+     */
+    private static String checkExecs(Scan scan) {
         for (int i = 0; i < scan.execs.size(); i++) {
             Scan exec = scan.execs.get(i);
-            String head = firstKeyword(exec.stripped.toString().trim());
-            if (!head.isEmpty() && WRITE_HEADS.contains(head)) {
-                return REJECT + "可执行注释内含 " + head + " 语句";
-            }
-            String why = checkExecComments(exec);
+            String why = execHeadMustNotBeWrite(exec.stripped);
+            if (why == null) why = execHeadMustNotBeWrite(exec.plain);
+            if (why == null) why = checkViews(exec);
+            if (why == null) why = checkExecs(exec);
             if (why != null) return why;
         }
         return null;
     }
 
-    /** 一次归一化：同一段文本按两种视图各扫一遍，产出两份文本 + 内联出来的可执行注释片段 */
+    /** 片段首词是写动词即拒：可执行注释在 MySQL 侧就是代码，首词是写动词就等于注入了写语句 */
+    private static String execHeadMustNotBeWrite(CharSequence view) {
+        String head = firstKeyword(view.toString().trim());
+        if (head.isEmpty() || !WRITE_HEADS.contains(head)) return null;
+        return REJECT + "可执行注释内含 " + head + " 语句";
+    }
+
+    /** 一次归一化：同一段文本按三种读法各扫一遍，产出三份文本 + 内联出来的可执行注释片段 */
     private static Scan build(String sql, int from, int to, int depth) throws ParseFail {
         List<Scan> execs = new ArrayList<Scan>();
         // 每遍扫描各带一个「下一个换行下标」缓存（扫描位置单调前进，共用就够用）：
         // 少了它会退化成每个行注释都 indexOf 到串尾，几万个注释就是 O(n^2)
         String stripped = normalize(sql, from, to, depth, MODE_STRIPPED, execs, new int[]{-2});
+        String plain = normalize(sql, from, to, depth, MODE_PLAIN, execs, new int[]{-2});
         String conservative = normalize(sql, from, to, depth, MODE_CONSERVATIVE, execs, new int[]{-2});
-        return new Scan(new StringBuilder(stripped), new StringBuilder(conservative), execs);
+        return new Scan(new StringBuilder(stripped), new StringBuilder(conservative),
+                new StringBuilder(plain), execs);
     }
 
     /**
      * 词法归一化。
      *
-     * @param mode MODE_STRIPPED 剥掉一切注释；MODE_CONSERVATIVE 只剥三库通用注释；
+     * @param mode MODE_STRIPPED 剥掉一切注释（可执行注释内容内联）；MODE_PLAIN 剥掉一切注释
+     *             （可执行注释也当普通注释整段剥掉，见类注释）；MODE_CONSERVATIVE 只剥三库通用注释；
      *             MODE_IN_DOUBT 行内存疑区（存疑注释之后到行尾），注释标记按普通字符留着，
      *             且本行内不闭合的字面量/块注释不报错（任何库都执行不到它）
      */
     private static String normalize(String sql, int from, int to, int depth, int mode,
                                     List<Scan> execs, int[] nl) throws ParseFail {
         StringBuilder out = new StringBuilder(to - from + 1);
+        // stripped 与 plain 的区别只在可执行注释（见 blockComment），其余处理完全一致
+        boolean stripAll = mode == MODE_STRIPPED || mode == MODE_PLAIN;
         int i = from;
         while (i < to) {
             char c = sql.charAt(i);
@@ -250,7 +330,7 @@ public final class SqlGuard {
                 // 只认 ASCII 空白：Character.isWhitespace 连 U+2000 之类都算空白，
                 // 而 MySQL 不认，宽松判定等于替 MySQL 藏住整行内容。
                 boolean universal = i + 2 >= to || isAsciiSpace(sql.charAt(i + 2));
-                if (mode == MODE_STRIPPED) {
+                if (stripAll) {
                     out.append(' ');
                     i = end;
                 } else if (universal) {
@@ -266,7 +346,7 @@ public final class SqlGuard {
             } else if (c == '#') {
                 // # 只 MySQL 认，PG 里是运算符（jsonb 的 #>、整数的异或）：不能当注释剥
                 int end = lineCommentEnd(sql, i, to, nl);
-                if (mode == MODE_STRIPPED) {
+                if (stripAll) {
                     out.append(' ');
                     i = end;
                 } else if (mode == MODE_CONSERVATIVE) {
@@ -301,9 +381,12 @@ public final class SqlGuard {
 
     /**
      * 块注释。
-     *  - 可执行注释（内容会被 MySQL 真执行）不当注释删：递归归一化后按当前视图内联进来，
-     *    并把片段登记给 checkExecComments（只登记一次：stripped 视图与行内存疑区各自负责一部分，
-     *    普通代码区的片段由 stripped 这一遍登记，藏在 # / 不接空白 -- 里的由存疑区这一遍登记）。
+     *  - 可执行注释（内容会被 MySQL/MariaDB 真执行）在 stripped/conservative 两份视图里不当注释删：
+     *    递归归一化后按当前视图内联进来，并把片段登记给 checkExecs（只登记一次：stripped 视图与
+     *    行内存疑区各自负责一部分，普通代码区的片段由 stripped 这一遍登记，藏在 # / 不接空白 --
+     *    里的由存疑区这一遍登记；plain 这一遍既不外泄内容也不登记）。
+     *  - 可执行注释在 plain 视图里当普通注释整段剥掉 —— 「它到底生不生效」判不出方言，
+     *    所以两种读法都得有，见类注释的不变式。
      *  - 普通块注释三库都不执行 → 替换成一个空格（不是删空，保证被切开的关键字仍能拼成短语）。
      *  - 行内存疑区里到行尾都配不上的星斜杠不叫未闭合（那一行在任何库都执行不过去），
      *    按普通字符留给后面的文本。
@@ -322,6 +405,13 @@ public final class SqlGuard {
         }
         String inner = sql.substring(from + 2, end - 2);
         if (!isExecutableComment(inner)) {
+            out.append(' ');
+            return end;
+        }
+        // 第三视图 plain：可执行注释跟普通注释一样整段剥掉，内容绝不内联 ——
+        // 「只有 MySQL/MariaDB 执行它」，PG/Oracle 看到的就只是一段注释，
+        // 首词与短语都必须在这份「最小执行文本」上再判一次（见类注释的不变式）
+        if (mode == MODE_PLAIN) {
             out.append(' ');
             return end;
         }
@@ -424,15 +514,20 @@ public final class SqlGuard {
         return text.substring(0, i).toUpperCase();
     }
 
-    /** 一次归一化的产物：两份视图 + 内联出来的可执行注释片段 */
+    /** 一次归一化的产物：三份读法的视图 + 内联出来的可执行注释片段 */
     private static final class Scan {
+        /** 一切注释剥成空格、可执行注释内容内联（MySQL/MariaDB 读法） */
         final StringBuilder stripped;
+        /** 只剥三库通用注释，方言存疑注释按代码保留 */
         final StringBuilder conservative;
+        /** 第三视图：连可执行注释也当普通注释整段剥掉（PG/Oracle 读法，任何库的最小执行文本） */
+        final StringBuilder plain;
         final List<Scan> execs;
 
-        Scan(StringBuilder stripped, StringBuilder conservative, List<Scan> execs) {
+        Scan(StringBuilder stripped, StringBuilder conservative, StringBuilder plain, List<Scan> execs) {
             this.stripped = stripped;
             this.conservative = conservative;
+            this.plain = plain;
             this.execs = execs;
         }
     }
