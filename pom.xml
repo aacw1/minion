@@ -81,6 +81,30 @@
       <artifactId>slf4j-simple</artifactId>
       <version>1.7.36</version>
     </dependency>
+    <!-- ===== JDBC 驱动（可插拔数据库工具，只读；每次调用新建连接，不用连接池） =====
+         mysql-connector 排除 protobuf-java：仅 mysqlx（X 协议）用到，普通 JDBC 不需要，减 fat jar 体积 -->
+    <dependency>
+      <groupId>mysql</groupId>
+      <artifactId>mysql-connector-java</artifactId>
+      <version>8.0.33</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.4</version>
+    </dependency>
+    <!-- ojdbc8 = JDK8 编译线（ojdbc11 需 JDK11+） -->
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ojdbc8</artifactId>
+      <version>21.9.0.0</version>
+    </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
@@ -120,6 +144,9 @@
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>com.minion.Boot</mainClass>
                 </transformer>
+                <!-- 必需：mysql/postgresql/ojdbc8 都带 META-INF/services/java.sql.Driver，
+                     不合并则互相覆盖，fat jar 里只剩一个驱动能被服务发现加载 -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
               </transformers>
             </configuration>
           </execution>
