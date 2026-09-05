@@ -9,3 +9,6 @@ dependency-reduced-pom.xml
 src/resource/config.properties
 /bak
 /run/
+
+# 编辑工具产生的备份文件
+*.md.bak
