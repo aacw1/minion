@@ -12,7 +12,12 @@ import static org.junit.Assert.*;
  *  - round 2：一项检查只认一份视图（`#` 与不接空白的 `--` 之后的内容对短语判定失明）；
  *  - round 3：首词只认 stripped 一份，而 stripped 会把可执行注释的内容内联 →
  *    首词能从注释里借（「斜杠星感叹号 SELECT 星斜杠 DROP TABLE t」在 PG/Oracle 里真执行 DROP），
- *    补第三视图 plain（可执行注释按普通注释整段剥掉）后逐视图复检。
+ *    补第三视图 plain（可执行注释按普通注释整段剥掉）后逐视图复检；
+ *  - round 4：三条方言轴只覆盖了两条 —— 补第 3 条「块注释配对」轴（Oracle/MySQL 不认嵌套，
+ *    在**第一个**星斜杠就结束注释，其后文本被真执行而我们看不见），另修两处同类盲区：
+ *    行尾只认换行不认回车，以及「写动词出现在括号处的语句位」没人看
+ *    （PG 的改写型 CTE 与 WITH 子句后接 DML，都是先写数据再返回结果集）。
+ *    每条洞的对照组一起钉住，避免修法把合法只读查询打死。
  */
 public class SqlGuardTest {
 
@@ -407,5 +412,199 @@ public class SqlGuardTest {
         assertTrue("原因应说明 EXPLAIN: " + why, why.startsWith("只读工具拒绝执行：EXPLAIN"));
         assertNotNull(SqlGuard.check("EXPLAIN /*!SELECT*/DELETE FROM t"));
         assertNull(SqlGuard.check("EXPLAIN /*!80000 ANALYZE*/ SELECT 1"));
+    }
+
+    // ===== round 4 必修 A：WITH 起手的第二条写通道（改写型 CTE 与 WITH 后接 DML） =====
+
+    @Test
+    public void rejectDmlAfterWithClause() {
+        // WITH 在白名单里，但 PG/MySQL 8 允许 WITH 子句后面直接跟 DML，先写数据再返回结果集，
+        // executeQuery 拿得到 ResultSet 也就挡不住 —— 只能靠「括号后的语句位」这项检查拦下
+        String[] sqls = {
+                "WITH a AS (SELECT 1) DELETE FROM t WHERE id=1",
+                "WITH a AS (SELECT 1) UPDATE t SET a=1",
+                "WITH a AS (SELECT 1) INSERT INTO t SELECT * FROM a",
+                "WITH RECURSIVE a(n) AS (SELECT 1) DELETE FROM t",
+                "WITH a AS (SELECT 1), b AS (SELECT 2) REPLACE INTO t SELECT * FROM a",
+                "WITH a AS (SELECT 1) MERGE INTO t USING a ON (1=1) WHEN MATCHED THEN UPDATE SET c=1",
+                // 藏在可执行注释 / 存疑注释 / 回车行尾后面的同一条载荷
+                "SELECT 1 /*!WITH x AS (SELECT 1) DELETE FROM t*/",
+                "SELECT 1--x\rWITH x AS (DELETE FROM t) SELECT * FROM x",
+                "WITH x AS (SELECT 1) DELETE /*!y*/ FROM t"};
+        for (String sql : sqls) {
+            String why = SqlGuard.check(sql);
+            assertNotNull("WITH 后接 DML 应拒: " + esc(sql), why);
+            assertTrue("原因要点出写动词: " + why, why.contains("写动词"));
+        }
+        assertEquals("只读工具拒绝执行：括号后的语句位出现写动词 DELETE"
+                        + "（PG 的改写型 CTE、WITH 子句后接 DML 会真写数据）",
+                SqlGuard.check("WITH a AS (SELECT 1) DELETE FROM t WHERE id=1"));
+    }
+
+    @Test
+    public void rejectDataModifyingCteBody() {
+        // PG 的改写型 CTE：正文在左括号之后，执行发生在返回结果集之前
+        String[] sqls = {
+                "WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x",
+                "WITH x AS (UPDATE t SET a=1 RETURNING id) SELECT * FROM x",
+                "WITH x AS (INSERT INTO t VALUES (1) RETURNING id) SELECT * FROM x",
+                "WITH x AS (WITH y AS (DELETE FROM t RETURNING id) SELECT * FROM y) SELECT * FROM x",
+                // 藏在「不认嵌套」的块注释配对后面（round 4 必修 C 与本项的交叉）
+                "WITH x AS (SELECT 1) /*a/*!*/ DELETE FROM t */"};
+        for (String sql : sqls) {
+            String why = SqlGuard.check(sql);
+            assertNotNull("改写型 CTE 应拒: " + esc(sql), why);
+            assertTrue("原因要点出写动词: " + why, why.contains("DELETE") || why.contains("UPDATE")
+                    || why.contains("INSERT"));
+        }
+    }
+
+    @Test
+    public void explainBeforeWithDmlIsAlsoRejected() {
+        // EXPLAIN 那条检查只看到 WITH 就停了（WITH 不是写动词），第二条通道由括号语句位补上
+        assertNotNull(SqlGuard.check("EXPLAIN WITH a AS (SELECT 1) DELETE FROM t"));
+        assertNotNull(SqlGuard.check("EXPLAIN (ANALYZE) WITH a AS (SELECT 1) UPDATE t SET a=1"));
+        assertNull("EXPLAIN + 只读 CTE 仍放行", SqlGuard.check("EXPLAIN WITH a AS (SELECT 1) SELECT * FROM a"));
+    }
+
+    @Test
+    public void allowReadOnlyWithChainAndParenForms() {
+        // 对照组：合法写法绝不能被第 7 项检查打死（括号处出现 SELECT/别名/数字/掩码字面量）
+        String[] ok = {
+                "WITH a AS (SELECT 1) SELECT * FROM a",
+                "WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM t) SELECT n FROM t",
+                "WITH t(n) AS (VALUES (1),(2)) SELECT n FROM t",
+                "SELECT * FROM (VALUES (1),(2)) AS t(id)",
+                "SELECT count(*) FROM (SELECT id FROM t) x WHERE x.id > (SELECT min(id) FROM t)",
+                "SELECT f(1) AS a, g(2) AS b FROM t",
+                "SELECT * FROM TABLE(my_list)",
+                "SELECT begin, end, start FROM t",
+                "EXPLAIN (ANALYZE, COSTS FALSE) SELECT 1",
+                "WITH a AS NOT MATERIALIZED (SELECT 1) SELECT * FROM a"};
+        for (String sql : ok) {
+            assertNull("合法只读被误拒: " + esc(sql), SqlGuard.check(sql));
+        }
+    }
+
+    // ===== round 4 必修 B：锁短语要按各家方言的锁强度配齐 =====
+
+    @Test
+    public void rejectEveryLockStrengthPhrase() {
+        // PG 四种锁强度 + MySQL 8 的 FOR SHARE；只拦 FOR UPDATE 等于漏掉另外三种
+        assertEquals("只读工具拒绝执行：语句含 FOR SHARE",
+                SqlGuard.check("SELECT * FROM t FOR SHARE"));
+        assertEquals("只读工具拒绝执行：语句含 FOR NO KEY UPDATE",
+                SqlGuard.check("SELECT * FROM t FOR NO KEY UPDATE"));
+        assertEquals("只读工具拒绝执行：语句含 FOR KEY SHARE",
+                SqlGuard.check("SELECT * FROM t FOR KEY SHARE"));
+        assertEquals("只读工具拒绝执行：语句含 FOR SHARE",
+                SqlGuard.check("SELECT * FROM t FOR SHARE OF t NOWAIT"));
+        assertEquals("只读工具拒绝执行：语句含 FOR NO KEY UPDATE",
+                SqlGuard.check("SELECT * FROM t FOR/*a/*b*/NO KEY UPDATE */"));
+        assertEquals("只读工具拒绝执行：语句含 FOR SHARE",
+                SqlGuard.check("SELECT * FROM t FOR/*!x*/SHARE"));
+        assertEquals("只读工具拒绝执行：语句含 FOR SHARE",
+                SqlGuard.check("WITH x AS (SELECT 1) SELECT * FROM x FOR SHARE"));
+    }
+
+    @Test
+    public void allowLookAlikesOfLockPhrases() {
+        // 整词边界 + 字面量掩码：含 for/share/key 的列名与字符串不受影响
+        String[] ok = {
+                "SELECT for_share, key_share, no_key_update FROM t",
+                "SELECT share FROM t",
+                "SELECT * FROM t WHERE note = 'for share'",
+                "SELECT * FROM t WHERE note = 'for no key update'",
+                "SELECT * FROM t /* 说明 FOR SHARE 是锁 */",
+                "SELECT * FROM t -- 说明 FOR SHARE 是锁\n",
+                "SELECT a.key, a.share FROM t a"};
+        for (String sql : ok) {
+            assertNull("像锁短语但不是的写法被误拒: " + esc(sql), SqlGuard.check(sql));
+        }
+    }
+
+    // ===== round 4 必修 C：块注释配对轴（Oracle/MySQL 不认嵌套，按首个星斜杠收尾） =====
+
+    @Test
+    public void blockCommentPairingMustNotHidePayload() {
+        // 认嵌套的读法把整段当注释，不认嵌套的读法在**第一个**星斜杠就结束注释、其后是真执行的代码
+        String[] sqls = {
+                "SELECT 1 /*a/*!*/ INTO OUTFILE '/tmp/x' */",
+                "SELECT 1 /*a/*b*/ INTO OUTFILE '/tmp/x' */",
+                "SELECT * FROM t FOR/*a/*!*/UPDATE */",
+                "SELECT * FROM t LOCK/*a/*!*/IN SHARE MODE /*b*/ -- c */",
+                "SELECT 1 /*a/*!*/ ; DROP TABLE t /*b*/ -- c */",
+                "EXPLAIN /*a/*!*/ DROP TABLE t */",
+                "SELECT * FROM t /*!FOR*/ /*a /*b*/ UPDATE */ # x\n",
+                "/*a /*!b*/ DROP TABLE t */ SELECT 1"};
+        for (String sql : sqls) {
+            assertNotNull("块注释不认嵌套的读法被漏掉: " + esc(sql), SqlGuard.check(sql));
+        }
+        // 载荷在「剥掉可执行注释」那份读法里才露形：文案要点破首词不是模型写的那个
+        assertEquals("只读工具拒绝执行：把块注释按「不认嵌套」的方言（Oracle/MySQL）看时，"
+                        + "语句以 DROP 开头（仅允许 SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN）",
+                SqlGuard.check("/*a /*!b*/ DROP TABLE t */ SELECT 1"));
+    }
+
+    @Test
+    public void allowNestedBlockCommentWithoutPayload() {
+        // 对照组：可嵌套注释本身是 PG 的合法写法，尾巴里没有危险内容时不能打死
+        String[] ok = {
+                "SELECT 1 /* 外 /* 内 */ 还在外 */",
+                "SELECT /* 外 /* 内 */ 还在外 */ 1 FROM t",
+                "SELECT 1 FROM t /* a /* b */ c */",
+                "SELECT 1 /* 说明 /* 引号 ' 分号 ; for update 都在注释里 */ 结束 */"};
+        for (String sql : ok) {
+            assertNull("可嵌套注释的合法写法被误拒: " + esc(sql), SqlGuard.check(sql));
+        }
+        // 已知代价：尾巴里的分号在 MySQL/Oracle 侧确实是第二条语句，判不出方言就宁误拒
+        assertNotNull(SqlGuard.check("SELECT 1 /* a /* b */ ; c */"));
+    }
+
+    @Test
+    public void unpairableCommentInFragmentOnlyKillsThatReading() {
+        // 「按首个星斜杠收尾」暴露出来的片段正文可能自带配不上的斜杠星：那只是**那一份读法**执行不过去，
+        // 不能因此把整句判成「无法安全解析」——另一条配对轴的视图仍要照常复检
+        assertEquals("只读工具拒绝执行：可执行注释内含 DROP 语句",
+                SqlGuard.check("SELECT 1 /*!/*M!1x*/DROP TABLE t*/"));
+        assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
+                SqlGuard.check("SELECT 1 /*!FOR/*M!1c*/UPDATE*/"));
+        // 根级未闭合仍然一律拒（判不了就拒，这条不许被上面的规则带跑）
+        assertEquals("只读工具拒绝执行：注释未闭合，无法安全解析", SqlGuard.check("SELECT 1 /* x"));
+    }
+
+    // ===== round 4 必修 D：行尾不止换行，回车也算 =====
+
+    @Test
+    public void lineCommentEndsAtCarriageReturn() {
+        // MySQL/PG/Oracle 都在 CR 处结束 --/# 注释：只认 \n 等于让「回车后面那条语句」整行隐身
+        assertNotNull(SqlGuard.check("SELECT 1-- x\r; DROP TABLE t"));
+        assertNotNull(SqlGuard.check("SELECT 1 -- x\r; DROP TABLE t"));
+        assertEquals("只读工具拒绝执行：语句含 FOR UPDATE",
+                SqlGuard.check("SELECT 1 -- x\rFOR UPDATE"));
+        // CRLF 与纯 LF 的合法写法不受影响
+        assertNull(SqlGuard.check("SELECT id FROM t LIMIT 10;\r\n"));
+        assertNull(SqlGuard.check("SELECT 1 -- 说明\r\nFROM t"));
+        assertNull(SqlGuard.check("SELECT 1 /* 说明 */\r\nFROM t"));
+    }
+
+    // ===== round 4 不变式：三条轴任意组合后的同一载荷，判定结果必须一致 =====
+
+    @Test
+    public void invariantEveryAxisCombinationSeesTheSamePayload() {
+        // 同一条载荷：藏进行内存疑注释 / 可执行注释 / 嵌套块注释 / 三者交叉，都得拒
+        String payload = " INTO OUTFILE '/tmp/poc.txt'";
+        String[] hidings = {"--1", "#1", "/*!x*/", "/*a/*b*/", "/*a/*!*/", "/*!/*M!1c*/"};
+        for (String hidden : hidings) {
+            String sql = "SELECT 1 " + hidden + payload + " */";
+            assertNotNull("载荷藏进 " + hidden + " 也应拒: " + esc(sql), SqlGuard.check(sql));
+        }
+        // 只有「三库都当注释、且两种配对下都是注释」的写法才可以把它剥掉
+        assertNull(SqlGuard.check("SELECT 1 -- 1" + payload));
+        assertNull(SqlGuard.check("SELECT 1 /* 1" + payload + " */"));
+    }
+
+    private static String esc(String s) {
+        return s.replace("\n", "\\n").replace("\r", "\\r");
     }
 }
