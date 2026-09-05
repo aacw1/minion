@@ -82,10 +82,12 @@
       <version>1.7.36</version>
     </dependency>
     <!-- ===== JDBC 驱动（可插拔数据库工具，只读；每次调用新建连接，不用连接池） =====
-         mysql-connector 排除 protobuf-java：仅 mysqlx（X 协议）用到，普通 JDBC 不需要，减 fat jar 体积 -->
+         mysql 必须用新坐标 com.mysql:mysql-connector-j：8.0.31 起旧坐标 mysql:mysql-connector-java
+         只剩 relocation pom，引用它构建会报 relocated WARNING。
+         排除 protobuf-java：仅 mysqlx（X 协议）用到，普通 JDBC 不需要，减 fat jar 体积 -->
     <dependency>
-      <groupId>mysql</groupId>
-      <artifactId>mysql-connector-java</artifactId>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
       <version>8.0.33</version>
       <exclusions>
         <exclusion>
