@@ -24,11 +24,9 @@ public class SshPlugin implements ToolPlugin {
 
     @Override public String displayName() { return "ssh"; }
 
+    /** 状态列对 ssh 行恒空（同 db 口径）：当前选中名/（无当前连接）均由行内下拉框表达，不重复占列 */
     @Override
-    public String statusText() {
-        SshConnection c = config.currentConnection();
-        return c == null ? "（无当前连接）" : "当前连接: " + c.label();
-    }
+    public String statusText() { return ""; }
 
     @Override public boolean enabled() { return config.enabled; }
 
