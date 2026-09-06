@@ -4,15 +4,16 @@ import com.google.gson.JsonObject;
 import com.minion.core.tools.SchemaGenerator;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolResult;
+import com.minion.core.tools.plugin.BrowserManager;
 
 import java.io.IOException;
 
 /** 浏览器导航:open/back/refresh/status(首次调用启动 Chrome) */
 public class BrowserTool implements Tool {
 
-    private final BrowserSession session;
+    private final BrowserManager browser;
 
-    public BrowserTool(BrowserSession session) { this.session = session; }
+    public BrowserTool(BrowserManager browser) { this.browser = browser; }
 
     @Override
     public String name() { return "Browser"; }
@@ -29,6 +30,8 @@ public class BrowserTool implements Tool {
     @Override
     public ToolResult execute(JsonObject args) {
         if (!args.has("action")) return ToolResult.error("缺少 action 参数");
+        BrowserSession session = browser.session();
+        if (session == null) return ToolResult.error(BrowserManager.NOT_READY);
         String action = args.get("action").getAsString();
         try {
             if ("open".equals(action)) {

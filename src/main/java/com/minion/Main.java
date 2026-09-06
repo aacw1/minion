@@ -7,9 +7,8 @@ import com.minion.core.mcp.McpManager;
 import com.minion.core.mcp.McpStore;
 import com.minion.core.skills.Skill;
 import com.minion.core.skills.SkillManager;
-import com.minion.core.tools.browser.BrowserSession;
-import com.minion.core.tools.browser.CdpClient;
-import com.minion.core.tools.browser.ChromeLauncher;
+import com.minion.core.tools.plugin.BrowserConfig;
+import com.minion.core.tools.plugin.BrowserManager;
 import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.core.tools.OutputDump;
 import com.minion.gui.MinionApp;
@@ -39,29 +38,26 @@ public class Main {
         // MCP 服务器管理（mcp.json；惰性连接，退出钩子关停子进程）
         McpManager mcpManager = new McpManager(McpStore.load(jarDir));
 
-        // 浏览器工具（懒启动 Chrome；未配置 browser.path 则不加载 CDP 工具）
-        BrowserSession browserSession = null;
-        ChromeLauncher chrome = null;
-        String browserPath = config.browserPath();
-        if (browserPath != null && !browserPath.trim().isEmpty()) {
-            chrome = new ChromeLauncher(browserPath, config.browserPort(),
-                    Paths.get(config.browserUserDataDir()), config.browserHeadless(),
-                    config.browserTimeoutMs());
-            browserSession = new BrowserSession(chrome, new CdpClient(10000,
-                    config.browserTimeoutMs()));
-        }
-        final ChromeLauncher chromeToStop = chrome;
+        // 浏览器工具（懒启动 Chrome）。中间态：配置仍取自 config.properties；
+        // Task 11 起改由 tools.json + ToolPluginManager 提供，Config 的 browser* 方法在 Task 12 删除
+        BrowserConfig browserConfig = new BrowserConfig();
+        browserConfig.path = config.browserPath();
+        browserConfig.port = config.browserPort();
+        browserConfig.userDataDir = config.browserUserDataDir();
+        browserConfig.headless = config.browserHeadless();
+        browserConfig.timeoutMs = config.browserTimeoutMs();
+        final BrowserManager browserManager = new BrowserManager(browserConfig);
 
         ConfirmUi confirmUi = new GuiConfirmUi();
         SessionManager manager = new SessionManager(confirmUi, config, jarDir,
-                workspaces, models, skills, browserSession, mcpManager);
+                workspaces, models, skills, browserManager, mcpManager);
 
         // 退出钩子统一收口：先关会话（AgentLoop + LLM okhttp 资源 + 线程池 + MCP 子进程），再停自启 Chrome
         // （manager.shutdown 幂等——关窗已 shutdown 时此处空转）
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             manager.shutdown();
             mcpManager.shutdown();
-            if (chromeToStop != null) chromeToStop.stop();
+            browserManager.shutdown();
         }));
 
         MinionApp.start(config, workspaces, models, manager);

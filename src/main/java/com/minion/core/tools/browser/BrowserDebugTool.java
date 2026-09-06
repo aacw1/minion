@@ -4,13 +4,14 @@ import com.google.gson.JsonObject;
 import com.minion.core.tools.SchemaGenerator;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolResult;
+import com.minion.core.tools.plugin.BrowserManager;
 
 /** 网页调试:网络请求 / console 日志 / 页面信息 */
 public class BrowserDebugTool implements Tool {
 
-    private final BrowserSession session;
+    private final BrowserManager browser;
 
-    public BrowserDebugTool(BrowserSession session) { this.session = session; }
+    public BrowserDebugTool(BrowserManager browser) { this.browser = browser; }
 
     @Override
     public String name() { return "BrowserDebug"; }
@@ -27,6 +28,8 @@ public class BrowserDebugTool implements Tool {
     @Override
     public ToolResult execute(JsonObject args) {
         if (!args.has("action")) return ToolResult.error("缺少 action 参数");
+        BrowserSession session = browser.session();
+        if (session == null) return ToolResult.error(BrowserManager.NOT_READY);
         String action = args.get("action").getAsString();
         int limit = 50;
         if (args.has("limit")) {

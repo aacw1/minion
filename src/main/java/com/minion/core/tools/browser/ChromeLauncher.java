@@ -48,7 +48,7 @@ public class ChromeLauncher {
         // 2. 启动新实例
         String chrome = chromePath != null && !chromePath.isEmpty() ? chromePath : findChrome();
         if (chrome == null) {
-            throw new IOException("未找到 Chrome,请在 config.properties 配置 browser.path");
+            throw new IOException("未找到 Chrome,请在 设置 → 工具 → 浏览器操作 → 配置 中填写浏览器路径");
         }
         process = new ProcessBuilder(buildCommand(chrome))
                 .redirectErrorStream(true).start();
@@ -62,7 +62,7 @@ public class ChromeLauncher {
                 if (ep != null) return ep;
             }
         }
-        throw new IOException("Chrome 启动超时(端口 " + port + "),请检查 browser.path 配置");
+        throw new IOException("Chrome 启动超时(端口 " + port + "),请检查 设置 → 工具 → 浏览器操作 → 配置 中的浏览器路径");
     }
 
     /** Chrome 命令行(包内可见,测试用) */

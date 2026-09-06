@@ -36,7 +36,7 @@ import com.minion.core.tools.WriteTool;
 import com.minion.core.tools.browser.BrowserDebugTool;
 import com.minion.core.tools.browser.BrowserEvalTool;
 import com.minion.core.tools.browser.BrowserScreenshotTool;
-import com.minion.core.tools.browser.BrowserSession;
+import com.minion.core.tools.plugin.BrowserManager;
 import com.minion.core.tools.browser.BrowserTool;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.confirm.ConfirmUi;
@@ -89,7 +89,7 @@ public class SessionManager {
     private final WorkspaceManager workspaces;
     private final ModelManager models;
     private final SkillSet skillSet; // 内置列表 + 项目实扫合并；建会话时取一次不可变快照
-    private final BrowserSession browserSession; // 可为 null（测试/未配置浏览器路径）
+    private final BrowserManager browserManager; // 可为 null（测试）；浏览器工具的运行期句柄，配置改动可实时重建
     private final McpManager mcp; // 可为 null（测试）；MCP 服务器管理：惰性连接 + 工具补注册
     private final CommandDispatcher dispatcher; // 斜杠命令本地分发（GUI 输入路径）
     private final List<Listener> listeners = new ArrayList<Listener>();
@@ -124,7 +124,7 @@ public class SessionManager {
 
     public SessionManager(ConfirmUi confirmUi, Config config, Path jarDir,
                           WorkspaceManager workspaces, ModelManager models,
-                          List<Skill> allSkills, BrowserSession browserSession,
+                          List<Skill> allSkills, BrowserManager browserManager,
                           McpManager mcp) {
         this.confirmUi = confirmUi;
         this.config = config;
@@ -132,7 +132,7 @@ public class SessionManager {
         this.workspaces = workspaces;
         this.models = models;
         this.skillSet = new SkillSet(allSkills == null ? new ArrayList<Skill>() : allSkills);
-        this.browserSession = browserSession;
+        this.browserManager = browserManager;
         this.mcp = mcp;
         this.dispatcher = new CommandDispatcher();
         if (mcp != null) {
@@ -316,11 +316,12 @@ public class SessionManager {
         registry.register(new GrepTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new BashTool(workspace, tmpDirOf(sessionId)));
         registry.register(new WebFetchTool());
-        if (browserSession != null) {
-            registry.register(new BrowserTool(browserSession));
-            registry.register(new BrowserEvalTool(browserSession));
-            registry.register(new BrowserScreenshotTool(browserSession, workspace, skillsDir, tmpDir, gate));
-            registry.register(new BrowserDebugTool(browserSession));
+        if (browserManager != null && browserManager.config().path != null
+                && !browserManager.config().path.trim().isEmpty()) {
+            registry.register(new BrowserTool(browserManager));
+            registry.register(new BrowserEvalTool(browserManager));
+            registry.register(new BrowserScreenshotTool(browserManager, workspace, skillsDir, tmpDir, gate));
+            registry.register(new BrowserDebugTool(browserManager));
         }
         if (mcp != null) {
             for (McpServer s : mcp.servers()) {

@@ -7,6 +7,7 @@ import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
+import com.minion.core.tools.plugin.BrowserManager;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -14,24 +15,24 @@ import java.nio.file.Path;
 /** 页面截图保存到工作区(模型可随后用 Read 查看) */
 public class BrowserScreenshotTool implements Tool {
 
-    private final BrowserSession session;
+    private final BrowserManager browser;
     private final Workspace workspace;
     private final String skillsDir;
     private final String tmpDir;
     private final ConfirmGate confirm;
 
-    public BrowserScreenshotTool(BrowserSession session, Workspace workspace, String skillsDir) {
-        this(session, workspace, skillsDir, null, null);
+    public BrowserScreenshotTool(BrowserManager browser, Workspace workspace, String skillsDir) {
+        this(browser, workspace, skillsDir, null, null);
     }
 
-    public BrowserScreenshotTool(BrowserSession session, Workspace workspace, String skillsDir,
+    public BrowserScreenshotTool(BrowserManager browser, Workspace workspace, String skillsDir,
                                  ConfirmGate confirm) {
-        this(session, workspace, skillsDir, null, confirm);
+        this(browser, workspace, skillsDir, null, confirm);
     }
 
-    public BrowserScreenshotTool(BrowserSession session, Workspace workspace, String skillsDir,
+    public BrowserScreenshotTool(BrowserManager browser, Workspace workspace, String skillsDir,
                                  String tmpDir, ConfirmGate confirm) {
-        this.session = session;
+        this.browser = browser;
         this.workspace = workspace;
         this.skillsDir = skillsDir;
         this.tmpDir = tmpDir;
@@ -54,6 +55,8 @@ public class BrowserScreenshotTool implements Tool {
     @Override
     public ToolResult execute(JsonObject args) {
         if (!args.has("path")) return ToolResult.error("缺少 path 参数");
+        BrowserSession session = browser.session();
+        if (session == null) return ToolResult.error(BrowserManager.NOT_READY);
         boolean fullPage = !args.has("fullPage") || args.get("fullPage").getAsBoolean();
         Path p = PathsGuard.resolve(workspace.cwd().toString(), args.get("path").getAsString());
         ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, p);

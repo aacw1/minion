@@ -18,6 +18,11 @@ import static org.junit.Assert.*;
 /** 浏览器工具:参数校验与启动失败路径(连接成功路径留给真实 Chrome 集成测试) */
 public class BrowserToolsTest {
 
+    /** 测试注入：把固定 BrowserSession 包成 BrowserManager（工具构造已换成 BrowserManager） */
+    private static com.minion.core.tools.plugin.BrowserManager bm(BrowserSession s) {
+        return com.minion.core.tools.plugin.BrowserManager.ofSession(s);
+    }
+
     /** 永远启动失败的 launcher:模拟未装 Chrome */
     private static class FailingLauncher extends ChromeLauncher {
         FailingLauncher() {
@@ -76,44 +81,44 @@ public class BrowserToolsTest {
 
     @Test
     public void browserToolMissingAction() {
-        ToolResult r = new BrowserTool(session()).execute(new JsonObject());
+        ToolResult r = new BrowserTool(bm(session())).execute(new JsonObject());
         assertTrue(r.output, r.output.contains("action"));
     }
 
     @Test
     public void browserToolOpenWithoutUrl() {
-        ToolResult r = new BrowserTool(session()).execute(json("action", "open"));
+        ToolResult r = new BrowserTool(bm(session())).execute(json("action", "open"));
         assertTrue(r.output, r.output.contains("url"));
     }
 
     @Test
     public void browserToolUnknownAction() {
-        ToolResult r = new BrowserTool(session()).execute(json("action", "fly"));
+        ToolResult r = new BrowserTool(bm(session())).execute(json("action", "fly"));
         assertTrue(r.output, r.output.contains("未知 action"));
     }
 
     @Test
     public void browserToolOpenFailsWhenChromeMissing() {
-        ToolResult r = new BrowserTool(session()).execute(
+        ToolResult r = new BrowserTool(bm(session())).execute(
                 json2("action", "open", "url", "https://example.com"));
         assertTrue(r.output, r.output.contains("启动失败"));
     }
 
     @Test
     public void browserEvalMissingExpression() {
-        ToolResult r = new BrowserEvalTool(session()).execute(new JsonObject());
+        ToolResult r = new BrowserEvalTool(bm(session())).execute(new JsonObject());
         assertTrue(r.output, r.output.contains("expression"));
     }
 
     @Test
     public void browserEvalFailsWhenChromeMissing() {
-        ToolResult r = new BrowserEvalTool(session()).execute(json("expression", "1+1"));
+        ToolResult r = new BrowserEvalTool(bm(session())).execute(json("expression", "1+1"));
         assertTrue(r.output, r.output.contains("启动失败"));
     }
 
     @Test
     public void browserScreenshotMissingPath() {
-        ToolResult r = new BrowserScreenshotTool(session(), new Workspace("."), null)
+        ToolResult r = new BrowserScreenshotTool(bm(session()), new Workspace("."), null)
                 .execute(new JsonObject());
         assertTrue(r.output, r.output.contains("path"));
     }
@@ -121,7 +126,7 @@ public class BrowserToolsTest {
     @Test
     public void browserScreenshotOutsideWorkDirRejected() throws Exception {
         Workspace ws = new Workspace(java.nio.file.Files.createTempDirectory("ws").toString());
-        ToolResult r = new BrowserScreenshotTool(session(), ws, null)
+        ToolResult r = new BrowserScreenshotTool(bm(session()), ws, null)
                 .execute(json("path", "C:\\Windows\\x.png"));
         assertTrue(r.output, r.output.contains("工作路径之外"));
     }
@@ -137,7 +142,7 @@ public class BrowserToolsTest {
             FakeCdpClient fake = new FakeCdpClient();
             fake.screenshotData = "aGVsbG8="; // base64("hello")
             BrowserSession session = new BrowserSession(new FakeLauncher(), fake);
-            ToolResult r = new BrowserScreenshotTool(session, new Workspace(wsDir.toString()), null)
+            ToolResult r = new BrowserScreenshotTool(bm(session), new Workspace(wsDir.toString()), null)
                     .execute(json("path", "shot.png"));
             assertTrue(r.output, r.ok);
             java.nio.file.Path saved = wsDir.resolve("shot.png");
@@ -156,7 +161,7 @@ public class BrowserToolsTest {
         Path outsideDir = Files.createTempDirectory("minion-outside");
         try {
             ConfirmGate gate = new ConfirmGate(config(), new FakeConfirmUi(ConfirmUi.Decision.REJECT));
-            ToolResult r = new BrowserScreenshotTool(session(), new Workspace(wsDir.toString()), null, gate)
+            ToolResult r = new BrowserScreenshotTool(bm(session()), new Workspace(wsDir.toString()), null, gate)
                     .execute(json("path", outsideDir.resolve("x.png").toString()));
             assertFalse(r.ok);
             assertTrue(r.output, r.output.contains("工作路径之外"));
@@ -177,7 +182,7 @@ public class BrowserToolsTest {
             fake.screenshotData = "aGVsbG8="; // base64("hello")
             BrowserSession bs = new BrowserSession(new FakeLauncher(), fake);
             ConfirmGate gate = new ConfirmGate(config(), new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-            ToolResult r = new BrowserScreenshotTool(bs, new Workspace(wsDir.toString()), null, gate)
+            ToolResult r = new BrowserScreenshotTool(bm(bs), new Workspace(wsDir.toString()), null, gate)
                     .execute(json("path", outsideDir.resolve("x.png").toString()));
             assertTrue(r.output, r.ok);
             assertTrue(Files.exists(outsideDir.resolve("x.png")));
@@ -195,7 +200,7 @@ public class BrowserToolsTest {
 
     @Test
     public void browserDebugUnknownAction() {
-        ToolResult r = new BrowserDebugTool(session()).execute(json("action", "x"));
+        ToolResult r = new BrowserDebugTool(bm(session())).execute(json("action", "x"));
         assertTrue(r.output, r.output.contains("未知 action"));
     }
 
@@ -229,7 +234,7 @@ public class BrowserToolsTest {
         fake.evalResponse.add("exceptionDetails", exceptionDetails);
         fake.evalResponse.add("result", new JsonObject());
         BrowserSession session = new BrowserSession(new FailingLauncher(), fake);
-        ToolResult r = new BrowserEvalTool(session).execute(json("expression", "x()"));
+        ToolResult r = new BrowserEvalTool(bm(session)).execute(json("expression", "x()"));
         assertFalse(r.ok);
         assertTrue(r.output, r.output.contains("JS 异常"));
     }
