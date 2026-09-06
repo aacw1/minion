@@ -177,8 +177,9 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
 ### 4.7 高危名单（远端扩展，不动本地判定）
 
 `DangerousCommands` 增加远端集合与判定入口（如 `isDangerousRemote`），内容 =
-本地现有集合 ∪ { `systemctl`, `service`, `halt`, `poweroff`, `userdel`, `passwd`,
-`groupdel`, `apt`, `yum`, `dnf`, `make install`, `pip install`… 安装类首 token }。
+本地现有集合 ∪ { `systemctl`, `service`, `halt`, `poweroff`, `reboot`, `userdel`,
+`groupdel`, `sudo`, `apt`, `apt-get`, `yum`, `dnf`, `zypper` }（共 13 词，收敛固定
+清单，初稿的开放式列举见文末修正记录；实现以 `DangerousCommands.REMOTE_EXTRA` 为准）。
 本地 BashTool 继续用原集合，行为不变。首 token 解析复用 `DangerousCommands.firstToken`
 （引号剥离 / basename / .exe 已覆盖；远端 Linux 为主，.exe 判定无害）。
 
@@ -303,3 +304,12 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
   - exec 超时错误附已产出的部分输出（原直接抛错丢弃已捕获内容；与 BashTool 超时口径对齐）；
   - SshExecutor 类 Javadoc「exec 默认 120s」措辞修正——executor 不设默认，
     默认值在 SshExecTool 层（DEFAULT_TIMEOUT=BashTool 同值）。
+- §4.7 高危名单收敛注记（REMOTE_EXTRA 实际 13 词，以 `DangerousCommands.REMOTE_EXTRA`
+  代码为准）：初稿为开放式列举「本地集合 ∪ { … `passwd`, `make install`,
+  `pip install`… 安装类首 token }」，实施收敛为固定单 token 清单
+  { `systemctl`, `service`, `halt`, `poweroff`, `reboot`, `userdel`, `groupdel`,
+  `sudo`, `apt`, `apt-get`, `yum`, `dnf`, `zypper` }——判定只取首 token，
+  多 token 短语（make install / pip install）不可表达故未纳入；`sudo` 因破坏性
+  命令前缀（sudo rm / sudo dd 等）粗粒度拦截而实增（正文 §4.7 已同步）。
+- final 收尾修复：`SftpGetTool.description` 两个分支补充「本地同名文件将被覆盖」
+  声明（初稿仅写「下载后用 Read 查看」，无覆盖提示；get 无确认，靠描述知会模型）。
