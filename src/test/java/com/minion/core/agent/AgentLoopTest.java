@@ -1545,4 +1545,42 @@ public class AgentLoopTest {
         assertTrue(ui.errors.get(0).startsWith("网络超时 重试了"));
         assertTrue(ui.errors.get(0).contains("仍失败"));
     }
+
+    /** 插件停用后模型仍拿旧工具名来调：得到「不存在或已停用」的失败结果，而不是执行 */
+    @Test
+    public void disabledPluginToolCallReturnsDisabledHint() {
+        registry.setGate(new ToolRegistry.PluginGate() {
+            @Override public boolean enabled(String pluginId) { return false; }   // 全部插件停用
+        });
+        registry.register("browser", new Tool() {
+            @Override public String name() { return "Browser"; }
+            @Override public String description() { return "浏览器导航"; }
+            @Override public com.google.gson.JsonObject schema() {
+                return com.minion.core.tools.SchemaGenerator.objectSchema("浏览器导航",
+                        new String[]{"action"}, new String[]{"action"});
+            }
+            @Override public ToolResult execute(com.google.gson.JsonObject args) {
+                throw new IllegalStateException("停用的工具不应被执行");
+            }
+        });
+        assertNull("gate 停用后 registry 不应交出该工具", registry.get("Browser"));
+        assertEquals("内置工具（pluginId=null）恒放行，只剩插件工具被挡下",
+                2, registry.schemas().size());
+
+        // 假模型仍拿旧名字请求调用（运行中会话下轮请求的典型场景）
+        ToolCall tc = new ToolCall();
+        tc.id = "c1";
+        tc.name = "Browser";
+        tc.arguments = "{\"action\":\"open\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("明白");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("打开页面");
+        // 0:user 1:assistant(tool_calls) 2:tool(失败结果) 3:assistant(final)
+        List<Message> msgs = loop.messages();
+        assertEquals(4, msgs.size());
+        assertEquals(Message.Role.TOOL, msgs.get(2).role);
+        assertTrue("回给模型的应是「不存在或已停用」提示",
+                msgs.get(2).content.contains("工具不存在或已停用: Browser"));
+    }
 }

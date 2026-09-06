@@ -246,7 +246,7 @@ public class SubAgentLoop {
                 return ToolResult.error("子 agent 不可加载技能（Skill 工具已禁用）");
             }
             Tool tool = registry.get(call.name);
-            if (tool == null) return ToolResult.error("未知工具: " + call.name);
+            if (tool == null) return ToolResult.error("工具不存在或已停用: " + call.name);
             JsonObject args;
             try {
                 args = JsonParser.parseString(call.arguments == null ? "{}" : call.arguments).getAsJsonObject();

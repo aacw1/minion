@@ -698,7 +698,7 @@ public class AgentLoop {
         try {
             Tool tool = registry.get(call.name);
             if (tool == null) {
-                return ToolResult.error("未知工具: " + call.name);
+                return ToolResult.error("工具不存在或已停用: " + call.name);
             }
             JsonObject args;
             try {
