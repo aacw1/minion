@@ -242,8 +242,8 @@ public class DbExecutor {
         return msg.contains("timeout") || msg.contains("query execution was interrupted");
     }
 
-    /** 驱动异常首行（多行堆栈式消息只取首行），超 200 字符截断 */
-    static String firstLine(String s) {
+    /** 驱动异常首行（多行堆栈式消息只取首行），超 200 字符截断；DbPlugin 测试连接复用同一口径 */
+    public static String firstLine(String s) {
         if (s == null) return "";
         int i = s.indexOf('\n');
         String first = (i < 0 ? s : s.substring(0, i)).trim();
