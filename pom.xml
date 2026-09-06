@@ -107,6 +107,13 @@
       <artifactId>ojdbc8</artifactId>
       <version>21.9.0.0</version>
     </dependency>
+    <!-- SSH/SFTP 客户端（可插拔 ssh 工具）：class 版本 52 = JDK8、零传递依赖、~700KB；
+         mwiede 维护版（jcraft 原版 2018 停更）。无 JDK 内置 SSH 实现，故必选 -->
+    <dependency>
+      <groupId>com.github.mwiede</groupId>
+      <artifactId>jsch</artifactId>
+      <version>2.28.7</version>
+    </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
