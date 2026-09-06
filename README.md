@@ -141,7 +141,7 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
   - postgreSQL 仅支持 query；schema/describe 会返回禁用提示（MySQL/Oracle 支持 query+schema+describe）
   - 结果上限 100 行（超出在表头标注「行数超上限，已截断」）、单格超 120 字符截断、超 30k 字符落盘到会话临时目录并给路径
   - 数据源在 设置 → 工具 的行内下拉框选择当前数据源（切换即落盘生效，无需进管理弹窗），「数据源管理」里新建/修改/删除/测试连接；URL 示例：
-    - MySQL：`jdbc:mysql://127.0.0.1:3306/db&useSSL=false&allowPublicKeyRetrieval=true&useInformationSchema=true`（连 5.x 需前两项；`useInformationSchema=true` 让表注释 REMARKS 有值）
+    - MySQL：`jdbc:mysql://127.0.0.1:3306/db?useSSL=false&allowPublicKeyRetrieval=true&useInformationSchema=true`（连 5.x 需前两项；`useInformationSchema=true` 让表注释 REMARKS 有值）
     - PostgreSQL：`jdbc:postgresql://127.0.0.1:5432/db`
     - Oracle：`jdbc:oracle:thin:@127.0.0.1:1521:ORCL`
   - 密码明文存 `tools.json`（与 `model.json` 的 apiKey 同口径）；长查询 300 秒超时，超时不一定真能打断数据库侧的查询

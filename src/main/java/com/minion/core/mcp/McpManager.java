@@ -32,7 +32,10 @@ public class McpManager {
     /** 持久化服务器配置（设置页新建/编辑/删除后调用） */
     public void save() { store.save(); }
 
-    public void addListener(Listener l) { listeners.add(l); }
+    public void addListener(Listener l) { if (l != null) listeners.add(l); }
+
+    /** 注销监听（设置窗关闭时自注销，防反复开关累积面板引用） */
+    public void removeListener(Listener l) { listeners.remove(l); }
 
     /** 惰性连接入口（幂等）：CONNECTING/CONNECTED 直接返回；否则后台线程连接 */
     public void ensureConnectedAsync(final String name) {
@@ -180,6 +183,7 @@ public class McpManager {
     }
 
     private void notifyListeners(McpServer s) {
-        for (Listener l : listeners) l.onStateChanged(s);
+        // 快照遍历：回调中可能 removeListener（GUI 自注销），直接遍历会 ConcurrentModificationException
+        for (Listener l : new ArrayList<Listener>(listeners)) l.onStateChanged(s);
     }
 }

@@ -42,7 +42,7 @@ public class DbPluginTest {
         c.dataSources.add(new DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u", "p"));
         assertEquals("未选择数据源", p.statusText());
         c.current = "prod";
-        assertEquals("当前数据源: prod", p.statusText());
+        assertEquals("已选中时当前名由下拉框可见，状态列不重复占位", "", p.statusText());
         c.current = "ghost";   // 选中项被删（回退前瞬间）也走「未选择」
         assertEquals("未选择数据源", p.statusText());
     }
@@ -55,7 +55,7 @@ public class DbPluginTest {
         assertTrue(p.addDataSource(new DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u", "p")));
         assertEquals("prod", c.current);
         assertEquals(1, saver.count);
-        assertEquals("当前数据源: prod", p.statusText());
+        assertEquals("已选中时状态列留空（当前名由下拉框显示）", "", p.statusText());
         // 重复标识名（DbConfig.add 拒绝）
         assertFalse(p.addDataSource(new DataSourceConfig("PROD", "jdbc:mysql://h2/db", "", "")));
     }

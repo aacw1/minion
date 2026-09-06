@@ -93,6 +93,11 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
         if (onChange != null) listeners.add(onChange);
     }
 
+    /** 注销监听（设置窗关闭时自注销，防反复开关累积面板引用） */
+    public void removeListener(Runnable onChange) {
+        listeners.remove(onChange);
+    }
+
     private void notifyListeners() {
         for (Runnable l : new ArrayList<Runnable>(listeners)) l.run();
     }

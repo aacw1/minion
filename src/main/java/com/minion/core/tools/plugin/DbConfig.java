@@ -4,6 +4,7 @@ import com.minion.core.tools.db.DataSourceConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 单个数据库类型的配置（tools.json 的 mysql/postgresql/oracle 段）：
@@ -14,7 +15,8 @@ public class DbConfig {
     public boolean enabled = false;
     /** 当前数据源标识名；空 = 未选择（工具调用时返回指引文案） */
     public String current = "";
-    public List<DataSourceConfig> dataSources = new ArrayList<DataSourceConfig>();
+    /** 数据源列表：设置页（FX 线程）与工具执行（会话线程）可能并发读写 → CopyOnWriteArrayList 防 CME/中间态 */
+    public CopyOnWriteArrayList<DataSourceConfig> dataSources = new CopyOnWriteArrayList<DataSourceConfig>();
 
     /** 当前数据源；current 空或找不到对应项返回 null */
     public DataSourceConfig currentDataSource() {
@@ -47,7 +49,7 @@ public class DbConfig {
     /** 新增；返回 false 表示标识名已存在（调用方应先用 DataSourceValidator 校验） */
     public boolean add(DataSourceConfig ds) {
         if (ds == null || find(ds.name) != null) return false;
-        if (dataSources == null) dataSources = new ArrayList<DataSourceConfig>();
+        if (dataSources == null) dataSources = new CopyOnWriteArrayList<DataSourceConfig>();
         dataSources.add(ds);
         // 首个数据源自动成为当前项，省一次下拉选择
         if (current == null || current.trim().isEmpty()) current = ds.name.trim();

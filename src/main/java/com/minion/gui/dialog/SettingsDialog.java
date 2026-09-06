@@ -327,8 +327,17 @@ public class SettingsDialog {
             }
         });
         refresh(list, mcp);
-        // 连接线程回调（onStateChanged 在后台连接线程）：切回 FX 线程刷新列表
-        mcp.addListener(s -> javafx.application.Platform.runLater(() -> refresh(list, mcp)));
+        // 连接线程回调（onStateChanged 在后台连接线程）：切回 FX 线程刷新列表。
+        // 设置窗关闭后 list 脱离场景 → 自注销，防每次打开设置窗累积一个监听（与 ToolsPane 同构）
+        final McpManager.Listener[] mcpListener = new McpManager.Listener[1];
+        mcpListener[0] = s -> javafx.application.Platform.runLater(() -> {
+            if (list.getScene() == null) {
+                mcp.removeListener(mcpListener[0]);
+                return;
+            }
+            refresh(list, mcp);
+        });
+        mcp.addListener(mcpListener[0]);
 
         HBox actions = new HBox(8);
         Button add = new Button("新建");

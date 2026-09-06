@@ -51,9 +51,9 @@ public class DbPlugin implements ToolPlugin {
     public String statusText() {
         List<String> names = config.names();
         if (names.isEmpty()) return "未配置数据源";
-        DataSourceConfig ds = config.currentDataSource();
-        if (ds == null) return "未选择数据源";
-        return "当前数据源: " + ds.name;
+        // 已配数据源时当前选择由行内下拉框可见，状态列不重复占位；只提示「未选择」的中间态
+        if (config.currentDataSource() == null) return "未选择数据源";
+        return "";
     }
 
     @Override public boolean enabled() { return config.enabled; }

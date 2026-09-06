@@ -56,14 +56,24 @@ public class ToolsPane {
         }
         final ToolsPane pane = new ToolsPane(plugins, owner);
         pane.layout();
-        // 后台线程落盘（如测试连接）也刷面板；监听仅用于 GUI 刷新，不参与工具生效链路
-        plugins.addListener(new Runnable() {
+        // 变更监听：刷新面板的唯一途径（含后台线程落盘如测试连接、数据源管理弹窗改动）。
+        // 设置窗关闭后 root 脱离场景 → 自注销，防每次打开设置窗累积一个面板引用；
+        // 监听仅用于 GUI 刷新，不参与工具生效链路
+        final Runnable[] self = new Runnable[1];
+        self[0] = new Runnable() {
             @Override public void run() {
                 Platform.runLater(new Runnable() {
-                    @Override public void run() { pane.refresh(); }
+                    @Override public void run() {
+                        if (pane.root.getScene() == null) {
+                            plugins.removeListener(self[0]);
+                            return;
+                        }
+                        pane.refresh();
+                    }
                 });
             }
-        });
+        };
+        plugins.addListener(self[0]);
         return pane.root;
     }
 
@@ -85,8 +95,8 @@ public class ToolsPane {
             row.enabled.setSelected(p.enabled());
             row.enabled.setOnAction(e -> {
                 if (updating) return;
+                // 只改状态：落盘触发的 listener 会刷新本行（去掉重复的同步 refresh）
                 plugins.setEnabled(row.plugin.id(), row.enabled.isSelected());
-                refresh();
             });
 
             HBox configArea = new HBox(8);
@@ -99,8 +109,7 @@ public class ToolsPane {
                 row.sources.setOnAction(e -> {
                     if (updating) return;
                     String v = row.sources.getValue();
-                    if (v != null) row.db.setCurrent(v);   // 落盘 → 全局会话下一轮生效
-                    refresh();
+                    if (v != null) row.db.setCurrent(v);   // 落盘 → 全局会话下一轮生效（listener 负责刷行）
                 });
                 Button manage = ghost("数据源管理");
                 manage.setOnAction(e -> DataSourceDialog.show(owner, plugins, row.db));
@@ -111,7 +120,9 @@ public class ToolsPane {
                 configArea.getChildren().add(cfg);
             }
 
-            HBox line = new HBox(8, name, row.status, row.enabled, configArea);
+            // 启用开关第一列（最左）；状态列仅提示缺失态（如「未配置数据源」），
+            // 已配置时的当前选择由下拉框可见，不重复占位
+            HBox line = new HBox(8, row.enabled, name, row.status, configArea);
             HBox.setHgrow(row.status, Priority.ALWAYS);
             line.setPadding(new Insets(4, 0, 4, 0));
             rows.add(row);

@@ -9,8 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 可插拔工具配置：jarDir/tools.json 单文件（仿 McpStore）。
@@ -78,7 +78,7 @@ public class ToolStore {
         for (String id : new String[]{"mysql", "postgresql", "oracle"}) {
             DbConfig db = dbConfig(id);
             if (db == null) continue;
-            if (db.dataSources == null) db.dataSources = new ArrayList<DataSourceConfig>();
+            if (db.dataSources == null) db.dataSources = new CopyOnWriteArrayList<DataSourceConfig>();
             if (db.current == null) db.current = "";
             // current 指向已不存在的数据源（手改文件）→ 回退到第一个，与删除回退规则一致
             if (!db.current.trim().isEmpty() && db.currentDataSource() == null) {

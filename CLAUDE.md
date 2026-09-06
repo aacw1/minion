@@ -50,7 +50,7 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
 2. 新代码落位：工具→core/tools、界面→gui、模型→core/llm；core 内经接口+构造注入，不新增循环依赖
 3. 错误处理：LLM 错误抛 LlmException；工具错误返回失败 ToolResult 给模型自调
 4. API 契约（防回归）：reasoning_content 原样回传；tool_call↔tool 消息完整配对，否则 400
-5. 新增配置项同步 src/resource/config.properties 默认值与外部生成逻辑
+5. 新增配置项同步 src/resource/config.properties 默认值与外部生成逻辑；可插拔工具启停/数据源配置属 tools.json（ToolStore/ToolPluginManager 管理），不进 config.properties
 6. 设计先行：功能先写 docs/superpowers/specs/<日期>-<主题>-design.md，用户确认后再实施
 7. 完成前自查：mvn compile + 相关测试通过；改动同步更新 README 与设计文档
 8. 新增可插拔工具必须四件套齐备（接口实现 / ToolPluginManager 装配 / ToolsPane 一行 / 单测）；设置页工具开关=描述注入开关，不启用绝不注入
