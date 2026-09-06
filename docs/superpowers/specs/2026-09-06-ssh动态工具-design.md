@@ -154,8 +154,10 @@ GUI 保存时按所选方式清空另一组（见 §4.9），工具/测试连接
 - `exec(cfg, command, timeoutSeconds, sink)`：开 `exec` channel，命令原样发送
   （服务器按默认 shell 处理；描述中提示需要登录 shell 环境时用 `bash -lc '...'` 包裹）；
   stdout/stderr 分别读、合并到同一字符流（stderr 行标注 `[stderr]` 前缀，与 exit code 一起返回）。
-- 超时：主线程等 `exitStatus` 至多 timeoutSeconds（默认 120），超时 `channel.disconnect()` +
-  `session.disconnect()`，返回超时错误；**注明远端可能残留孤儿进程**（与 DbExecutor
+  读取按块流式解码（跨块 UTF-8 续读 + 前缀只加在真正行首，块边界无伪影）。
+- 超时：主线程等 `exitStatus` 至多 timeoutSeconds（工具层默认 120s），超时先
+  `channel.disconnect()` 收割已产出的部分输出（随超时错误文案一并返回，与 BashTool
+  超时输出口径一致），随后断开会话；**注明远端可能残留孤儿进程**（与 DbExecutor
   300s「超时不一定能打断」同口径提示）。
 - SFTP：`openChannel("sftp")` → `ChannelSftp`；每次操作（ls/get/put/rm/mkdir/rename）
   独立建连执行后关闭。
@@ -292,4 +294,12 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
 
 - 截断助手落位为独立文件 TruncatedOutput（规格初稿写 OutputDump 静态成员）；
 - `SshPlugin.statusText()` 恒空（初稿为「当前连接名/无连接提示」）——与 db 行同口径：
-  当前连接/（无连接）均由行内下拉框表达，状态列不重复占位（§4.8 已同步）
+  当前连接/（无连接）均由行内下拉框表达，状态列不重复占位（§4.8 已同步）；
+- final review 修复轮（exec 输出链路，与计划 Task 3 代码快照差异、已实施，勿照抄快照）：
+  - exec 输出读取改为 LineDecoder 跨块 UTF-8 流式解码（原按 8192 字节块硬解码：
+    多字节字符跨块产生替换符、`[stderr]` 前缀在块边界误插）；
+  - exec 成功与超时路径均**先 join reader 再 close 累积器**（原 close 先于 join，
+    通道刚关闭时末块 ≤8KB 可能进不了 >30k 截断的落盘文件）；
+  - exec 超时错误附已产出的部分输出（原直接抛错丢弃已捕获内容；与 BashTool 超时口径对齐）；
+  - SshExecutor 类 Javadoc「exec 默认 120s」措辞修正——executor 不设默认，
+    默认值在 SshExecTool 层（DEFAULT_TIMEOUT=BashTool 同值）。
