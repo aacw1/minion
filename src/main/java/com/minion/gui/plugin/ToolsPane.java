@@ -3,6 +3,7 @@ package com.minion.gui.plugin;
 import com.minion.core.tools.plugin.DbPlugin;
 import com.minion.core.tools.plugin.ToolPlugin;
 import com.minion.core.tools.plugin.ToolPluginManager;
+import com.minion.core.tools.ssh.SshPlugin;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
@@ -20,7 +21,7 @@ import java.util.List;
 
 /**
  * 设置窗「工具」页：每个可插拔工具一行 = 启用开关 + 显示名 + 状态文案 + 该工具专属配置入口。
- * 行数固定（浏览器 + 三个数据库）、每行控件不同，故用 VBox 直接拼装而非 ListView。
+ * 行数固定（浏览器 + 三个数据库 + ssh）、每行控件不同，故用 VBox 直接拼装而非 ListView。
  * 启用开关与数据源下拉改动即落 tools.json —— 生效由 ToolRegistry 的 gate 在下一轮 schemas() 判定
  * （拉模式），本页不需要通知任何会话。
  * 缺关键配置（浏览器无路径/数据库无数据源）时「启用」置灰（canEnable），先配置后启用。
@@ -41,7 +42,8 @@ public class ToolsPane {
         final CheckBox enabled = new CheckBox("启用");
         final String cannotEnableTip;         // 置灰原因（悬停显示）
         DbPlugin db;                          // 数据库插件行才有
-        ComboBox<String> sources;             // 数据库插件行才有
+        SshPlugin ssh;                        // ssh 插件行才有
+        ComboBox<String> sources;             // 数据库/ssh 行才有（当前选中下拉）
 
         Row(ToolPlugin plugin, String cannotEnableTip) {
             this.plugin = plugin;
@@ -91,8 +93,9 @@ public class ToolsPane {
         root.setPadding(PluginUi.padding());
         for (ToolPlugin p : plugins.plugins()) {
             DbPlugin db = plugins.dbPlugin(p.id());
-            // 置灰原因（悬停提示）：数据库行需先有数据源；浏览器行需先配路径
+            // 置灰原因（悬停提示）：数据库行需先有数据源；ssh 行需先有连接；浏览器行需先配路径
             final String tip = db != null ? "需先在「数据源管理」新建数据源才能启用"
+                    : "ssh".equals(p.id()) ? "需先在「连接管理」新建连接才能启用"
                     : "需先在「配置」中填写浏览器路径才能启用";
             final Row row = new Row(p, tip);
 
@@ -122,13 +125,26 @@ public class ToolsPane {
                 Button manage = ghost("数据源管理");
                 manage.setOnAction(e -> DataSourceDialog.show(owner, plugins, row.db));
                 configArea.getChildren().addAll(row.sources, manage);
+            } else if ("ssh".equals(p.id())) {
+                row.ssh = (SshPlugin) p;
+                row.sources = new ComboBox<String>();
+                row.sources.setPrefWidth(180);
+                row.sources.setPromptText("（无连接）");
+                row.sources.setOnAction(e -> {
+                    if (updating) return;
+                    String v = row.sources.getValue();
+                    if (v != null) row.ssh.setCurrent(v);   // 落盘 → 全局会话下一轮生效（listener 负责刷行）
+                });
+                Button manage = ghost("连接管理");
+                manage.setOnAction(e -> SshConnectionsDialog.show(owner, plugins, row.ssh));
+                configArea.getChildren().addAll(row.sources, manage);
             } else {
                 Button cfg = ghost("配置");
                 cfg.setOnAction(e -> BrowserConfigDialog.show(owner, plugins));
                 configArea.getChildren().add(cfg);
             }
 
-            // 启用开关第一列（最左）；数据库行状态列恒空——当前选中/（无数据源）均由下拉框表达
+            // 启用开关第一列（最左）；数据库/ssh 行状态列恒空——当前选中/（无连接）均由下拉框表达
             HBox line = new HBox(8, row.enabled, name, row.status, configArea);
             HBox.setHgrow(row.status, Priority.ALWAYS);
             line.setPadding(new Insets(4, 0, 4, 0));
@@ -153,11 +169,13 @@ public class ToolsPane {
                     row.plugin.setEnabled(false);
                 }
                 row.enabled.setSelected(row.plugin.enabled());
-                if (row.db != null) {
-                    List<String> names = row.db.dataSourceNames();
+                if (row.db != null || row.ssh != null) {
+                    final List<String> names = row.db != null
+                            ? row.db.dataSourceNames() : row.ssh.connectionNames();
+                    final String current = row.db != null
+                            ? row.db.config().current : row.ssh.config().current;
                     row.sources.getItems().setAll(names);
                     row.sources.setDisable(names.isEmpty());
-                    String current = row.db.config().current;
                     row.sources.setValue(names.contains(current) ? current : null);
                 }
             }
