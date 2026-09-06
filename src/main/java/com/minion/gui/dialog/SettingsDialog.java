@@ -5,7 +5,9 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.ModelManager;
 import com.minion.core.mcp.McpManager;
 import com.minion.core.mcp.McpServer;
+import com.minion.core.tools.plugin.ToolPluginManager;
 import com.minion.gui.icon.IconFactory;
+import com.minion.gui.plugin.ToolsPane;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.event.ActionEvent;
@@ -46,12 +48,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / MCP / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
+/** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / MCP / 工具 / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
 
     public static void show(Window owner, final ModelManager models,
                             final SessionManager manager, final Config config,
-                            final McpManager mcp) {
+                            final McpManager mcp, final ToolPluginManager plugins) {
         Dialog<Void> d = new Dialog<Void>();
         d.initOwner(owner);
         d.setTitle("设置");
@@ -72,18 +74,20 @@ public class SettingsDialog {
 
         // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
         final ListView<String> nav = new ListView<String>();
-        nav.getItems().addAll("基础设置", "模型", "MCP", "关于");
+        nav.getItems().addAll("基础设置", "模型", "MCP", "工具", "关于");
         nav.setPrefWidth(120);
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
         final Node model = modelPane(models, manager);
         final Node mcpNode = mcpPane(mcp, owner);
+        final Node toolsNode = ToolsPane.build(plugins, owner);
         final Node about = aboutPane();
         final StackPane content = new StackPane();
         nav.getSelectionModel().selectedItemProperty().addListener((obs, ov, item) -> {
             if (item == null) return;
             content.getChildren().setAll("基础设置".equals(item) ? basic.root
                     : "模型".equals(item) ? model
-                    : "MCP".equals(item) ? mcpNode : about);
+                    : "MCP".equals(item) ? mcpNode
+                    : "工具".equals(item) ? toolsNode : about);
         });
         nav.getSelectionModel().select(0); // 默认选中基础设置（选中监听触发内容显示）
 

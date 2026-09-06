@@ -368,7 +368,7 @@ public class MainWindow {
     /** 右上角 ⚙：打开设置窗，关闭后刷新顶部模型名（TitleBar.modelLabel() 持有引用） */
     private void openSettings() {
         SettingsDialog.show(stage, manager.models(), manager, MinionApp.config(),
-                manager.mcpManager());
+                manager.mcpManager(), manager.plugins());
         if (titleBar != null) {
             titleBar.modelLabel().setText(modelLabelText());
         }
