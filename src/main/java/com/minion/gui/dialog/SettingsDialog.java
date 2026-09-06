@@ -606,11 +606,6 @@ public class SettingsDialog {
         private final CheckBox allowOutside;
         private final CheckBox skipConfirm;
         private final CheckBox enterSends;
-        private final TextField browserPath;
-        private final TextField browserPort;
-        private final TextField browserUserData;
-        private final CheckBox browserHeadless;
-        private final TextField browserTimeout;
 
         BasicPane(final Config config, final Window owner) {
             this.config = config;
@@ -645,35 +640,6 @@ public class SettingsDialog {
             // 勾选立即生效：直接写回 Config（内存+落盘），InputView 按键时读取 → 下次按键即新键位；无需点「应用」
             enterSends.selectedProperty().addListener((obs, ov, nv) ->
                     config.set("input.enterSends", String.valueOf(nv)));
-            Label browserNote = new Label("浏览器配置（以下项需重启后生效）");
-            browserNote.getStyleClass().add("msg-thinking");
-            browserPath = new TextField(config.browserPath());
-            HBox browserPathBox = new HBox(6);
-            HBox.setHgrow(browserPath, Priority.ALWAYS);
-            Button browseExe = new Button("浏览…");
-            browseExe.getStyleClass().add("btn-ghost");
-            browseExe.setOnAction(e -> {
-                javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-                fc.setTitle("选择浏览器程序");
-                fc.getExtensionFilters().addAll(
-                        new javafx.stage.FileChooser.ExtensionFilter("可执行文件", "*.exe"),
-                        new javafx.stage.FileChooser.ExtensionFilter("所有文件", "*.*"));
-                // 当前值若是存在的文件，初始定位到其父目录
-                String cur = browserPath.getText().trim();
-                java.io.File f = new java.io.File(cur);
-                if (f.isFile() && f.getParentFile() != null && f.getParentFile().isDirectory()) {
-                    fc.setInitialDirectory(f.getParentFile());
-                }
-                java.io.File file = fc.showOpenDialog(owner);
-                if (file != null) browserPath.setText(file.getAbsolutePath());
-            });
-            browserPathBox.getChildren().addAll(browserPath, browseExe);
-            browserPort = new TextField(String.valueOf(config.browserPort()));
-            browserUserData = new TextField(config.browserUserDataDir());
-            browserHeadless = new CheckBox("无头模式");
-            browserHeadless.setSelected(config.browserHeadless());
-            browserTimeout = new TextField(String.valueOf(config.browserTimeoutMs()));
-
             VBox rows = new VBox(10);
             rows.getChildren().addAll(
                     row("技能目录 skills.dir:", skillsBox),
@@ -681,13 +647,7 @@ public class SettingsDialog {
                     row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
                     row("读逃逸:", allowOutside),
                     row("确认开关:", skipConfirm),
-                    row("发送键:", enterSends),
-                    browserNote,
-                    row("browser.path:", browserPathBox),
-                    row("browser.port:", browserPort),
-                    row("browser.userDataDir:", browserUserData),
-                    row("browser.headless:", browserHeadless),
-                    row("browser.timeoutMs:", browserTimeout));
+                    row("发送键:", enterSends));
 
             VBox contentBox = new VBox(10);
             contentBox.getChildren().addAll(rows);
@@ -707,15 +667,6 @@ public class SettingsDialog {
                     cmdWhitelist.getText().trim().replace('\n', ' ').replace('\r', ' '));
             config.set("paths.read.allowOutside", String.valueOf(allowOutside.isSelected()));
             config.set("confirm.skip", String.valueOf(skipConfirm.isSelected()));
-            config.set("browser.path", browserPath.getText().trim());
-            if (!setInt("browser.port", browserPort.getText(), config)) {
-                error("保存失败", "browser.port 必须是整数，未保存");
-            }
-            config.set("browser.userDataDir", browserUserData.getText().trim());
-            config.set("browser.headless", String.valueOf(browserHeadless.isSelected()));
-            if (!setInt("browser.timeoutMs", browserTimeout.getText(), config)) {
-                error("保存失败", "browser.timeoutMs 必须是整数，未保存");
-            }
         }
     }
 
@@ -748,13 +699,6 @@ public class SettingsDialog {
 
     private static int parseInt(String s, int def) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
-    }
-
-    /** 保存前校验整数型配置项：非法（非整数/负数/空）→ 不写回并返回 false（调用方弹错）；合法 → 写回 */
-    static boolean setInt(String key, String text, Config config) {
-        if (parseInt(text, -1) < 0) return false;
-        config.set(key, text.trim());
-        return true;
     }
 
     private static double parseDouble(String s, double def) {

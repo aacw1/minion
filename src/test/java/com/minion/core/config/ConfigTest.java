@@ -38,13 +38,12 @@ public class ConfigTest {
         Path root = tmp.getRoot().toPath();
         Config c1 = Config.load(root, TEST_DEFAULTS);
         Path ext = c1.externalFile();
-        Files.write(ext, ("skills.dir=/my/skills\nconfirm.skip=true\n"
-                + "browser.port=9999\n").getBytes(StandardCharsets.UTF_8),
+        Files.write(ext, ("skills.dir=/my/skills\nconfirm.skip=true\n")
+                        .getBytes(StandardCharsets.UTF_8),
                 java.nio.file.StandardOpenOption.APPEND);
         Config c2 = Config.load(root, TEST_DEFAULTS);
         assertEquals("/my/skills", c2.skillsDir());
         assertTrue(c2.confirmSkip());
-        assertEquals(9999, c2.browserPort());
     }
 
     /** 白名单追加：去重、写入外部文件 */
@@ -57,39 +56,6 @@ public class ConfigTest {
         assertTrue(c.whitelistTools().containsAll(new HashSet<String>(java.util.Arrays.asList("write", "edit"))));
         Config c2 = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
         assertTrue(c2.whitelistTools().containsAll(new HashSet<String>(java.util.Arrays.asList("write", "edit"))));
-    }
-
-    /** browser.* 默认值：空外部配置 → 走 getter 内置 fallback */
-    @Test
-    public void browserDefaults() throws Exception {
-        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
-        assertEquals("", c.browserPath());
-        assertEquals(9222, c.browserPort());
-        assertEquals("./.minion/browser-profile", c.browserUserDataDir());
-        assertFalse(c.browserHeadless());
-        assertEquals(30000, c.browserTimeoutMs());
-    }
-
-    /** 需求 2：外部文件数值被写坏（手改/历史脏数据）→ browser.port 回落默认值，不抛异常致启动崩溃 */
-    @Test
-    public void browserPort_invalidFallsBackToDefault() throws IOException {
-        Path root = tmp.getRoot().toPath();
-        Config c = Config.load(root, TEST_DEFAULTS);
-        Files.write(c.externalFile(), "\nbrowser.port=abc\n".getBytes(StandardCharsets.UTF_8),
-                java.nio.file.StandardOpenOption.APPEND);
-        Config c2 = Config.load(root, TEST_DEFAULTS);
-        assertEquals(9222, c2.browserPort());
-    }
-
-    /** 需求 2：browser.timeoutMs 数值非法 → 回落默认值，不抛异常 */
-    @Test
-    public void browserTimeoutMs_invalidFallsBackToDefault() throws IOException {
-        Path root = tmp.getRoot().toPath();
-        Config c = Config.load(root, TEST_DEFAULTS);
-        Files.write(c.externalFile(), "\nbrowser.timeoutMs=abc\n".getBytes(StandardCharsets.UTF_8),
-                java.nio.file.StandardOpenOption.APPEND);
-        Config c2 = Config.load(root, TEST_DEFAULTS);
-        assertEquals(30000, c2.browserTimeoutMs());
     }
 
     /** T:paths.read.allowOutside 默认 false，外部文件可覆盖为 true */
