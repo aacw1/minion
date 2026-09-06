@@ -8,12 +8,12 @@
 ```
 com.minion
 ├── Boot                    自举启动器（shade 打包入口）：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环
-├── Main                    入口：装配配置/技能/浏览器/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
-├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、图标、会话管理
+├── Main                    入口：装配配置/技能/可插拔工具/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
+├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、图标、会话管理、plugin/（工具页与配置弹窗）
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（长重试策略）、RetryProgress（重试进度值对象）
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
-    ├── tools/              Tool 接口、ToolRegistry、13 个工具、SchemaGenerator、confirm/、browser/、mcp/（McpProxyTool）、PathsGuard
+    ├── tools/              Tool 接口、ToolRegistry（带插件 gate）、13 个内置工具、db/（只读数据库）、plugin/（可插拔工具）、browser/、mcp/（McpProxyTool）、PathsGuard
     ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，stdio/SSE/Streamable 三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
     ├── skills/             SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、TokenCounter
@@ -53,6 +53,7 @@ com.minion
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
 | session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态半屏容差 eps=0.5×视口高/可滚动行程，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
 | WheelScrollAccelerator | 正文消息区滚轮加速：ScrollEvent 过滤器把滚轮增量换算为固定像素（每格 100px，Windows WHEEL_DELTA=40 基准，平滑滚轮小数增量连续换算），setVvalue + consume 阻止皮肤默认比例滚动；Ctrl/Shift 修饰或无滚动行程放行皮肤；MainWindow 构造 chatScroll 后 attach 一次（换 content 无需重挂） |
+| plugin/ToolsPane、DataSourceDialog、BrowserConfigDialog、PluginUi | 设置窗「工具」页（每行=显示名+状态文案+启用开关+配置入口；开关/下拉改动即落 tools.json）+ 数据源管理弹窗（新建/修改/删除/测试连接）+ 浏览器配置弹窗（保存即重建 Chrome）+ 表单共用件（row/errorLabel/alert/parsePositiveInt） |
 
 ### core/agent/
 
@@ -87,6 +88,8 @@ com.minion
 - `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
+- `core/tools/db/` 子包：**只读数据库**（mysql/postgresql/oracle）。`SqlGuard` SQL 白名单（去前导注释、拒多语句/INTO OUTFILE/FOR UPDATE/LOCK IN SHARE MODE）；`DbExecutor`（新建连接即用即关、setReadOnly(true)、maxRows=100 探测截断、queryTimeout=300s、Oracle 表清单限定 getUserName()）；`DbTool` 三个工具实例（动态 description 带当前数据源与按类型的 action 能力提示）；`DataSourceConfig`/`DataSourceValidator`（标识名唯一、URL 须 `jdbc:` 前缀）；`DbType` 枚举（MySQL 8.0.33 / PostgreSQL 42.7.4 / Oracle 21 OJDBC 驱动，双保险显式 Class.forName）
+- `core/tools/plugin/` 子包：**可插拔工具**。`ToolPlugin` 接口（id/displayName/statusText/enabled/setEnabled/createTools/onConfigChanged）；`ToolContext`（workspace/skillsDir/tmpDir/confirmGate，不含 manager——避免循环引用）；`BrowserPlugin`（4 浏览器工具 + 配置变更重建 Chrome）、`DbPlugin`（数据源 CRUD/当前切换/测试连接，改动即落盘）；`ToolPluginManager`（装配 4 插件 + 实现 `ToolRegistry.PluginGate`：启用判定唯一来源，null/未知 id 保守放行；全局单例，Main 装配，SessionManager 与设置窗共用，监听只用于 GUI 刷新，不参与生效链路）；`ToolStore`（tools.json 原子写，key=browser/mysql/postgresql/oracle，仿 McpStore 的 .bak 损坏备份）；`BrowserConfig`/`DbConfig`（enabled + 数据源列表/当前）。**生效链路（拉模式）**：`SessionManager.newRegistry` 无条件把插件工具注册进每会话 registry 并打 pluginId 标签 + `registry.setGate(manager)`；`schemas()/get()/all()` 取用时按 gate 过滤——改开关后已运行会话的下一轮 AgentLoop 请求自然只取到已启用的工具，无需遍历会话、无竞态
 - `example/ExampleTool`：新工具模板示例（未注册）
 
 ### core/mcp/（MCP 客户端核心，基于 aj-mcp-client 1.5 标准实现，JDK8）
@@ -166,6 +169,13 @@ com.minion
 - 视图放 `gui/` 对应子包（主窗口组装在 MainWindow.show）；会话事件经 SessionController 写入 EventList，视图用 `bind` 重放
 - 新增弹窗放 `gui/dialog/`；静态注入经 `MinionApp` 传递，不在视图内直接 new 核心对象
 
+### 新增可插拔工具（设置 → 工具 可见、可启停）
+
+1. 实现 `ToolPlugin`（id 唯一 → tools.json 段名 = registry 插件标签；enable 落盘用注入的 saver）
+2. `ToolPluginManager` 里装配：`store.<id>Config()` 新配置键 + 构造插件实例 + 加进 `plugins()` 列表
+3. 设置页加一行：`ToolsPane.layout` 给该插件一个（可选的）配置入口按钮
+4. 附 `XxxPluginTest`（状态文案/CRUD 落盘/gate 联动；工具本身照 §新增工具 全测）
+
 ## 7. 关键写死常量
 
 | 常量 | 值 | 位置 |
@@ -180,6 +190,11 @@ com.minion
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |
 | HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
 | CdpClient 连接超时 | 10000ms | Main.java |
+| 数据库连接超时 LOGIN_TIMEOUT_SECONDS | 10s | DbExecutor |
+| 数据库查询超时 QUERY_TIMEOUT_SECONDS | 300s | DbExecutor |
+| 数据库结果行数上限 MAX_ROWS（探测截断 101） | 100 行 | DbExecutor |
+| 数据库结果字符预算 DB_CHARS_BUDGET / 单格截断 CELL_MAX | 30000 / 120 | DbExecutor |
+| DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。
 
