@@ -184,8 +184,8 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
 
 ### 4.8 `SshPlugin implements ToolPlugin`
 
-- `id()` = `"ssh"`；`displayName()` = `"ssh"`；`statusText()` = 当前连接名
-  （「当前连接: prod（root@10.0.0.5）」）或无连接提示；
+- `id()` = `"ssh"`；`displayName()` = `"ssh"`；`statusText()` 恒空——与 db 行同口径：
+  当前连接/（无连接）均由行内下拉框表达，状态列不重复占位（行布局见 4.9）；
 - `canEnable()` = `!config.names().isEmpty()`（无连接时勾选框置灰，同 db）；
 - `createTools(ctx)` 产 7 个工具（工厂见 4.10），共享 config、workspace/skillsDir/tmpDir/
   confirmGate（来自 ToolContext）；
@@ -290,4 +290,6 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
 
 ## 实施期修正记录（计划与本文档的差异，以计划/代码为准）
 
-- 截断助手落位为独立文件 TruncatedOutput（规格初稿写 OutputDump 静态成员）；余无差异
+- 截断助手落位为独立文件 TruncatedOutput（规格初稿写 OutputDump 静态成员）；
+- `SshPlugin.statusText()` 恒空（初稿为「当前连接名/无连接提示」）——与 db 行同口径：
+  当前连接/（无连接）均由行内下拉框表达，状态列不重复占位（§4.8 已同步）
