@@ -2,6 +2,9 @@ package com.minion.core.tools;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.minion.core.tools.confirm.ConfirmGate;
+import com.minion.core.tools.confirm.ConfirmUi;
+import com.minion.core.tools.confirm.FakeConfirmUi;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -167,6 +170,126 @@ public class EditToolsTest {
         ToolResult r = write.execute(args("{\"path\":\"" + outside.toString().replace("\\", "\\\\") + "\",\"content\":\"x\"}"));
         assertFalse(r.ok);
         assertFalse(Files.exists(outside));
+    }
+
+    // ---- 空间外写：Write/Edit 越界写（开关关=拒绝；开=跳过/白名单/弹框链） ----
+
+    /** 追加键值对到外部配置并重载（键=值成对传入；先 Config.load 保证外部文件存在） */
+    private com.minion.core.config.Config cfg(String... kv) throws Exception {
+        java.nio.file.Path root = tmp.getRoot().toPath();
+        com.minion.core.config.Config.load(root);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            sb.append('\n').append(kv[i]).append('=').append(kv[i + 1]);
+        }
+        Files.write(root.resolve("config.properties"), sb.toString().getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        return com.minion.core.config.Config.load(root);
+    }
+
+    private WriteTool writeWith(com.minion.core.tools.confirm.ConfirmGate gate) {
+        return new WriteTool(ws, null, null, gate);
+    }
+
+    @Test
+    public void write_outside_switchOff_rejected_evenIfSkipOn() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-off-" + System.nanoTime() + ".txt");
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "false",
+                "confirm.skip", "true"), new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        try {
+            ToolResult r = writeWith(gate).execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\") + "\",\"content\":\"x\"}"));
+            assertFalse("开关关仍应拒绝: " + r.output, r.ok);
+            assertTrue(r.output.contains("工作路径之外"));
+            assertFalse(Files.exists(out.toPath()));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+    @Test
+    public void write_outside_switchOn_skip_allows() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-skip-" + System.nanoTime() + ".txt");
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "true",
+                "confirm.skip", "true"), new FakeConfirmUi(ConfirmUi.Decision.REJECT));
+        try {
+            ToolResult r = writeWith(gate).execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\") + "\",\"content\":\"hi\"}"));
+            assertTrue("确认跳过应放行: " + r.output, r.ok);
+            assertEquals("hi", new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+    @Test
+    public void write_outside_switchOn_whitelisted_allows() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-wl-" + System.nanoTime() + ".txt");
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "true",
+                "confirm.whitelist.tools", "Write"), new FakeConfirmUi(ConfirmUi.Decision.REJECT));
+        try {
+            ToolResult r = writeWith(gate).execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\") + "\",\"content\":\"hi\"}"));
+            assertTrue("工具白名单应放行: " + r.output, r.ok);
+            assertTrue(Files.exists(out.toPath()));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+    @Test
+    public void write_outside_switchOn_confirmApprove_allows() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-ok-" + System.nanoTime() + ".txt");
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "true"),
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        try {
+            ToolResult r = writeWith(gate).execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\") + "\",\"content\":\"hi\"}"));
+            assertTrue("Y 放行应写入: " + r.output, r.ok);
+            assertTrue(r.output.contains("已写入"));
+            assertTrue(Files.exists(out.toPath()));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+    @Test
+    public void write_outside_switchOn_confirmReject_rejected() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-no-" + System.nanoTime() + ".txt");
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "true"),
+                new FakeConfirmUi(ConfirmUi.Decision.REJECT));
+        try {
+            ToolResult r = writeWith(gate).execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\") + "\",\"content\":\"x\"}"));
+            assertFalse("N 拒绝应不写入: " + r.output, r.ok);
+            assertFalse(Files.exists(out.toPath()));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+    @Test
+    public void edit_outside_switchOn_confirmApprove_allows() throws Exception {
+        java.io.File out = new java.io.File(System.getProperty("java.io.tmpdir"),
+                "minion-out-sw-edit-" + System.nanoTime() + ".txt");
+        Files.write(out.toPath(), "abc".getBytes(StandardCharsets.UTF_8));
+        ConfirmGate gate = new ConfirmGate(cfg("paths.write.allowOutside", "true"),
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        try {
+            EditTool e = new EditTool(ws, null, null, gate);
+            ToolResult r = e.execute(args("{\"path\":\""
+                    + out.getAbsolutePath().replace("\\", "\\\\")
+                    + "\",\"oldString\":\"abc\",\"newString\":\"xyz\"}"));
+            assertTrue("Y 放行应替换: " + r.output, r.ok);
+            assertEquals("xyz", new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8));
+        } finally {
+            Files.deleteIfExists(out.toPath());
+        }
     }
 
     /** 会话临时目录尚未创建（会话首次写入/Bash/Grep 不超限执行后目录被清空）时，

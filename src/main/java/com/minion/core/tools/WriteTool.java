@@ -1,6 +1,7 @@
 package com.minion.core.tools;
 
 import com.google.gson.JsonObject;
+import com.minion.core.tools.confirm.ConfirmGate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,15 +15,21 @@ public class WriteTool implements Tool {
     private final Workspace workspace;
     private final String skillsDir;
     private final String tmpDir;
+    private final ConfirmGate confirm;
 
     public WriteTool(Workspace workspace) { this(workspace, null); }
 
     public WriteTool(Workspace workspace, String skillsDir) { this(workspace, skillsDir, null); }
 
     public WriteTool(Workspace workspace, String skillsDir, String tmpDir) {
+        this(workspace, skillsDir, tmpDir, null);
+    }
+
+    public WriteTool(Workspace workspace, String skillsDir, String tmpDir, ConfirmGate confirm) {
         this.workspace = workspace;
         this.skillsDir = skillsDir;
         this.tmpDir = tmpDir;
+        this.confirm = confirm;
     }
 
     @Override
@@ -51,7 +58,9 @@ public class WriteTool implements Tool {
         // T8 约定：存在性/目录检查在守卫之前；守卫的 toRealPath 对不存在的路径会误报越界
         if (Files.exists(p) && Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
         ToolResult guard = outsideGuard(p);
-        if (guard != null) return guard;
+        if (guard != null && (confirm == null || !confirm.checkEscapeWrite(this, args, p.toString()))) {
+            return guard;
+        }
         if (p.getParent() != null) Files.createDirectories(p.getParent());
         String content = args.get("content").getAsString();
         Files.write(p, content.getBytes(StandardCharsets.UTF_8));
