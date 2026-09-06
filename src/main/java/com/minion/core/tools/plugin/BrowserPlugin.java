@@ -42,6 +42,13 @@ public class BrowserPlugin implements ToolPlugin {
 
     @Override public boolean enabled() { return config.enabled; }
 
+    /** 未配置浏览器路径时不允许启用（勾选框置灰；避免模型拿到工具却打不开 Chrome） */
+    @Override
+    public boolean canEnable() {
+        String path = config.path == null ? "" : config.path.trim();
+        return !path.isEmpty();
+    }
+
     @Override
     public void setEnabled(boolean on) {
         config.enabled = on;

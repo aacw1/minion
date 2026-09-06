@@ -34,6 +34,15 @@ public class BrowserPluginTest {
         assertEquals("未配置浏览器路径", plugin(new BrowserConfig(), new CountingSaver()).statusText());
     }
 
+    /** 未配置浏览器路径时不能点启用（工具页勾选框禁用）；配置后放行 */
+    @Test
+    public void canEnableRequiresPath() {
+        BrowserConfig c = new BrowserConfig();
+        assertFalse(plugin(c, new CountingSaver()).canEnable());
+        c.path = "C:\\chrome.exe";
+        assertTrue(plugin(c, new CountingSaver()).canEnable());
+    }
+
     @Test
     public void statusTextShowsFileNamePortAndMode() {
         BrowserConfig c = new BrowserConfig();

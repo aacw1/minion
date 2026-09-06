@@ -32,19 +32,28 @@ public class DbPluginTest {
         assertEquals("oracle", plugin(DbType.ORACLE, new DbConfig(), null).displayName());
     }
 
+    /** 状态列对数据库行恒空：当前选中名/（无数据源）均由行内下拉框表达，不占状态列 */
     @Test
-    public void statusTextThreeBranches() {
+    public void statusTextAlwaysEmpty() {
         DbConfig c = new DbConfig();
         DbPlugin p = plugin(DbType.MYSQL, c, null);
-        assertEquals("未配置数据源", p.statusText());
-
-        // 直接塞列表不走 add()：current 保持空 → 「未选择数据源」
+        assertEquals("", p.statusText());          // 无数据源：下拉 prompt 已提示
         c.dataSources.add(new DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u", "p"));
-        assertEquals("未选择数据源", p.statusText());
+        assertEquals("", p.statusText());          // 有列表未选中：下拉无选中可见
         c.current = "prod";
-        assertEquals("已选中时当前名由下拉框可见，状态列不重复占位", "", p.statusText());
-        c.current = "ghost";   // 选中项被删（回退前瞬间）也走「未选择」
-        assertEquals("未选择数据源", p.statusText());
+        assertEquals("", p.statusText());          // 已选中：下拉显示当前名
+        c.current = "ghost";                       // 选中项被删（回退前瞬间）同样不占列
+        assertEquals("", p.statusText());
+    }
+
+    /** 无数据源时不能点启用（工具页勾选框禁用，防模型拿到工具却只能报错）；配好后放行 */
+    @Test
+    public void canEnableRequiresDataSources() {
+        DbConfig c = new DbConfig();
+        DbPlugin p = plugin(DbType.MYSQL, c, null);
+        assertFalse(p.canEnable());
+        p.addDataSource(new DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u", "p"));
+        assertTrue(p.canEnable());
     }
 
     @Test
@@ -85,7 +94,7 @@ public class DbPluginTest {
         assertEquals(before + 1, saver.count);
         assertTrue(p.removeDataSource("b"));
         assertEquals("", c.current);
-        assertEquals("未配置数据源", p.statusText());
+        assertEquals("删光后状态列留空（下拉 prompt 已提示）", "", p.statusText());
         assertFalse(p.removeDataSource("b"));
     }
 

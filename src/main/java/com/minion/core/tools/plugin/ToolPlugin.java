@@ -20,6 +20,9 @@ public interface ToolPlugin {
     /** 设置页状态文案（如「未配置浏览器路径」「当前数据源: prod」） */
     String statusText();
 
+    /** 是否允许勾选「启用」：缺关键配置（浏览器无路径/数据库无数据源）时为 false——先配置后启用 */
+    boolean canEnable();
+
     boolean enabled();
 
     /** 切换启用；实现内部负责落盘（saver）。生效由 ToolRegistry 的 gate 在取用时判定，无需通知会话 */

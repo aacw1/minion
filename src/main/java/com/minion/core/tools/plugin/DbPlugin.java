@@ -47,16 +47,15 @@ public class DbPlugin implements ToolPlugin {
 
     @Override public String displayName() { return type.displayName(); }
 
+    /** 状态列对数据库行恒空：当前选中名/（无数据源）均由行内下拉框表达，不重复占列 */
     @Override
-    public String statusText() {
-        List<String> names = config.names();
-        if (names.isEmpty()) return "未配置数据源";
-        // 已配数据源时当前选择由行内下拉框可见，状态列不重复占位；只提示「未选择」的中间态
-        if (config.currentDataSource() == null) return "未选择数据源";
-        return "";
-    }
+    public String statusText() { return ""; }
 
     @Override public boolean enabled() { return config.enabled; }
+
+    /** 无数据源时不允许启用（勾选框置灰；避免模型拿到工具却只能报「未配置数据源」） */
+    @Override
+    public boolean canEnable() { return !config.names().isEmpty(); }
 
     @Override
     public void setEnabled(boolean on) {

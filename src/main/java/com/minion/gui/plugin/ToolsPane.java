@@ -19,10 +19,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 设置窗「工具」页：每个可插拔工具一行 = 显示名 + 状态文案 + 启用开关 + 该工具专属配置入口。
+ * 设置窗「工具」页：每个可插拔工具一行 = 启用开关 + 显示名 + 状态文案 + 该工具专属配置入口。
  * 行数固定（浏览器 + 三个数据库）、每行控件不同，故用 VBox 直接拼装而非 ListView。
  * 启用开关与数据源下拉改动即落 tools.json —— 生效由 ToolRegistry 的 gate 在下一轮 schemas() 判定
  * （拉模式），本页不需要通知任何会话。
+ * 缺关键配置（浏览器无路径/数据库无数据源）时「启用」置灰（canEnable），先配置后启用。
  */
 public class ToolsPane {
 
@@ -38,10 +39,14 @@ public class ToolsPane {
         final ToolPlugin plugin;
         final Label status = new Label();
         final CheckBox enabled = new CheckBox("启用");
-        DbPlugin db;                  // 数据库插件行才有
-        ComboBox<String> sources;     // 数据库插件行才有
+        final String cannotEnableTip;         // 置灰原因（悬停显示）
+        DbPlugin db;                          // 数据库插件行才有
+        ComboBox<String> sources;             // 数据库插件行才有
 
-        Row(ToolPlugin plugin) { this.plugin = plugin; }
+        Row(ToolPlugin plugin, String cannotEnableTip) {
+            this.plugin = plugin;
+            this.cannotEnableTip = cannotEnableTip;
+        }
     }
 
     /** 设置窗调用入口；plugins 为 null（未装配的异常路径）返回提示页 */
@@ -85,7 +90,11 @@ public class ToolsPane {
     private void layout() {
         root.setPadding(PluginUi.padding());
         for (ToolPlugin p : plugins.plugins()) {
-            final Row row = new Row(p);
+            DbPlugin db = plugins.dbPlugin(p.id());
+            // 置灰原因（悬停提示）：数据库行需先有数据源；浏览器行需先配路径
+            final String tip = db != null ? "需先在「数据源管理」新建数据源才能启用"
+                    : "需先在「配置」中填写浏览器路径才能启用";
+            final Row row = new Row(p, tip);
 
             Label name = new Label(p.displayName());
             name.setMinWidth(100);
@@ -100,7 +109,6 @@ public class ToolsPane {
             });
 
             HBox configArea = new HBox(8);
-            DbPlugin db = plugins.dbPlugin(p.id());
             if (db != null) {
                 row.db = db;
                 row.sources = new ComboBox<String>();
@@ -120,8 +128,7 @@ public class ToolsPane {
                 configArea.getChildren().add(cfg);
             }
 
-            // 启用开关第一列（最左）；状态列仅提示缺失态（如「未配置数据源」），
-            // 已配置时的当前选择由下拉框可见，不重复占位
+            // 启用开关第一列（最左）；数据库行状态列恒空——当前选中/（无数据源）均由下拉框表达
             HBox line = new HBox(8, row.enabled, name, row.status, configArea);
             HBox.setHgrow(row.status, Priority.ALWAYS);
             line.setPadding(new Insets(4, 0, 4, 0));
@@ -131,12 +138,20 @@ public class ToolsPane {
         refresh();
     }
 
-    /** 按插件当前状态刷新四行（状态文案 / 开关 / 下拉框内容与选中值） */
+    /** 按插件当前状态刷新各行（状态文案 / 开关可用性 / 下拉框内容与选中值） */
     private void refresh() {
         updating = true;
         try {
             for (Row row : rows) {
                 row.status.setText(row.plugin.statusText());
+                // 缺关键配置（无数据源/无浏览器路径）→ 置灰不可勾选，悬停说明原因
+                boolean canEnable = row.plugin.canEnable();
+                row.enabled.setDisable(!canEnable);
+                row.enabled.setTooltip(canEnable ? null : new javafx.scene.control.Tooltip(row.cannotEnableTip));
+                if (row.plugin.enabled() && !canEnable) {
+                    // 已启用却把配置清空（数据源删光/路径清空）→ 自动停用；落盘通知再来一轮即稳定
+                    row.plugin.setEnabled(false);
+                }
                 row.enabled.setSelected(row.plugin.enabled());
                 if (row.db != null) {
                     List<String> names = row.db.dataSourceNames();
