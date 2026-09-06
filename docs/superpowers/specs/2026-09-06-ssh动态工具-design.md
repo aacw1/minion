@@ -49,7 +49,7 @@
 src/main/java/com/minion/
 ├── core/tools/
 │   ├── DangerousCommands.java      [改] 增加远端扩展集判定（不动本地集合行为）
-│   ├── OutputDump.java             [改] 增加公共截断助手（自 BashTool 迁移，行为等价）
+│   ├── TruncatedOutput.java        [新] 公共截断助手（自 BashTool 迁移，行为等价，OutputDump 未动）
 │   ├── BashTool.java               [改] 截断逻辑改用公共助手（纯迁移，口径不变）
 │   └── ssh/                        [新] 连接配置/执行器/插件/工具
 │       ├── SshConnection.java         配置项（gson 直映射，同 DataSourceConfig 风格）
@@ -287,3 +287,7 @@ BashTool 改为调用它。**行为逐字节等价**——迁移后跑既有 Bas
 - README：可插拔工具表格加 `ssh` 行；新增小节说明 ssh 段配置字段、
   认证方式互斥、7 个工具与高危确认范围、StrictHostKeyChecking 提示。
 - 本文档实施期如与计划/代码有差异，在文末追加「实施期修正记录」（沿用 db 文档惯例）。
+
+## 实施期修正记录（计划与本文档的差异，以计划/代码为准）
+
+- 截断助手落位为独立文件 TruncatedOutput（规格初稿写 OutputDump 静态成员）；余无差异

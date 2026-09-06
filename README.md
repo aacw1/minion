@@ -27,7 +27,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；设置窗「模型」页管理 |
 | `config.properties` | confirm（高危确认开关/白名单）、paths（空间外读/空间外写）、agent（工具空输出占位）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改，skills.dir 可用目录选择器浏览选取 |
 | `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
-| `tools.json` | 可插拔工具配置：`browser`（路径/端口/用户数据目录/无头/超时 + 启用）、`mysql`/`postgresql`/`oracle`（启用 + 数据源列表 + 当前选中）；设置窗「工具」页管理，改动即落盘、全局会话下一轮生效 |
+| `tools.json` | 可插拔工具配置：`browser`（路径/端口/用户数据目录/无头/超时 + 启用）、`mysql`/`postgresql`/`oracle`（启用 + 数据源列表 + 当前选中）、`ssh`（启用 + 连接列表 + 当前选中）；设置窗「工具」页管理，改动即落盘、全局会话下一轮生效 |
 
 工作空间弹窗（新建/修改）各字段的填写要求与含义：
 
@@ -145,6 +145,11 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
     - PostgreSQL：`jdbc:postgresql://127.0.0.1:5432/db`
     - Oracle：`jdbc:oracle:thin:@127.0.0.1:1521:ORCL`
   - 密码明文存 `tools.json`（与 `model.json` 的 apiKey 同口径）；长查询 300 秒超时，超时不一定真能打断数据库侧的查询
+- **ssh**（远程运维）：`SshExec`（远程执行命令，危险命令如 rm/dd/systemctl/apt 弹确认，默认超时 120s，输出超长自动截断落盘）+ `SftpLs`/`SftpGet`/`SftpPut`/`SftpRm`/`SftpMkdir`/`SftpRename` 六文件操作（SftpPut 覆盖与 SftpRm 删除弹确认；SftpRm 不递归，递归删除用 SshExec 的 rm -rf）
+  - tools.json 段 `ssh`：`enabled` + `current` + `connections[]`（name/host/port/user/password/privateKeyPath/passphrase）；密码与私钥口令明文存（与 apiKey 同口径）
+  - 设置 → 工具 → ssh：启用开关 + 当前连接下拉 + 「连接管理」（表单先选「密码/私钥」再填对应项，保存时两套字段互斥）
+  - 认证支持密码与私钥（可选口令）；连接/命令均每次新建即关；known_hosts 指纹不校验（StrictHostKeyChecking=no，限内网/测试服务器使用）
+  - 依赖：com.github.mwiede:jsch 2.28.7（JDK8 兼容、零传递依赖）
 
 ## 模型供应商配置（deepseek / qwen）
 
