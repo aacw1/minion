@@ -125,4 +125,15 @@ public class ConfigTest {
         Config c2 = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
         assertTrue(c2.confirmSkip());
     }
+
+    /** 空间外写：默认 false，外部配置可覆盖为 true */
+    @Test
+    public void writeAllowOutside_defaultFalse_andExternalOverride() throws IOException {
+        Config c = Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS);
+        assertFalse(c.writeAllowOutside());
+        Path ext = c.externalFile();
+        Files.write(ext, "\npaths.write.allowOutside=true\n".getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        assertTrue(Config.load(tmp.getRoot().toPath(), TEST_DEFAULTS).writeAllowOutside());
+    }
 }

@@ -93,8 +93,10 @@ public class Config {
 
     public String skillsDir()    { return get("skills.dir", "./skills"); }
 
-    /** 读逃逸：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
+    /** 空间外读：true 时 Read/Grep/Glob 可读取工作区外文件（写入类工具不受影响，仍受限） */
     public boolean readAllowOutside() { return Boolean.parseBoolean(get("paths.read.allowOutside", "false")); }
+    /** 空间外写：true 时 Write/Edit 越界写放行至高危确认链（会话放行/确认跳过/白名单/弹框）；false（默认）时越界写直接拒绝 */
+    public boolean writeAllowOutside() { return Boolean.parseBoolean(get("paths.write.allowOutside", "false")); }
     /** 工具空输出占位：true 时成功空输出发送「输出内容为空」占位（服务端校验通过+模型可识别）；默认 false */
     public boolean emptyOutputPlaceholder() { return Boolean.parseBoolean(get("agent.emptyOutput.placeholder", "false")); }
     public boolean confirmSkip() { return Boolean.parseBoolean(get("confirm.skip", "false")); }
