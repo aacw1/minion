@@ -10,6 +10,11 @@ import com.minion.core.tools.TruncatedOutput;
 import com.minion.core.tools.db.MarkdownTable;
 
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
@@ -22,8 +27,10 @@ import java.util.Vector;
 
 /**
  * JSch 封装：连接/认证（密码或私钥）/exec/SFTP 原语，每次新建 Session 用完即关（不落池）。
- * 连接与 socket 读写超时 10s；exec 通道另有命令超时（默认 120s，超时断开并提示可能残留进程）。
- * StrictHostKeyChecking=no：不做 known_hosts 指纹管理（限内网/测试服务器，README 已注明）。
+ * 连接与 socket 读写超时 10s（CONNECT_TIMEOUT_MS）；exec 命令超时由调用方按秒传入，
+ * 默认 120s 属工具层（SshExecTool.DEFAULT_TIMEOUT），超时断开连接并把已产出的部分输出
+ * 随错误文案返回——远端可能残留进程（提示不谎报）。
+ * StrictHostKeyChecking=no：不做 known_hosts 指纹管理（限内网/测试服务器，README「ssh」小节已注明）。
  */
 public class SshExecutor {
 
@@ -90,12 +97,14 @@ public class SshExecutor {
     }
 
     /** 执行远端命令；stdout/stderr 分开读（stderr 行加 [stderr] 前缀），合并返回；
-     *  头尾截断超限落盘 tmpDir（TruncatedOutput 语义）。超时（timeoutSeconds）断开连接
-     *  返回错误——远端可能残留孤儿进程（提示不谎报）。 */
+     *  头尾截断超限落盘 tmpDir（TruncatedOutput 语义）。超时（timeoutSeconds）先断开连接
+     *  再收割已产出的部分输出，随错误文案一并返回——远端可能残留孤儿进程（提示不谎报，
+     *  部分输出口径同 BashTool 超时）。 */
     public ExecResult exec(SshConnection c, String command, int timeoutSeconds, Path tmpDir)
             throws SshOpException {
         Session session = connect(c);
         ChannelExec ch = null;
+        boolean timedOut = false;
         try {
             ch = (ChannelExec) session.openChannel("exec");
             ch.setCommand(command);
@@ -112,8 +121,13 @@ public class SshExecutor {
             long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
             while (!ch.isClosed()) {
                 if (System.currentTimeMillis() > deadline) {
-                    throw new SshOpException("命令超时（" + timeoutSeconds + "s），已断开连接，"
-                            + "远端可能残留进程: " + command);
+                    timedOut = true;
+                    // 先断开通道让 reader 读到 EOF → 下面 join 收割已产出输出（否则直接抛
+                    // 会把已捕获内容丢在未落盘/未 finish 的累积器里，与 BashTool 超时口径不符）
+                    try {
+                        ch.disconnect();
+                    } catch (Exception ignored) { }
+                    break;
                 }
                 try {
                     Thread.sleep(100);
@@ -122,14 +136,21 @@ public class SshExecutor {
                     throw new SshOpException("ssh 执行被中断: " + command);
                 }
             }
-            int exit = ch.getExitStatus();
-            so.close();
-            se.close();
+            int exit = timedOut ? -1 : ch.getExitStatus();
+            // 顺序：先 join 再 close——通道刚关闭时 reader 的末块（≤8KB）可能仍在流里未
+            // append，若先把 dumpWriter close 掉，该段进不了落盘文件（>30k 截断时尾部错位）
             join(te);
             join(to);
+            so.close();          // 幂等（reader finally 也会关）；保证 finish() 前必已 close
+            se.close();
             String seText = se.finish();
             String outText = so.finish();
             String merged = seText.isEmpty() ? outText : outText + seText;
+            if (timedOut) {
+                throw new SshOpException("命令超时（" + timeoutSeconds + "s），已断开连接，"
+                        + "远端可能残留进程: " + command
+                        + (merged.isEmpty() ? "" : "\n" + merged));
+            }
             return new ExecResult(exit, merged);
         } catch (SshOpException e) {
             throw e;
@@ -143,22 +164,20 @@ public class SshExecutor {
         }
     }
 
-    /** 读流线程：读取并 append 到累积器，prefix 非空时行首加前缀（stderr 标注用） */
+    /** 读流线程：读取并 append 到累积器；prefix 非空时行首加前缀（stderr 标注用）。
+     *  解码交给 LineDecoder——多字节字符跨块续读、前缀只在真正行首插入（块边界无伪影）。 */
     private static Thread readThread(final InputStream in, final TruncatedOutput sink,
                                      final String prefix) {
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
+                final LineDecoder dec = new LineDecoder(prefix);
                 try {
                     byte[] buf = new byte[8192];
                     int n;
                     while ((n = in.read(buf)) >= 0) {
-                        String s = new String(buf, 0, n, StandardCharsets.UTF_8);
-                        if (prefix != null) {
-                            s = s.replace("\n", "\n" + prefix);
-                            if (!s.startsWith(prefix)) s = prefix + s;
-                        }
-                        sink.append(s);
+                        sink.append(dec.feed(buf, n));
                     }
+                    sink.append(dec.eof());
                 } catch (Exception ignored) { } finally {
                     sink.close();
                 }
@@ -166,6 +185,99 @@ public class SshExecutor {
         }, "minion-ssh-read");
         t.setDaemon(true);
         return t;
+    }
+
+    /** exec 流式输出解码器（每流一个，包内可见供离线单测）：UTF-8 跨块续读（8192 字节块
+     *  边界切开多字节字符时不产生替换符）+ 行首前缀只在真正行首插入（块边界/CRLF 拆分无伪影）。
+     *  流末尾不完整字节序列由 eof() 按替换符收尾（与逐块硬解码的容错口径一致）。
+     *  CharsetDecoder 不内部暂存块尾不完整序列（JDK8 实测留在入参 ByteBuffer 未消费），
+     *  因此未消费尾巴由本类 carry 到下一块前再解码。 */
+    static final class LineDecoder {
+        private final CharsetDecoder decoder;
+        private final String prefix;   // null = 无前缀（stdout）
+        private boolean atLineStart = true;   // 流起点即行首（首块首字符前需补前缀）
+        private byte[] carry = new byte[0];   // 上一块尾部未解码完的字节（≤3）
+
+        LineDecoder(String prefix) {
+            this.prefix = prefix;
+            this.decoder = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        }
+
+        /** 喂入一段读到的字节（独立于前段），返回可追加文本（含行首前缀）；可返回空串 */
+        String feed(byte[] buf, int n) {
+            if (n <= 0) return "";
+            byte[] all = carry.length == 0 ? buf
+                    : concat(carry, buf, n);   // 上次尾巴拼到本块前一起解码
+            ByteBuffer in = ByteBuffer.wrap(all);
+            String text = drain(in, false);
+            keepTail(in);                       // 未消费的不完整尾巴留给下次
+            return text;
+        }
+
+        /** 流结束：冲洗 carry 中不完整字节序列（替换符收尾），之后不得再 feed */
+        String eof() {
+            String text = drain(ByteBuffer.wrap(carry), true);
+            carry = new byte[0];
+            return text;
+        }
+
+        private static byte[] concat(byte[] a, byte[] b, int n) {
+            byte[] all = new byte[a.length + n];
+            System.arraycopy(a, 0, all, 0, a.length);
+            System.arraycopy(b, 0, all, a.length, n);
+            return all;
+        }
+
+        private void keepTail(ByteBuffer in) {
+            carry = in.hasRemaining()
+                    ? java.util.Arrays.copyOfRange(in.array(), in.position(), in.limit())
+                    : new byte[0];
+        }
+
+        /** 解码到字符串（循环处理 OVERFLOW；REPLACE 动作下不会抛编码异常）；
+         *  结束后 in 中未被消费的仅可能是尾部不完整多字节序列（≤3 字节） */
+        private String drain(ByteBuffer in, boolean endOfInput) {
+            CharBuffer out = CharBuffer.allocate(Math.max(in.remaining() + 8, 16));
+            StringBuilder sb = new StringBuilder(out.capacity());
+            while (true) {
+                out.clear();
+                CoderResult r = decoder.decode(in, out, endOfInput);
+                out.flip();
+                if (out.hasRemaining()) sb.append(out);
+                if (r.isUnderflow()) break;
+                if (r.isOverflow()) {
+                    out = CharBuffer.allocate(out.capacity() * 2);   // 理论不发生（每字节至多 1 字符）
+                    continue;
+                }
+                try {
+                    r.throwException();   // REPLACE 动作下不应触达
+                } catch (java.nio.charset.CharacterCodingException e) {
+                    throw new IllegalStateException("REPLACE 动作下不应出现编码异常", e);
+                }
+            }
+            return decorate(sb.toString());
+        }
+
+        /** 行首前缀：等价于「整段文本在每行行首加 prefix」，块边界不产生中断伪影。
+         *  规则：行首 = 流起点，或紧跟在 \n 之后的位置；空行（\n\n 之间）也算一行。
+         *  注意：多字节字符未解码完整时 feed 返回空串，本方法直接返回、行首状态保持。 */
+        private String decorate(String s) {
+            if (s.isEmpty()) return s;
+            if (prefix == null) return s;
+            StringBuilder sb = new StringBuilder(s.length() + prefix.length() * 2);
+            boolean need = atLineStart;   // 本块开头是否正处于行首
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (need) sb.append(prefix);
+                need = false;
+                sb.append(c);
+                if (c == '\n') need = true;
+            }
+            atLineStart = need;
+            return sb.toString();
+        }
     }
 
     private static void join(Thread t) {
