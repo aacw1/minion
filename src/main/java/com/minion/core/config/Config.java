@@ -116,7 +116,7 @@ public class Config {
 
     /**
      * 运行时写回配置：更新内存 + 重写外部 config.properties（保留注释行，替换/追加 key 行）。
-     * 实时生效核对：confirmSkip/whitelist/readAllowOutside 每次使用即读 Config → 立即生效；
+     * 实时生效核对：confirmSkip/whitelist/readAllowOutside/writeAllowOutside 每次使用即读 Config → 立即生效；
      * skills.dir 由新会话 buildCtx 读取 → 新会话生效。
      */
     public void set(String key, String value) {
