@@ -617,6 +617,7 @@ public class SettingsDialog {
         private final TextArea toolWhitelist;
         private final TextArea cmdWhitelist;
         private final CheckBox allowOutside;
+        private final CheckBox writeOutside;
         private final CheckBox skipConfirm;
         private final CheckBox enterSends;
 
@@ -646,6 +647,8 @@ public class SettingsDialog {
             cmdWhitelist.setPrefColumnCount(20);
             allowOutside = new CheckBox("允许读取工作区外文件（Read/Grep/Glob）");
             allowOutside.setSelected(config.readAllowOutside());
+            writeOutside = new CheckBox("允许写入工作区外文件（Write/Edit）");
+            writeOutside.setSelected(config.writeAllowOutside());
             skipConfirm = new CheckBox("跳过高危操作确认");
             skipConfirm.setSelected(config.confirmSkip());
             enterSends = new CheckBox("Enter 发送消息（Ctrl+Enter 换行）");
@@ -658,7 +661,8 @@ public class SettingsDialog {
                     row("技能目录 skills.dir:", skillsBox),
                     row("确认白名单\n(工具, 逗号分隔):", toolWhitelist),
                     row("确认白名单\n(命令, 逗号分隔):", cmdWhitelist),
-                    row("读逃逸:", allowOutside),
+                    row("空间外读:", allowOutside),
+                    row("空间外写:", writeOutside),
                     row("确认开关:", skipConfirm),
                     row("发送键:", enterSends));
 
@@ -679,6 +683,7 @@ public class SettingsDialog {
             config.set("confirm.whitelist.commands",
                     cmdWhitelist.getText().trim().replace('\n', ' ').replace('\r', ' '));
             config.set("paths.read.allowOutside", String.valueOf(allowOutside.isSelected()));
+            config.set("paths.write.allowOutside", String.valueOf(writeOutside.isSelected()));
             config.set("confirm.skip", String.valueOf(skipConfirm.isSelected()));
         }
     }

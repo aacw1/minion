@@ -311,8 +311,8 @@ public class SessionManager {
         ConfirmGate gate = ctx.confirmGate;
         String tmpDir = tmpDirOf(sessionId).toString();
         registry.register(new ReadTool(workspace, skillsDir, tmpDir, gate));
-        registry.register(new WriteTool(workspace, skillsDir, tmpDir));
-        registry.register(new EditTool(workspace, skillsDir, tmpDir));
+        registry.register(new WriteTool(workspace, skillsDir, tmpDir, gate));
+        registry.register(new EditTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new GlobTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new GrepTool(workspace, skillsDir, tmpDir, gate));
         registry.register(new BashTool(workspace, tmpDirOf(sessionId)));
