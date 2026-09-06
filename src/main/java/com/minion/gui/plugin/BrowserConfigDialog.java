@@ -109,12 +109,11 @@ public class BrowserConfigDialog {
 
     private static void showError(Label error, String message) {
         error.setText(message);
-        error.setVisible(true);
-        error.setManaged(true);
+        error.setVisible(true);   // 占位常驻，不切 managed——避免推挤下方行与确认按钮
     }
 
     private static void hideError(Label error) {
+        error.setText("");
         error.setVisible(false);
-        error.setManaged(false);
     }
 }

@@ -20,6 +20,9 @@ final class PluginUi {
     /** 标签列固定宽（与基础设置页 row(...) 同口径） */
     static final int LABEL_WIDTH = 160;
 
+    /** 错误提示占位行高度：空文本时 Label 不占高，固定一行高保证显错前后布局零位移 */
+    private static final double ERROR_LINE_HEIGHT = 20;
+
     private PluginUi() { }
 
     /** 表单行：标签固定宽不收缩，输入控件铺满剩余宽度 */
@@ -35,13 +38,18 @@ final class PluginUi {
         return box;
     }
 
-    /** 表单内联错误标签（红字，默认隐藏）：校验失败时 setText + setVisible(true)，不弹新窗 */
+    /**
+     * 表单内联错误标签（红字，常驻占位一行）：无错时不可见但保留布局空间（managed 恒 true），
+     * 出错时 setText + setVisible(true) 即可。不能用 managed 切换动态插入——
+     * 会推挤下方输入行、把确认按钮挤出弹窗可视区（三个配置弹窗均踩过此坑）。
+     * 预期文案为单行短提示；超长时 wrapText 换行增高仍会顶挤，文案应保持简短。
+     */
     static Label errorLabel() {
         Label l = new Label("");
         l.setStyle("-fx-text-fill: #ff6b6b;");
         l.setWrapText(true);
-        l.setVisible(false);
-        l.setManaged(false);
+        l.setMinHeight(ERROR_LINE_HEIGHT);   // 空文本时仍占一行高
+        l.setVisible(false);                 // 隐藏但不取消占位（managed 保持默认 true）
         return l;
     }
 

@@ -6,7 +6,6 @@ import com.minion.core.tools.browser.BrowserEvalTool;
 import com.minion.core.tools.browser.BrowserScreenshotTool;
 import com.minion.core.tools.browser.BrowserTool;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,10 +33,9 @@ public class BrowserPlugin implements ToolPlugin {
     @Override
     public String statusText() {
         String path = config.path == null ? "" : config.path.trim();
-        if (path.isEmpty()) return "未配置浏览器路径";
-        String fileName = new File(path).getName();
-        if (fileName.isEmpty()) fileName = path;
-        return fileName + " · 端口 " + config.port + " · " + (config.headless ? "无头" : "有头");
+        // 工具页只露端口号即可（文件名/有头无头这些细节进「配置」弹窗看）
+        if (path.isEmpty()) return "未配置";
+        return "端口 " + config.port;
     }
 
     @Override public boolean enabled() { return config.enabled; }

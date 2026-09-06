@@ -17,7 +17,7 @@ public interface ToolPlugin {
     /** 设置页显示名 */
     String displayName();
 
-    /** 设置页状态文案（如「未配置浏览器路径」「当前数据源: prod」） */
+    /** 设置页状态文案（如浏览器行「未配置」「端口 9222」；db/ssh 行恒空，由下拉框表达） */
     String statusText();
 
     /** 是否允许勾选「启用」：缺关键配置（浏览器无路径/数据库无数据源）时为 false——先配置后启用 */

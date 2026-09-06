@@ -31,7 +31,7 @@ public class BrowserPluginTest {
 
     @Test
     public void statusTextWithoutPath() {
-        assertEquals("未配置浏览器路径", plugin(new BrowserConfig(), new CountingSaver()).statusText());
+        assertEquals("未配置", plugin(new BrowserConfig(), new CountingSaver()).statusText());
     }
 
     /** 未配置浏览器路径时不能点启用（工具页勾选框禁用）；配置后放行 */
@@ -44,13 +44,13 @@ public class BrowserPluginTest {
     }
 
     @Test
-    public void statusTextShowsFileNamePortAndMode() {
+    public void statusTextShowsPortOnly() {
         BrowserConfig c = new BrowserConfig();
         c.path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
         c.port = 9333;
-        assertEquals("chrome.exe · 端口 9333 · 有头", plugin(c, new CountingSaver()).statusText());
-        c.headless = true;
-        assertEquals("chrome.exe · 端口 9333 · 无头", plugin(c, new CountingSaver()).statusText());
+        assertEquals("端口 9333", plugin(c, new CountingSaver()).statusText());
+        c.headless = true;   // 有头/无头不再进工具页文案
+        assertEquals("端口 9333", plugin(c, new CountingSaver()).statusText());
     }
 
     @Test

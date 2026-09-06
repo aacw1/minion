@@ -20,6 +20,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
@@ -30,7 +31,8 @@ import java.util.Optional;
 
 /**
  * ssh 连接管理弹窗（设置 → 工具 → ssh → 连接管理）：列表 + 新建/修改/删除/测试连接。
- * 表单「认证方式」单选：密码 | 私钥，先选后显对应输入区（密码框 / 私钥路径+浏览+口令）；
+ * 表单「认证方式」单选：密码 | 私钥，先选后显对应输入区（密码框 / 私钥路径+浏览+口令），
+ * 输入区行高恒定、切换零位移（防弹窗内容增高挤出确认按钮）；
  * 保存时按所选方式清空另一组（互斥持久化，避免手改 tools.json 双填时认证优先级二义）。
  * 所有改动经 SshPlugin 直接落 tools.json —— 删掉当前选中项时 SshConfig 内部自动回退到第一个，
  * 「工具」页的下拉框由 ToolPluginManager 的监听器自动刷新，本弹窗不需要回调外层。
@@ -177,18 +179,23 @@ public class SshConnectionsDialog {
         });
         HBox keyRow = new HBox(8, keyPath, browse);
         HBox.setHgrow(keyPath, Priority.ALWAYS);
-        // 认证区动态显隐：选「密码」显示密码框，选「私钥」显示路径+浏览+口令
-        final Label pwdCap = new Label("密码：");
-        final Label keyCap = new Label("私钥：");
-        final VBox pwdArea = new VBox(4, pwdCap, password);
-        final VBox keyArea = new VBox(4, keyCap, keyRow, passphrase);
+        // 认证输入区行高恒定（密码/私钥文件互斥叠占同一行 + 口令行常驻占位），切换认证方式零位移——
+        // 私钥模式比密码模式多「口令」一行，若动态增删行则表单总高变化、内容超高会把底部确认按钮
+        // 挤出可视区（与错误红字同源，见 PluginUi.errorLabel 注释）。hidden 行同时 disable：
+        // 不可见控件不进 Tab 焦点链，避免敲字落入隐形输入框。
+        final HBox pwdRow = PluginUi.row("密码:", password);
+        final HBox keyFileRow = PluginUi.row("私钥文件:", keyRow);
+        final StackPane authMain = new StackPane(pwdRow, keyFileRow);
+        final HBox passphraseRow = PluginUi.row("私钥口令:", passphrase);
         Runnable syncAuth = new Runnable() {
             @Override public void run() {
                 boolean key = rbKey.isSelected();
-                pwdArea.setVisible(!key);   // 显示「密码」输入区
-                pwdArea.setManaged(!key);
-                keyArea.setVisible(key);    // 显示「私钥」输入区
-                keyArea.setManaged(key);
+                pwdRow.setVisible(!key);          // 只切可见/可用，不切 managed——占位恒定
+                pwdRow.setDisable(key);
+                keyFileRow.setVisible(key);
+                keyFileRow.setDisable(!key);
+                passphraseRow.setVisible(key);    // 口令行密码模式占位隐藏
+                passphraseRow.setDisable(!key);
             }
         };
         rbPwd.setOnAction(e -> syncAuth.run());
@@ -203,8 +210,8 @@ public class SshConnectionsDialog {
                 PluginUi.row("端口:", port),
                 PluginUi.row("用户名:", user),
                 PluginUi.row("认证方式:", new HBox(10, rbPwd, rbKey)),
-                pwdArea,
-                keyArea);
+                authMain,
+                passphraseRow);
         d.getDialogPane().setContent(rows);
         d.getDialogPane().setPrefWidth(560);
 
@@ -217,8 +224,7 @@ public class SshConnectionsDialog {
                 p = Integer.parseInt(port.getText().trim());
             } catch (NumberFormatException nfe) {
                 error.setText("端口必须是数字");
-                error.setVisible(true);
-                error.setManaged(true);
+                error.setVisible(true);   // 占位常驻，不切 managed——避免推挤下方行与确认按钮
                 ev.consume();
                 return;
             }
@@ -228,8 +234,7 @@ public class SshConnectionsDialog {
                     original == null ? null : original.name);
             if (why != null) {
                 error.setText(why);
-                error.setVisible(true);
-                error.setManaged(true);
+                error.setVisible(true);   // 占位常驻，不切 managed——避免推挤下方行与确认按钮
                 ev.consume();
                 return;
             }
@@ -283,8 +288,8 @@ public class SshConnectionsDialog {
     }
 
     private static void hide(Label error) {
+        error.setText("");
         error.setVisible(false);
-        error.setManaged(false);
     }
 
     private static Button ghost(String text) {

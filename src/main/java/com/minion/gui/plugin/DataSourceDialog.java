@@ -163,8 +163,7 @@ public class DataSourceDialog {
                     original == null ? null : original.name);
             if (why != null) {
                 error.setText(why);
-                error.setVisible(true);
-                error.setManaged(true);
+                error.setVisible(true);   // 占位常驻，不切 managed——避免推挤下方行与确认按钮
                 ev.consume();
                 return;
             }
@@ -183,8 +182,8 @@ public class DataSourceDialog {
     }
 
     private static void hide(Label error) {
+        error.setText("");
         error.setVisible(false);
-        error.setManaged(false);
     }
 
     private static Button ghost(String text) {
