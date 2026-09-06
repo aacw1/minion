@@ -37,7 +37,7 @@ public class DataSourceDialog {
         Theme.style(d);
 
         final ListView<String> list = new ListView<String>();
-        list.setPrefSize(260, 240);
+        list.setPrefHeight(240); // 宽度随弹窗铺满（VBox fillWidth），不再固定窄列
         final Label detail = new Label("");
         detail.getStyleClass().add("msg-thinking");
         detail.setWrapText(true);
@@ -116,9 +116,9 @@ public class DataSourceDialog {
             t.start();
         });
 
-        VBox buttons = new VBox(8, add, edit, del, test);
-        HBox body = new HBox(10, list, buttons);
-        VBox root = new VBox(10, body, detail);
+        // 按钮横排一行放在列表下方（原右侧竖排占宽，列表过窄），详情行置于最底
+        HBox buttonRow = new HBox(8, add, edit, del, test);
+        VBox root = new VBox(10, list, buttonRow, detail);
         root.setPadding(PluginUi.padding());
         d.getDialogPane().setContent(root);
         d.getDialogPane().setPrefWidth(560);
