@@ -3,6 +3,8 @@ package com.minion.core.tools.plugin;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.minion.core.tools.db.DataSourceConfig;
+import com.minion.core.tools.ssh.SshConfig;
+import com.minion.core.tools.ssh.SshConnection;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 可插拔工具配置：jarDir/tools.json 单文件（仿 McpStore）。
- * 文件不存在 → 生成默认（四个工具全部不启用）；损坏 → 备份 .bak 后重建；写入用 .tmp + move 原子覆盖。
+ * 文件不存在 → 生成默认（全部工具不启用）；损坏 → 备份 .bak 后重建；写入用 .tmp + move 原子覆盖。
  */
 public class ToolStore {
 
@@ -26,6 +28,7 @@ public class ToolStore {
         DbConfig mysql = new DbConfig();
         DbConfig postgresql = new DbConfig();
         DbConfig oracle = new DbConfig();
+        SshConfig ssh = new SshConfig();
     }
 
     private final Path file;
@@ -67,6 +70,9 @@ public class ToolStore {
         return null;
     }
 
+    /** tools.json 的 ssh 段（可插拔工具第 5 个） */
+    public SshConfig sshConfig() { return root.ssh; }
+
     /** gson 可能把显式 null 写进字段（手改文件/旧版本），统一归一化为可用默认值 */
     private void normalize() {
         if (root.browser == null) root.browser = new BrowserConfig();
@@ -86,6 +92,16 @@ public class ToolStore {
                 db.current = list.isEmpty() ? ""
                         : (list.get(0).name == null ? "" : list.get(0).name.trim());
             }
+        }
+        if (root.ssh == null) root.ssh = new SshConfig();
+        SshConfig ssh = root.ssh;
+        if (ssh.connections == null) ssh.connections = new CopyOnWriteArrayList<SshConnection>();
+        if (ssh.current == null) ssh.current = "";
+        // current 指向已不存在的连接（手改文件）→ 回退到第一个，与删除回退规则一致
+        if (!ssh.current.trim().isEmpty() && ssh.currentConnection() == null) {
+            List<SshConnection> list = ssh.connections;
+            ssh.current = list.isEmpty() ? ""
+                    : (list.get(0).name == null ? "" : list.get(0).name.trim());
         }
     }
 

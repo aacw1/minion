@@ -2,13 +2,14 @@ package com.minion.core.tools.plugin;
 
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.db.DbType;
+import com.minion.core.tools.ssh.SshPlugin;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * 可插拔工具门面：装配 4 个插件、实现 ToolRegistry.PluginGate（拉模式过滤的判定源）、
+ * 可插拔工具门面：装配 5 个插件、实现 ToolRegistry.PluginGate（拉模式过滤的判定源）、
  * 统一落盘 tools.json、向 GUI 广播变更（监听只用于刷面板，不参与生效链路）。
  * 全局单例，所有会话的 registry 共享同一个 gate 实例 → 改开关后下一轮请求即生效，无需遍历会话。
  */
@@ -18,6 +19,7 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
     private final BrowserManager browserManager;
     private final BrowserPlugin browserPlugin;
     private final List<DbPlugin> dbPlugins = new ArrayList<DbPlugin>();
+    private final SshPlugin sshPlugin;
     private final List<ToolPlugin> all;
     private final List<Runnable> listeners = new ArrayList<Runnable>();
     /** 插件落盘回调：写文件后顺带通知 GUI 刷新 */
@@ -36,13 +38,15 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
             DbConfig c = store.dbConfig(t.id());
             if (c != null) dbPlugins.add(new DbPlugin(t, c, saver));
         }
+        this.sshPlugin = new SshPlugin(store.sshConfig(), saver);
         List<ToolPlugin> list = new ArrayList<ToolPlugin>();
         list.add(browserPlugin);
         list.addAll(dbPlugins);
+        list.add(sshPlugin);
         this.all = Collections.unmodifiableList(list);
     }
 
-    /** 设置页行顺序：浏览器操作 / mysql / postgreSQL / oracle */
+    /** 设置页行顺序：浏览器操作 / mysql / postgresql / oracle / ssh */
     public List<ToolPlugin> plugins() { return all; }
 
     public ToolPlugin plugin(String id) {
@@ -82,6 +86,9 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
         }
         return null;
     }
+
+    /** ssh 插件（设置页第 5 行） */
+    public SshPlugin sshPlugin() { return sshPlugin; }
 
     public ToolStore store() { return store; }
 
