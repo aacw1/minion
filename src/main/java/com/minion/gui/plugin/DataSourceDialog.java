@@ -158,7 +158,8 @@ public class DataSourceDialog {
         // 校验失败必须 consume 掉 OK 事件，否则 DialogPane 会直接关窗（resultConverter 返回 null 也关窗）
         Button ok = (Button) d.getDialogPane().lookupButton(ButtonType.OK);
         ok.addEventFilter(ActionEvent.ACTION, ev -> {
-            String why = DataSourceValidator.validate(name.getText(), url.getText(), all,
+            String why = DataSourceValidator.validate(name.getText(), url.getText(),
+                    user.getText(), password.getText(), all,
                     original == null ? null : original.name);
             if (why != null) {
                 error.setText(why);

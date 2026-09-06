@@ -16,10 +16,12 @@ public final class DataSourceValidator {
     /**
      * @param name         表单里的标识名（未 trim）
      * @param url          表单里的 URL（未 trim）
+     * @param user         表单里的用户名（未 trim，空白视为空）
+     * @param password     表单里的密码（未 trim；判空用 trim，保存时仍保留首尾空格——可能是密码一部分）
      * @param all          该数据库类型下已有数据源全集
      * @param originalName 修改场景传原标识名（改回自身原名不算重复）；新建传 null
      */
-    public static String validate(String name, String url,
+    public static String validate(String name, String url, String user, String password,
                                  List<DataSourceConfig> all, String originalName) {
         String n = name == null ? "" : name.trim();
         String u = url == null ? "" : url.trim();
@@ -37,6 +39,10 @@ public final class DataSourceValidator {
         }
         if (u.isEmpty()) return "URL 不能为空";
         if (!u.toLowerCase().startsWith("jdbc:")) return "URL 必须以 jdbc: 开头";
+        String usr = user == null ? "" : user.trim();
+        if (usr.isEmpty()) return "用户名不能为空";
+        String pwd = password == null ? "" : password.trim();
+        if (pwd.isEmpty()) return "密码不能为空";
         return null;
     }
 }
