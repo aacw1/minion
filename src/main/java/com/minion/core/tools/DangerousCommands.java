@@ -43,4 +43,26 @@ public class DangerousCommands {
         }
         return false;
     }
+
+    /** 远端 exec 扩展集：服务/电源/用户/包管理/提权类。与本地集合区别：本地 BashTool 在开发者
+     *  自己的机器上跑，systemctl/apt 等不常见；远端多为 Linux 服务器，停服/重启/装包是高频
+     *  破坏操作，必须确认。sudo 常见于破坏性命令前缀（sudo rm/sudo dd 等），一并粗粒度拦截。
+     *  首 token 匹配粗粒度（systemctl status 也会确认）——宁可多确认一次，不让 rm -rf 漏网。 */
+    private static final Set<String> REMOTE_EXTRA = new HashSet<String>(Arrays.asList(
+            "systemctl", "service", "halt", "poweroff", "reboot", "userdel", "groupdel",
+            "sudo", "apt", "apt-get", "yum", "dnf", "zypper"));
+
+    /** 远端危险判定 = 本地集合 ∪ 远端扩展集；规则同 isDangerous（首 token 前缀匹配）。
+     *  只用于 SshExecTool.isHighRisk（命中 → 确认窗），非硬拦截。 */
+    public static boolean isDangerousRemote(String command) {
+        String token = firstToken(command);
+        if (token.isEmpty()) return false;
+        for (String d : DANGEROUS) {
+            if (token.equals(d) || token.startsWith(d + "/")) return true;
+        }
+        for (String d : REMOTE_EXTRA) {
+            if (token.equals(d) || token.startsWith(d + "/")) return true;
+        }
+        return false;
+    }
 }
