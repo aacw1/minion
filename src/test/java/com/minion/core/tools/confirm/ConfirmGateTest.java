@@ -219,4 +219,64 @@ public class ConfirmGateTest {
         assertTrue(g.checkWriteOutside(writeTool(), args("{\"path\":\"D:/x.png\"}"), "D:/x.png"));
         assertTrue(ui.asked.isEmpty());
     }
+
+    // ---- 空间外写（checkEscapeWrite）：关=直接拒绝；开=跳过/白名单/弹框链 ----
+
+    /** 追加键值对到外部配置并重载（键=值成对传入；先 Config.load 保证文件存在） */
+    private ConfirmGate gateWith(ConfirmUi ui, String... kv) throws Exception {
+        java.nio.file.Path root = tmp.getRoot().toPath();
+        com.minion.core.config.Config.load(root);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            sb.append('\n').append(kv[i]).append('=').append(kv[i + 1]);
+        }
+        Files.write(root.resolve("config.properties"), sb.toString().getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.APPEND);
+        config = com.minion.core.config.Config.load(root);
+        return new ConfirmGate(config, ui);
+    }
+
+    @Test
+    public void escapeWrite_switchOff_rejects_evenIfSkipOn() throws Exception {
+        ConfirmGate g = gateWith(new FakeConfirmUi(ConfirmUi.Decision.REJECT),
+                "paths.write.allowOutside", "false", "confirm.skip", "true");
+        assertFalse("开关关应直接拒绝（跳过开关不生效）",
+                g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+    }
+
+    @Test
+    public void escapeWrite_switchOn_skip_allows() throws Exception {
+        ConfirmGate g = gateWith(new FakeConfirmUi(ConfirmUi.Decision.REJECT),
+                "paths.write.allowOutside", "true", "confirm.skip", "true");
+        assertTrue("确认跳过应放行且不弹框", g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+    }
+
+    @Test
+    public void escapeWrite_switchOn_whitelisted_allows() throws Exception {
+        ConfirmGate g = gateWith(new FakeConfirmUi(ConfirmUi.Decision.REJECT),
+                "paths.write.allowOutside", "true", "confirm.whitelist.tools", "Write");
+        assertTrue("工具白名单应放行且不弹框", g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+    }
+
+    @Test
+    public void escapeWrite_switchOn_confirmApprove_allows() throws Exception {
+        FakeConfirmUi ui = new FakeConfirmUi(ConfirmUi.Decision.APPROVE);
+        ConfirmGate g = gateWith(ui, "paths.write.allowOutside", "true");
+        assertTrue(g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+        assertEquals(1, ui.asked.size());
+        assertTrue("弹框文案应含越界写入: " + ui.asked.get(0), ui.asked.get(0).contains("越界写入"));
+    }
+
+    @Test
+    public void escapeWrite_switchOn_confirmReject_rejects() throws Exception {
+        ConfirmGate g = gateWith(new FakeConfirmUi(ConfirmUi.Decision.REJECT), "paths.write.allowOutside", "true");
+        assertFalse("N 拒绝应返回 false", g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+    }
+
+    @Test
+    public void escapeWrite_switchOn_sessionApprove_allows() throws Exception {
+        ConfirmGate g = gateWith(new FakeConfirmUi(ConfirmUi.Decision.APPROVE_SESSION),
+                "paths.write.allowOutside", "true");
+        assertTrue("W 会话放行应返回 true", g.checkEscapeWrite(writeTool(), args("{}"), "/tmp/x.txt"));
+    }
 }
