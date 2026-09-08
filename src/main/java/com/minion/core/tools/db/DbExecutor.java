@@ -25,6 +25,8 @@ public class DbExecutor {
 
     /** 返回给模型的最大行数；setMaxRows 用 MAX_ROWS+1 探测是否被截断 */
     public static final int MAX_ROWS = 100;
+    /** full 全文模式下单元格 inline 上限（普通模式 CELL_MAX=120；单值查询在 30000 总预算内不触发落盘） */
+    public static final int FULL_CELL_MAX = 20000;
     public static final int QUERY_TIMEOUT_SECONDS = 300;
     public static final int LOGIN_TIMEOUT_SECONDS = 10;
     /** schema 动作（表清单）上限 */
@@ -67,8 +69,8 @@ public class DbExecutor {
         }
     }
 
-    /** 执行只读 SQL，结果渲染成 Markdown 表格（超 30000 字符落盘） */
-    public ToolResult query(DataSourceConfig ds, DbType type, String sql) {
+    /** 执行只读 SQL，结果渲染成 Markdown 表格（超 30000 字符落盘）；full=true 时截断线放宽到 FULL_CELL_MAX */
+    public ToolResult query(DataSourceConfig ds, DbType type, String sql, boolean full) {
         Opened opened = open(ds, type);
         if (opened.conn == null) return opened.error;
         long t0 = System.currentTimeMillis();
@@ -91,7 +93,9 @@ public class DbExecutor {
             while (rs.next()) {
                 if (rows.size() == MAX_ROWS) { truncated = true; break; }
                 List<String> row = new ArrayList<String>();
-                for (int i = 1; i <= cols; i++) row.add(MarkdownTable.cell(rs.getObject(i)));
+                for (int i = 1; i <= cols; i++) {
+                    row.add(MarkdownTable.cell(rs.getObject(i), full ? FULL_CELL_MAX : MarkdownTable.CELL_MAX));
+                }
                 rows.add(row);
             }
             long elapsed = System.currentTimeMillis() - t0;

@@ -1,5 +1,6 @@
 package com.minion.core.tools.db;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.minion.core.tools.SchemaGenerator;
 import com.minion.core.tools.Tool;
@@ -14,6 +15,18 @@ import java.nio.file.Path;
  * 只用当前选中数据源，不向模型暴露 datasource 参数；查询不弹高危确认窗。
  */
 public class DbTool implements Tool {
+
+    /** query 的 full 参数容错解析：布尔原值 / 字符串 "true"（大小写、首尾空白容忍），缺省或畸形一律 false */
+    static boolean fullOf(JsonObject args) {
+        if (args == null || !args.has("full")) return false;
+        try {
+            JsonElement e = args.get("full");
+            if (e.isJsonPrimitive() && e.getAsJsonPrimitive().isBoolean()) return e.getAsBoolean();
+            return Boolean.parseBoolean(e.getAsString().trim());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
 
     /** PostgreSQL 的 schema/describe 固定提示：不建连接直接返回 */
     static final String PG_SCHEMA_HINT =
@@ -48,6 +61,10 @@ public class DbTool implements Tool {
         }
         sb.append("）。action=query 执行只读 SQL 返回 Markdown 表格（最多 ")
           .append(DbExecutor.MAX_ROWS).append(" 行）");
+        sb.append("。大字段(CLOB/TEXT/LONGTEXT/JSON 等)默认截断 120 字符并标注完整长度；")
+          .append("解析大字段全文请加 full=true，并将 SQL 限定到单行/少行（配合 WHERE/LIMIT），")
+          .append("单个字段最多 inline ").append(DbExecutor.FULL_CELL_MAX)
+          .append(" 字符，超出自动落盘并附文件路径");
         if (type.supports("schema")) {
             sb.append("；action=schema 列出表与视图；action=describe 查看表字段");
         } else {
@@ -61,7 +78,7 @@ public class DbTool implements Tool {
     @Override
     public JsonObject schema() {
         return SchemaGenerator.objectSchema(type.displayName() + " 只读数据库操作",
-                new String[]{"action", "sql", "table"}, new String[]{"action"});
+                new String[]{"action", "sql", "table", "full"}, new String[]{"action"});
     }
 
     /** 只读查询不打断心流：不弹确认窗 */
@@ -85,7 +102,7 @@ public class DbTool implements Tool {
             String sql = args.get("sql").getAsString();
             String why = SqlGuard.check(sql);       // 第一层防护
             if (why != null) return ToolResult.error(why);
-            return executor.query(ds, type, sql);
+            return executor.query(ds, type, sql, fullOf(args));
         }
         if ("schema".equals(action)) {
             if (!type.supports("schema")) return ToolResult.error(PG_SCHEMA_HINT);

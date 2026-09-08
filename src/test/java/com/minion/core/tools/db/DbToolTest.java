@@ -173,6 +173,31 @@ public class DbToolTest {
     }
 
     @Test
+    public void schemaDeclaresFullParameter() {
+        JsonObject s = new DbTool(DbType.MYSQL, emptyConfig(), (java.nio.file.Path) null).schema();
+        assertTrue(s.getAsJsonObject("properties").has("full"));
+    }
+
+    @Test
+    public void fullOfParsesTolerantly() {
+        assertFalse(DbTool.fullOf(null));
+        assertFalse(DbTool.fullOf(new JsonObject()));
+        assertFalse(DbTool.fullOf(json("action", "query")));
+        assertFalse(DbTool.fullOf(json("full", "false")));
+        assertFalse(DbTool.fullOf(json("full", "")));
+        assertFalse(DbTool.fullOf(json("full", "yes")));
+        assertTrue(DbTool.fullOf(json("full", "true")));
+        assertTrue(DbTool.fullOf(json("full", "True")));     // 模型大写容忍
+        assertTrue(DbTool.fullOf(json("full", " true ")));   // 首尾空白容忍
+        JsonObject boolTrue = new JsonObject();
+        boolTrue.addProperty("full", true);                  // 原生布尔值容忍
+        assertTrue(DbTool.fullOf(boolTrue));
+        JsonObject boolFalse = new JsonObject();
+        boolFalse.addProperty("full", false);
+        assertFalse(DbTool.fullOf(boolFalse));
+    }
+
+    @Test
     public void firstLineTruncatesLongMessages() {
         assertEquals("首行", DbExecutor.firstLine("首行\n第二行"));
         assertEquals("", DbExecutor.firstLine(null));
