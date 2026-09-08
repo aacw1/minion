@@ -30,8 +30,46 @@ public class MarkdownTableTest {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 130; i++) sb.append('x');
         String out = MarkdownTable.cell(sb.toString());
-        assertEquals(121, out.length());          // 120 + 省略号
-        assertTrue(out.endsWith("…"));
+        assertEquals(sb.substring(0, 120), out.substring(0, 120));  // 前 120 保留
+        assertTrue(out.endsWith("…[完整 130 字符]"));
+    }
+
+    @Test
+    public void cellWithCustomMaxKeepsContentWithinLimit() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 5000; i++) sb.append('y');
+        assertEquals("5000 字符在 20000 上限内应全文返回", sb.toString(),
+                MarkdownTable.cell(sb.toString(), 20000));
+    }
+
+    @Test
+    public void cellWithCustomMaxTruncatesAndNotesRealLength() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 25000; i++) sb.append('z');
+        String out = MarkdownTable.cell(sb.toString(), 20000);
+        assertTrue(out.startsWith(sb.substring(0, 20000)));
+        assertTrue(out.endsWith("…[完整 25000 字符]"));
+    }
+
+    @Test
+    public void cellLengthNoteCountsOriginalNotEscapedLength() {
+        // 10 个换行 → 转义后 40+ 字符，但原文只有 10 字符；上限 30 触发截断时
+        // 标注必须报原文长度 10，而非转义后长度
+        StringBuilder raw = new StringBuilder();
+        for (int i = 0; i < 10; i++) raw.append('\n');
+        String out = MarkdownTable.cell(raw.toString(), 30);
+        assertTrue(out.endsWith("…[完整 10 字符]"));
+    }
+
+    @Test
+    public void cellTruncationNeverSplitsSurrogatePair() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 119; i++) sb.append('x');
+        sb.append("\uD83D\uDE00");                       // emoji 占 2 个 char，共 121
+        String out = MarkdownTable.cell(sb.toString(), 120);
+        assertEquals("截断点落在高代理上应回退一位", 119, out.indexOf('…'));
+        assertFalse("高代理字符不得泄漏到输出", out.contains("\uD83D"));
+        assertTrue(out.endsWith("…[完整 121 字符]"));
     }
 
     @Test

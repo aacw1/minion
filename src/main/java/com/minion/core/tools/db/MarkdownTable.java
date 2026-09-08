@@ -14,18 +14,27 @@ public final class MarkdownTable {
 
     /** 返回给模型的字符预算；超出则全量落盘 + 返回头部 */
     public static final int CHAR_BUDGET = 30000;
-    /** 单元格截断长度（防长文本列把表格撑爆） */
+    /** 单元格默认截断长度（防长文本列把表格撑爆）；截断处追加省略号 + 真实长度标注，见 {@link #cell(Object, int)} */
     public static final int CELL_MAX = 120;
 
     private MarkdownTable() { }
 
-    /** null → 字面量 NULL；竖线转义；换行转 &lt;br&gt;；超长截断加省略号 */
-    public static String cell(Object v) {
+    /** null → 字面量 NULL；竖线转义；换行转 &lt;br&gt;；超 120 截断并标注真实长度 */
+    public static String cell(Object v) { return cell(v, CELL_MAX); }
+
+    /** null → 字面量 NULL；竖线转义；换行转 &lt;br&gt;；超 cellMax 截断：省略号 + 真实长度标注 */
+    public static String cell(Object v, int cellMax) {
         if (v == null) return "NULL";
         String s = String.valueOf(v);
+        int rawLen = s.length();          // 标注口径：转义（<br> 膨胀）前的真实长度
         s = s.replace("\r\n", "<br>").replace("\n", "<br>").replace("\r", "<br>");
         s = s.replace("|", "\\|");
-        if (s.length() > CELL_MAX) s = s.substring(0, CELL_MAX) + "…";
+        if (s.length() > cellMax) {
+            int cut = cellMax;
+            // 截断点可能切在代理对（如 emoji）中间：丢弃尾部孤立高代理（对齐 TruncatedOutput 口径）
+            if (Character.isHighSurrogate(s.charAt(cut - 1))) cut--;
+            s = s.substring(0, cut) + "…[完整 " + rawLen + " 字符]";
+        }
         return s;
     }
 
