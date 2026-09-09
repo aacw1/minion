@@ -1,8 +1,8 @@
 package com.minion.core.tools.db;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.minion.core.tools.SchemaGenerator;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.plugin.DbConfig;
@@ -61,10 +61,12 @@ public class DbTool implements Tool {
         }
         sb.append("）。action=query 执行只读 SQL 返回 Markdown 表格（最多 ")
           .append(DbExecutor.MAX_ROWS).append(" 行）");
-        sb.append("。大字段(CLOB/TEXT/LONGTEXT/JSON 等)默认截断 120 字符并标注完整长度；")
-          .append("解析大字段全文请加 full=true，并将 SQL 限定到单行/少行（配合 WHERE/LIMIT），")
-          .append("单个字段最多 inline ").append(DbExecutor.FULL_CELL_MAX)
-          .append(" 字符，超出自动落盘并附文件路径");
+        sb.append("。大字段(CLOB/TEXT/LONGTEXT/JSON 等)默认截断 ")
+          .append(MarkdownTable.CELL_MAX).append(" 字符并标注「…[完整 N 字符]」；")
+          .append("当结果里出现该标注、或你已知该字段很长而需要其完整内容时，")
+          .append("必须重发同一查询并设 full=true，并用 WHERE/LIMIT 把 SQL 限定到需要的行：")
+          .append("full=true 时单元格上限 ").append(DbExecutor.FULL_CELL_MAX)
+          .append(" 字符，单值查询可 inline 全文，超出自动落盘并附文件路径");
         if (type.supports("schema")) {
             sb.append("；action=schema 列出表与视图；action=describe 查看表字段");
         } else {
@@ -75,10 +77,50 @@ public class DbTool implements Tool {
         return sb.toString();
     }
 
+    /**
+     * 手写精确 schema（不用 SchemaGenerator：它把所有属性生成为无描述的 string，
+     * 曾使 full 在模型眼里是隐形参数、几乎不被调用）。
+     * action 枚举按 DbType 动态生成（PG 无 schema/describe）；full 声明为布尔开关。
+     */
     @Override
     public JsonObject schema() {
-        return SchemaGenerator.objectSchema(type.displayName() + " 只读数据库操作",
-                new String[]{"action", "sql", "table", "full"}, new String[]{"action"});
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "object");
+        schema.addProperty("description", type.displayName() + " 只读数据库操作");
+
+        JsonObject props = new JsonObject();
+
+        JsonObject action = new JsonObject();
+        action.addProperty("type", "string");
+        action.addProperty("description", "操作类型：query 执行只读 SQL；schema 列出表与视图；describe 查看表字段");
+        JsonArray actionEnum = new JsonArray();
+        for (String a : type.actions()) actionEnum.add(a);
+        action.add("enum", actionEnum);
+        props.add("action", action);
+
+        JsonObject sql = new JsonObject();
+        sql.addProperty("type", "string");
+        sql.addProperty("description", "action=query 时必填：单条只读 SQL（SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN）");
+        props.add("sql", sql);
+
+        JsonObject table = new JsonObject();
+        table.addProperty("type", "string");
+        table.addProperty("description", "action=describe 时必填：表名（支持 % / _ 模式匹配多表）");
+        props.add("table", table);
+
+        JsonObject full = new JsonObject();
+        full.addProperty("type", "boolean");
+        full.addProperty("description", "仅在需要大字段全文时设 true：单元格截断线从 "
+                + MarkdownTable.CELL_MAX + " 放宽到 " + DbExecutor.FULL_CELL_MAX + " 字符。"
+                + "结果里出现「…[完整 N 字符]」且需要该内容时，必须设 full=true 重发同一查询，"
+                + "并用 WHERE/LIMIT 限定到需要的行");
+        props.add("full", full);
+
+        schema.add("properties", props);
+        JsonArray required = new JsonArray();
+        required.add("action");
+        schema.add("required", required);
+        return schema;
     }
 
     /** 只读查询不打断心流：不弹确认窗 */

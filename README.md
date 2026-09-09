@@ -140,6 +140,7 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
   - **只支持读操作**：SQL 白名单（SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN，拒绝多语句与 INTO OUTFILE / FOR UPDATE 等），连接层 setReadOnly(true)，且每次调用**新建连接、用后即关**（不落连接池）——建议给只读账号（低权限）以求纵深防御
   - postgreSQL 仅支持 query；schema/describe 会返回禁用提示（MySQL/Oracle 支持 query+schema+describe）
   - 结果上限 100 行（超出在表头标注「行数超上限，已截断」）、单格超 120 字符截断、超 30k 字符落盘到会话临时目录并给路径
+  - 大字段全文：截断的单元格标注 `…[完整 N 字符]`；模型需要全文时对同一 SQL 加 `full=true` 重查（单格上限 20000 字符，仍超则落盘给路径）
   - 数据源在 设置 → 工具 的行内下拉框选择当前数据源（切换即落盘生效，无需进管理弹窗），「数据源管理」里新建/修改/删除/测试连接；URL 示例：
     - MySQL：`jdbc:mysql://127.0.0.1:3306/db?useSSL=false&allowPublicKeyRetrieval=true&useInformationSchema=true`（连 5.x 需前两项；`useInformationSchema=true` 让表注释 REMARKS 有值）
     - PostgreSQL：`jdbc:postgresql://127.0.0.1:5432/db`

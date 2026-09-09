@@ -5,6 +5,9 @@ import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.plugin.DbConfig;
 import org.junit.Test;
 
+import java.util.Arrays;
+import java.util.List;
+
 import static org.junit.Assert.*;
 
 /**
@@ -175,7 +178,39 @@ public class DbToolTest {
     @Test
     public void schemaDeclaresFullParameter() {
         JsonObject s = new DbTool(DbType.MYSQL, emptyConfig(), (java.nio.file.Path) null).schema();
-        assertTrue(s.getAsJsonObject("properties").has("full"));
+        JsonObject props = s.getAsJsonObject("properties");
+        assertTrue("full 必须声明", props.has("full"));
+        JsonObject full = props.getAsJsonObject("full");
+        assertEquals("full 必须是布尔类型，模型才会当开关用", "boolean", full.get("type").getAsString());
+        String desc = full.get("description").getAsString();
+        assertTrue(desc, desc.contains("完整"));
+        assertTrue(desc, desc.contains("full=true"));
+    }
+
+    @Test
+    public void schemaDeclaresActionEnumByDbType() {
+        JsonObject mysql = new DbTool(DbType.MYSQL, emptyConfig(), (java.nio.file.Path) null).schema();
+        assertEquals(Arrays.asList("query", "schema", "describe"),
+                enumOf(mysql.getAsJsonObject("properties").getAsJsonObject("action")));
+        JsonObject pg = new DbTool(DbType.POSTGRES, emptyConfig(), (java.nio.file.Path) null).schema();
+        assertEquals("PG 不支持 schema/describe，枚举里不得出现",
+                Arrays.asList("query"),
+                enumOf(pg.getAsJsonObject("properties").getAsJsonObject("action")));
+    }
+
+    private static java.util.List<String> enumOf(JsonObject prop) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        for (com.google.gson.JsonElement e : prop.getAsJsonArray("enum")) out.add(e.getAsString());
+        return out;
+    }
+
+    @Test
+    public void descriptionStatesFullRuleForAllDbTypes() {
+        for (DbType type : DbType.values()) {
+            String d = new DbTool(type, emptyConfig(), (java.nio.file.Path) null).description();
+            assertTrue(type + ": " + d, d.contains("…[完整 N 字符]"));
+            assertTrue(type + ": " + d, d.contains("必须重发同一查询并设 full=true"));
+        }
     }
 
     @Test
