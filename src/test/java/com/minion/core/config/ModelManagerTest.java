@@ -40,8 +40,6 @@ public class ModelManagerTest {
         assertTrue(q.thinking);
         assertEquals("xhigh", q.reasoningEffort);
         assertEquals(131072, q.maxContextTokens);
-        assertEquals(0.8, q.compressThreshold, 1e-9);
-        assertEquals(50, q.keepRecentMessages);
         assertEquals("", q.apiKey);
         assertTrue(Files.exists(dir.resolve("model.json")));
     }

@@ -244,8 +244,6 @@ public class SettingsDialog {
         effort.getItems().addAll("low", "medium", "high", "xhigh", "max");
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
         TextField maxCtx = new TextField(mc == null ? "900000" : String.valueOf(mc.maxContextTokens));
-        TextField thr = new TextField(mc == null ? "0.8" : String.valueOf(mc.compressThreshold));
-        TextField keep = new TextField(mc == null ? "50" : String.valueOf(mc.keepRecentMessages));
 
         grid.addRow(0, new Label("标识名:"), displayName);
         grid.addRow(1, new Label("URL:"), url);
@@ -255,8 +253,6 @@ public class SettingsDialog {
         grid.addRow(5, new Label("思考:"), thinking);
         grid.addRow(6, new Label("effort:"), effort);
         grid.addRow(7, new Label("maxContextTokens:"), maxCtx);
-        grid.addRow(8, new Label("compressThreshold:"), thr);
-        grid.addRow(9, new Label("keepRecentMessages:"), keep);
         d.getDialogPane().setContent(grid);
 
         d.setResultConverter(bt -> {
@@ -270,8 +266,6 @@ public class SettingsDialog {
             out.thinking = thinking.isSelected();
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
             out.maxContextTokens = parseInt(maxCtx.getText(), 900000);
-            out.compressThreshold = parseDouble(thr.getText(), 0.8);
-            out.keepRecentMessages = parseInt(keep.getText(), 50);
             return out;
         });
         Optional<ModelConfig> r = d.showAndWait();
@@ -717,10 +711,6 @@ public class SettingsDialog {
 
     private static int parseInt(String s, int def) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
-    }
-
-    private static double parseDouble(String s, double def) {
-        try { return Double.parseDouble(s.trim()); } catch (Exception e) { return def; }
     }
 
     private static void error(String title, String msg) {

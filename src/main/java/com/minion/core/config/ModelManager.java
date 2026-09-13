@@ -69,8 +69,6 @@ public class ModelManager {
         c.thinking = true;
         c.reasoningEffort = "max";
         c.maxContextTokens = 900000;
-        c.compressThreshold = 0.8;
-        c.keepRecentMessages = 50;
         return c;
     }
 
@@ -85,8 +83,6 @@ public class ModelManager {
         c.thinking = true;
         c.reasoningEffort = "xhigh";
         c.maxContextTokens = 131072;
-        c.compressThreshold = 0.8;
-        c.keepRecentMessages = 50;
         return c;
     }
 
@@ -127,8 +123,6 @@ public class ModelManager {
         old.thinking = c.thinking;
         old.reasoningEffort = c.reasoningEffort;
         old.maxContextTokens = c.maxContextTokens;
-        old.compressThreshold = c.compressThreshold;
-        old.keepRecentMessages = c.keepRecentMessages;
         save();
     }
 
