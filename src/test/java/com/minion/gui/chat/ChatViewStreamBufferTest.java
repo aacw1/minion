@@ -68,4 +68,57 @@ public class ChatViewStreamBufferTest {
         assertFalse(ChatView.StreamBuffer.isRoundBoundary(EventList.Kind.ERROR));
         assertFalse(ChatView.StreamBuffer.isRoundBoundary(EventList.Kind.WARNING));
     }
+
+    // ===== 子代理流式隔离（设计 2026-09-13：并发子代理的思考/正文必须按编号分道互不串台）=====
+
+    /** 并发子代理流式隔离：不同 subAgentId 的正文/思考各自累积，互不串台 */
+    @Test
+    public void buffers_isolatedPerSubAgent() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子代理1正文");
+        buffers.of(2).onContent("子代理2正文");
+        buffers.of(0).onContent("主代理正文");
+        assertEquals("子代理1正文", buffers.of(1).content());
+        assertEquals("子代理2正文", buffers.of(2).content());
+        assertEquals("主代理正文", buffers.of(0).content());
+    }
+
+    /** 轮次边界只清对应主人的缓冲（子代理工具调用不得清掉主代理正在累积的回复） */
+    @Test
+    public void buffers_roundBoundary_onlyClearsTarget() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        buffers.onRoundBoundary(2);
+        assertEquals("子1", buffers.of(1).content());
+        assertEquals("", buffers.of(2).content());
+    }
+
+    /** 流式段身份判等：kind 相同 + 主人相同才就地更新；NONE 恒不参与 */
+    @Test
+    public void sameStream_requiresSameKindAndOwner() {
+        assertTrue(ChatView.sameStream(ChatView.StreamKind.REPLY, 0, ChatView.StreamKind.REPLY, 0));
+        assertFalse("不同主人不得合并同段", ChatView.sameStream(ChatView.StreamKind.REPLY, 1, ChatView.StreamKind.REPLY, 2));
+        assertFalse(ChatView.sameStream(ChatView.StreamKind.THINK, 1, ChatView.StreamKind.REPLY, 1));
+        assertFalse(ChatView.sameStream(ChatView.StreamKind.NONE, 1, ChatView.StreamKind.NONE, 1));
+    }
+
+    /** 标签与配色：子代理事件用【子代理N】+ log-subagent，主代理保持原标签 */
+    @Test
+    public void tagAndColor_subAgentVsMain() {
+        assertEquals("【思考】", ChatView.tagOf(0, "【思考】"));
+        assertEquals("【子代理2】", ChatView.tagOf(2, "【思考】"));
+        assertEquals("【子代理12】", ChatView.tagOf(12, "【回复】"));
+        assertEquals("log-reply", ChatView.colorOf(0, "log-reply"));
+        assertEquals("log-subagent", ChatView.colorOf(3, "log-reply"));
+    }
+
+    /** 清空（删会话）后所有子代理缓冲一并释放 */
+    @Test
+    public void buffers_clearReleasesAll() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("x");
+        buffers.clear();
+        assertEquals("", buffers.of(1).content());
+    }
 }
