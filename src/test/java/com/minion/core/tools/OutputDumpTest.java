@@ -7,11 +7,10 @@ import org.junit.rules.TemporaryFolder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 
 import static org.junit.Assert.*;
 
-/** 工具输出落盘：会话临时目录（jarDir/.session/tmp/<sessionId>）结构与清理 + tail 尾部窗口切割 */
+/** 工具输出落盘：会话临时目录（jarDir/.session/tmp/<sessionId>）结构与 tail 尾部窗口切割 */
 public class OutputDumpTest {
 
     @Rule
@@ -123,42 +122,5 @@ public class OutputDumpTest {
         Path f = OutputDump.write(sessionTmpDir(), "bash", "abc");
         assertEquals("", OutputDump.tail(f, 0));
         assertEquals("", OutputDump.tail(f, -3));
-    }
-
-    // ---------- cleanup ----------
-
-    /** cleanup 扫所有会话子目录，只删修改超期文件 */
-    @Test
-    public void cleanup_deletesOnlyExpiredFiles_acrossSessions() throws Exception {
-        Path root = tmp.newFolder("jar").toPath().resolve(".session").resolve("tmp");
-        Path s1 = Files.createDirectories(root.resolve("s1"));
-        Path s2 = Files.createDirectories(root.resolve("s2"));
-        Path old1 = s1.resolve("bash-old.txt");
-        Files.write(old1, "old".getBytes(StandardCharsets.UTF_8));
-        Files.setLastModifiedTime(old1, FileTime.fromMillis(System.currentTimeMillis() - 4L * 24 * 3600 * 1000));
-        Path fresh = s2.resolve("grep-fresh.txt");
-        Files.write(fresh, "new".getBytes(StandardCharsets.UTF_8));
-
-        OutputDump.cleanup(root, OutputDump.RETENTION_MS);
-
-        assertFalse("超期文件应被清理: " + old1, Files.exists(old1));
-        assertTrue("近期文件应保留: " + fresh, Files.exists(fresh));
-    }
-
-    @Test
-    public void cleanup_missingRoot_silent() {
-        OutputDump.cleanup(tmp.getRoot().toPath().resolve("nope"), OutputDump.RETENTION_MS); // 不抛
-    }
-
-    /** 清理后会话子目录可被删除（回归：Files.list 流未关闭导致 Windows 句柄泄漏） */
-    @Test
-    public void cleanup_releasesDirectoryHandle() throws Exception {
-        Path root = tmp.newFolder("jar").toPath().resolve(".session").resolve("tmp");
-        Path s1 = Files.createDirectories(root.resolve("s1"));
-        Path f = OutputDump.write(s1, "bash", "x");
-        // 将文件 mtime 调到过去，确保 deadline(now) 判定为超期
-        Files.setLastModifiedTime(f, FileTime.fromMillis(System.currentTimeMillis() - 1000));
-        OutputDump.cleanup(root, 0); // 全部视为超期
-        assertTrue(Files.deleteIfExists(s1));
     }
 }

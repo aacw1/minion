@@ -1083,4 +1083,24 @@ public class SessionManagerTest {
         assertNull(h.loop.registry().get("Browser"));
         assertNull(m.plugins());
     }
+
+    /** 删除会话：会话临时目录（子代理报告/工具超限落盘）一并递归删除（落盘信息生命周期=会话） */
+    @Test
+    public void deleteSession_removesSessionTmpDir() throws Exception {
+        Path jar = tmp.newFolder("jar-tmp-del").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null);
+        SessionHandle h = m.createSession(null);
+        Path tmpDir = jar.resolve(".session").resolve("tmp").resolve(h.id);
+        Files.createDirectories(tmpDir);
+        Files.write(tmpDir.resolve("subagent-report-1-1-1.txt"),
+                "报告".getBytes(StandardCharsets.UTF_8));
+
+        m.deleteSession(h);
+
+        assertFalse("删除会话必须连带删除落盘信息", Files.exists(tmpDir));
+    }
 }

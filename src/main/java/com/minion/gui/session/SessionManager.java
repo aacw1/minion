@@ -540,7 +540,7 @@ public class SessionManager {
             notifyError("删除会话文件失败: " + e.getMessage());
         }
         // 会话临时目录一并清理；运行中删除时落盘文件可能被占用（Windows 句柄），
-        // 删除失败静默容错（deleteRecursively 内部吞错），由启动清理（Main 3 天过期清理）兜底
+        // 删除失败静默容错（deleteRecursively 内部吞错），由启动孤儿清理（SessionTempCleaner）兜底
         deleteRecursively(tmpDirOf(h.id));
         h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         if (currentSession == h) currentSession = null;

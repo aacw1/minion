@@ -5,14 +5,11 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Stream;
 
-/** 工具超限输出落盘：会话临时目录（jarDir/.session/tmp/<sessionId>）写入/尾部读取/清理。JDK8 兼容，无新依赖。 */
+/** 工具超限输出落盘：会话临时目录（jarDir/.session/tmp/<sessionId>）写入/尾部读取。JDK8 兼容，无新依赖。
+ *  清理不在本类做：文件生命周期 = 会话生命周期（SessionManager 删会话时递归删除，启动孤儿兜底见 SessionTempCleaner） */
 public final class OutputDump {
-
-    public static final long RETENTION_MS = 3L * 24 * 3600 * 1000;
 
     private static final AtomicLong SEQ = new AtomicLong();
 
@@ -64,26 +61,5 @@ public final class OutputDump {
         } catch (Exception e) {
             return "";
         }
-    }
-
-    /** 删除 tmpRoot（jarDir/.session/tmp）下所有会话子目录中修改时间超过 olderThanMillis 的文件；
-     *  子目录本身保留（会话未删除时旧文件允许保留供回溯）。目录不存在静默返回 */
-    public static void cleanup(Path tmpRoot, long olderThanMillis) {
-        try {
-            if (!Files.isDirectory(tmpRoot)) return;
-            long deadline = System.currentTimeMillis() - olderThanMillis;
-            try (Stream<Path> dirs = Files.list(tmpRoot)) {
-                dirs.filter(Files::isDirectory).forEach(d -> {
-                    try (Stream<Path> stream = Files.list(d)) { // 流须关闭，否则 Windows 目录句柄泄漏
-                        stream.forEach(p -> {
-                            try {
-                                FileTime t = Files.getLastModifiedTime(p);
-                                if (t.toMillis() < deadline) Files.deleteIfExists(p);
-                            } catch (IOException ignored) { }
-                        });
-                    } catch (IOException ignored) { }
-                });
-            }
-        } catch (IOException ignored) { }
     }
 }
