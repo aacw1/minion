@@ -794,7 +794,9 @@ public class SubAgentLoopTest {
         assertTrue("摘要应置前存在", hasSummary);
         assertTrue("任务提示词必须 pinned 保留（不被压进摘要）", taskPinned);
         // 提示走子代理通道；主通道无压缩指示器事件（子代理不驱动主指示器）
-        assertTrue(ui.subNotices.stream().anyMatch(n -> n.contains("已压缩")));
+        // spec 4.2 文案锁定：`已压缩上下文（降低至 x%）`（防回归为无百分比旧文案）
+        assertTrue("成功提示应为「已压缩上下文（降低至 x%）」: " + ui.subNotices,
+                ui.subNotices.stream().anyMatch(n -> n.matches("已压缩上下文（降低至 \\d+%）")));
         assertTrue(ui.retryProgress.isEmpty());
     }
 
@@ -824,6 +826,85 @@ public class SubAgentLoopTest {
         assertTrue("失败提示走子代理通道", ui.subNotices.stream().anyMatch(n -> n.contains("上下文压缩失败")));
         assertTrue("压缩失败后不得发送请求", llm.requests.isEmpty());
         assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
+    }
+
+    /** 压缩失败（重试耗尽）：中止子代理并返回「重试了 N 次…仍失败」文本；未发送请求。
+     *  与上一用例互补：那条只覆盖不可重试错误（立即失败），本条覆盖可重试错误的墙钟耗尽路径（spec §6）。 */
+    @Test
+    public void subAgent_compressRetryExhausted_stopsWithFailureText() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = ""; // 恒空摘要 → 恒 EMPTY_RESPONSE（可重试），重试至墙钟耗尽
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数快速耗尽（防真等）
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertTrue("返回失败文本: " + result, result.startsWith("子代理失败: 上下文压缩失败（"));
+        assertTrue("应为重试耗尽原因（含「仍失败」）: " + result,
+                result.contains("重试了") && result.contains("仍失败"));
+        assertTrue("确实经历过多次重试: " + llm.completeChatRequests.size(),
+                llm.completeChatRequests.size() >= 2);
+        assertTrue("失败提示走子代理通道", ui.subNotices.stream().anyMatch(n -> n.contains("上下文压缩失败")));
+        assertTrue("压缩失败后不得发送请求", llm.requests.isEmpty());
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
+    }
+
+    /** 压缩等待期间被中断（偏差 1 的代码分支）：ContextCompressor 检出中断 → 按 spec 4.2 返回「子 agent 已中断」。
+     *  注意不能"run() 前置 interrupt"：那样会在 run 循环首个中断检查就返回，覆盖不到压缩分支；
+     *  故在压缩请求执行时置位中断标志（模拟主循环同一时刻按下停止），让重试等待的轮询检出声命中。 */
+    @Test
+    public void subAgent_compressInterruptedWhileWaiting_returnsInterrupted() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        // 压缩请求执行时置位中断标志并抛可重试异常：进入等待 → sink.interrupted() 命中 → INTERRUPTED
+        class InterruptingLlm extends FakeLlmClient {
+            int compressCalls = 0;
+            @Override
+            public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+                compressCalls++;
+                Thread.currentThread().interrupt(); // 压缩期间收到"停止"
+                throw new LlmException(LlmException.Type.RATE_LIMIT, "压缩期间收到停止", true);
+            }
+        }
+        InterruptingLlm llm = new InterruptingLlm();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数：等待切片 10ms（中断检查立即可达）
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result;
+        try {
+            result = sub.run();
+        } finally {
+            Thread.interrupted(); // 清理中断标志，避免污染后续测试（surefire 同线程复用）
+        }
+
+        assertEquals("中断文案（spec 4.2）", "子 agent 已中断", result);
+        assertEquals("应进入过压缩流程（压缩等待中被中断）", 1, llm.compressCalls);
+        assertTrue("中断提示走子代理通道: " + ui.subNotices, ui.subNotices.contains("已中断"));
+        assertTrue("中断后不得发送请求", llm.requests.isEmpty());
     }
 
     /** 主代理未启用压缩（contextManager=null）：子代理不压缩（不调 completeChat），行为同旧版 */

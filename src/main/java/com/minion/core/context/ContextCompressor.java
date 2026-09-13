@@ -92,7 +92,8 @@ public class ContextCompressor {
         while (System.currentTimeMillis() < end) {
             if (sink.interrupted()) return false;
             try {
-                Thread.sleep(Math.min(100, end - System.currentTimeMillis()));
+                // Math.max(0, …)：跨毫秒边界/GC 停顿时差值可能为负，Thread.sleep 负值会抛 IllegalArgumentException
+                Thread.sleep(Math.max(0, Math.min(100, end - System.currentTimeMillis())));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
                 return false;

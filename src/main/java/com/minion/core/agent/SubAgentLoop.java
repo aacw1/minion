@@ -266,7 +266,9 @@ public class SubAgentLoop {
         if (r.outcome == ContextCompressor.Outcome.OK) {
             messages.clear();
             messages.addAll(r.messages); // 摘要置前 + pinned 任务提示词常驻（压缩结果由 ContextManager 保证）
-            ui.onSubAgentNotice(no, "已压缩上下文并继续任务");
+            // spec 4.2：成功提示带压缩后百分比（算法与主代理自动压缩一致）
+            int pct = (int) (contextManager.estimate(messages) * 100 / contextManager.maxTokens());
+            ui.onSubAgentNotice(no, "已压缩上下文（降低至 " + pct + "%）");
             return null;
         }
         if (r.outcome == ContextCompressor.Outcome.NOTHING) return null; // 阈值触发但暂无可压缩：继续
