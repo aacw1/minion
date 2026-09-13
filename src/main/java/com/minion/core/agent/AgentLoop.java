@@ -281,8 +281,13 @@ public class AgentLoop {
 
     /** 压缩 + 瞬时错误重试（自动压缩与 /compact 共用）：与请求重试同一策略（分类间隔/墙钟），
      *  可被"停止"中断；耗尽或不可重试错误 → onError 并返回 FAILED（调用方中止本轮不发送请求）。
-     *  成功不打提示文案（自动压缩与手动压缩文案不同，由调用方各自输出）。 */
-    private CompressOutcome compressWithRetry() throws InterruptedException {
+     *  成功不打提示文案（自动压缩与手动压缩文案不同，由调用方各自输出）。
+     *  @param manual true=用户手动 /compact（文案「压缩失败：…」，不提"自动"/"本轮已停止"）；
+     *                false=主循环自动压缩（文案「自动压缩失败：…；本轮已停止」） */
+    private CompressOutcome compressWithRetry(boolean manual) throws InterruptedException {
+        String failPrefix = manual ? "压缩失败：" : "自动压缩失败：";
+        String stopTail = manual ? "；可稍后重试或新建会话" : "；本轮已停止，可稍后重试或新建会话";
+        String exhaustedTail = manual ? "；可稍后重试或新建会话" : "；本轮已停止";
         List<Message> before = session.messages;
         int attempts = 0;
         long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次压缩请求自身耗时
@@ -294,8 +299,7 @@ public class AgentLoop {
                     return session.messages == before ? CompressOutcome.NOTHING : CompressOutcome.OK;
                 } catch (LlmException e) {
                     if (!RetryPolicy.isTransient(e)) {
-                        ui.onError("自动压缩失败：" + e.getMessage()
-                                + "；本轮已停止，可稍后重试或新建会话");
+                        ui.onError(failPrefix + e.getMessage() + stopTail);
                         return CompressOutcome.FAILED;
                     }
                     attempts++;
@@ -305,8 +309,8 @@ public class AgentLoop {
                     if (!sleepWithInterruptCheck(delay)) break; // 用户中断
                     long elapsed = System.currentTimeMillis() - retryStart;
                     if (retryPolicy.isExhausted(elapsed)) {
-                        ui.onError("自动压缩失败：" + RetryProgress.tag(e) + " 重试了 " + attempts
-                                + " 次，持续 " + (elapsed / 60000) + " 分钟仍失败；本轮已停止");
+                        ui.onError(failPrefix + RetryProgress.tag(e) + " 重试了 " + attempts
+                                + " 次，持续 " + (elapsed / 60000) + " 分钟仍失败" + exhaustedTail);
                         return CompressOutcome.FAILED;
                     }
                 }
@@ -325,7 +329,7 @@ public class AgentLoop {
         ui.onCompressingChanged(true);
         CompressOutcome outcome;
         try {
-            outcome = compressWithRetry();
+            outcome = compressWithRetry(true); // 手动 /compact：失败文案不带"自动"
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             outcome = CompressOutcome.FAILED;
@@ -442,7 +446,7 @@ public class AgentLoop {
                     ui.onCompressingChanged(true);
                     CompressOutcome outcome;
                     try {
-                        outcome = compressWithRetry();
+                        outcome = compressWithRetry(false); // 自动压缩：失败文案带"自动"与"本轮已停止"
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
                         outcome = CompressOutcome.FAILED;

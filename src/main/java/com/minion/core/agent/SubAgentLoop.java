@@ -153,6 +153,7 @@ public class SubAgentLoop {
                         }
                         // 重试成功：落入下方正常处理
                     } else if (e.retryable && retries < 1 && noOutputYet(content, thinking)) {
+                        // 兜底：可重试但未归类错误（现主流错误均已被长重试覆盖，此分支实际不可达）
                         retries++;
                         ui.onWarning("子 agent 请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避与主循环一致：429 限流 2s，其余（网络/超时）0.5s

@@ -1351,7 +1351,7 @@ public class AgentLoopTest {
     public void rateLimit_exhausted_stopsWithSummary() {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 20, 50); // 10+20+20=50ms 耗尽
+        loop.retryPolicy = new RetryPolicy(10, 20, 50); // SHORT 10ms/次，墙钟 50ms 内耗尽
         long start = System.currentTimeMillis();
         loop.runUserTurn("任务");
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);

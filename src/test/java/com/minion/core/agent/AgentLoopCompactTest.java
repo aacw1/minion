@@ -264,4 +264,30 @@ public class AgentLoopCompactTest {
         assertTrue(ui.errors.get(0).contains("自动压缩失败"));
         assertTrue("中止本轮：未发送请求", llm.requests.isEmpty());
     }
+
+    /** 手动 /compact 失败文案：中性「压缩失败」，不带「自动」字样（与自动压缩路径区分） */
+    @Test
+    public void compactNow_failure_wordingIsNeutral() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.throwOnCompleteChat = true; // 不可重试错误 → 立即失败
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(100000, llm, 0); // 大阈值：手动触发
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        seedHistory(loop);
+        llm.addTurn("回复");
+        loop.runUserTurn("问题");
+        loop.compactNow();
+        assertEquals(1, ui.errors.size());
+        assertTrue("手动压缩失败应报「压缩失败：…」", ui.errors.get(0).startsWith("压缩失败："));
+        assertFalse("不应出现「自动」字样", ui.errors.get(0).contains("自动"));
+    }
 }
