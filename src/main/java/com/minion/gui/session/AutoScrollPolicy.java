@@ -10,7 +10,8 @@ public class AutoScrollPolicy {
     private boolean pinned = true; // 初始视为贴底：内容未超一屏时无滚动可言
 
     /** 滚动位置变化时重算贴底状态（vvalue 监听器调用）。
-     *  eps：半屏容差（归一化）= 0.5×视口高/可滚动行程；eps >= 1（内容未超一屏）恒贴底 */
+     *  eps：贴底容差（归一化）= screens×视口高/可滚动行程（screens 由调用方给定，MainWindow 当前 2.0）；
+     *  eps >= 1（内容未超一屏）恒贴底 */
     public void sync(double vvalue, double eps) {
         pinned = eps >= 1.0 || vvalue >= 1.0 - eps;
     }

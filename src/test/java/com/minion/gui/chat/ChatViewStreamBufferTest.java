@@ -191,4 +191,31 @@ public class ChatViewStreamBufferTest {
         assertEquals("", buffers.of(1).content()); // 移除后再取 = 全新空缓冲
         assertEquals("子2", buffers.of(2).content());
     }
+
+    /** 轮末兜底回收（终审 P3）：失败/中断的子代理不发 SUB_AGENT_DONE，轮末清全部子代理缓冲、主代理保留 */
+    @Test
+    public void buffers_clearSubAgents_keepsMain() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(0).onContent("主");
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        assertEquals(3, buffers.size());
+        buffers.clearSubAgents();
+        assertEquals("仅主代理保留", 1, buffers.size());
+        assertEquals("主", buffers.of(0).content());
+        assertEquals("子代理条目已回收（再取 = 全新空缓冲）", "", buffers.of(1).content());
+    }
+
+    /** 轮末兜底回收流引用（终审 P3）：失败/中断路径没有 DONE 回收点，主代理引用保留 */
+    @Test
+    public void activeStreams_clearSubAgents_keepsMain() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 0, "M");
+        active.put(ChatView.StreamKind.REPLY, 1, "A");
+        active.put(ChatView.StreamKind.THINK, 2, "B");
+        active.clearSubAgents();
+        assertEquals("M", active.get(ChatView.StreamKind.REPLY, 0));
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertNull(active.get(ChatView.StreamKind.THINK, 2));
+    }
 }

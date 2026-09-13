@@ -55,4 +55,15 @@ public class SettingsDialogTest {
     public void canActivate_allowsDifferentModel() {
         assertTrue(SettingsDialog.canActivate("qwen3-max", "deepseek-v4-flash"));
     }
+
+    /** maxContextTokens 解析（终审 P3）：非数字/非正数回退 200000——0 会让压缩百分比表达式除零 */
+    @Test
+    public void parseMaxContextTokens_rejectsNonPositive() {
+        assertEquals(200000, SettingsDialog.parseMaxContextTokens("0"));
+        assertEquals(200000, SettingsDialog.parseMaxContextTokens("-5"));
+        assertEquals(200000, SettingsDialog.parseMaxContextTokens("abc"));
+        assertEquals(200000, SettingsDialog.parseMaxContextTokens(""));
+        assertEquals(200000, SettingsDialog.parseMaxContextTokens(null));
+        assertEquals(131072, SettingsDialog.parseMaxContextTokens(" 131072 "));
+    }
 }

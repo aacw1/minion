@@ -265,7 +265,7 @@ public class SettingsDialog {
             out.provider = provider.getValue() == null ? "deepseek" : provider.getValue();
             out.thinking = thinking.isSelected();
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
-            out.maxContextTokens = parseInt(maxCtx.getText(), 200000);
+            out.maxContextTokens = parseMaxContextTokens(maxCtx.getText());
             return out;
         });
         Optional<ModelConfig> r = d.showAndWait();
@@ -711,6 +711,14 @@ public class SettingsDialog {
 
     private static int parseInt(String s, int def) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    /** maxContextTokens 解析：非数字回退 200000；<=0 同样回退——0 会让压缩成功百分比
+     *  表达式除零（主代理自动压缩与子代理压缩两路同型，终审 P3；一处修两路）。
+     *  package-private 供单测（无 JavaFX 环境） */
+    static int parseMaxContextTokens(String s) {
+        int v = parseInt(s, 200000);
+        return v > 0 ? v : 200000;
     }
 
     private static void error(String title, String msg) {

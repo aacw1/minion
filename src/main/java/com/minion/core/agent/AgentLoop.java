@@ -230,6 +230,9 @@ public class AgentLoop {
     /** 会话临时目录注入（SessionManager 创建/恢复会话时调用；子代理报告落盘位置） */
     public void setSessionTmpDir(String dir) { this.sessionTmpDir = dir; }
 
+    /** 当前会话临时目录（诊断/测试断言用；startNewSession 后应指向新会话 id 目录） */
+    String sessionTmpDir() { return sessionTmpDir; }
+
     /** 回答 AskUserQuestion（SessionManager.sendAnswer 转发）；无挂起时忽略 */
     public boolean answerAskUser(String answer) {
         return askUserTool.complete(answer);
@@ -389,7 +392,10 @@ public class AgentLoop {
      *  todo/usage 必须原地清空而非换新实例：Main 注册 TodoWriteTool 时捕获的是 session.todos
      *  的实例引用，换新实例会让工具继续写已废弃的空清单（任务状态丢失）。
      *  id/createdAt 必须重新生成：旧 id 会话已随 /new 落盘，沿用旧 id 会让新会话的
-     *  自动落盘覆盖上一个会话文件。 */
+     *  自动落盘覆盖上一个会话文件。
+     *  前置条件（终审 P3）：生产 /new 走 SessionManager.createSession 新建会话（新 AgentLoop，
+     *  落盘目录与编号天然正确）；本方法为复用旧实例的接口，子代理状态已在方法内同步
+     *  （临时目录换新 id、编号归零），会话落盘等外壳状态仍由调用方负责。 */
     public void startNewSession() {
         session.messages.clear();
         session.pendingSupplements.clear();
@@ -397,6 +403,17 @@ public class AgentLoop {
         session.usage.reset();
         session.regenerateId();
         workspace.resetCwd();
+        // 子代理状态随新会话重置（终审 P3 潜伏项）：
+        // ①编号从 1 起（spec：递增不复用、新会话从 1 起；防【子代理N】与报告文件名续用旧会话序号）；
+        // ②落盘目录换到新 id（否则子代理报告落进旧会话 tmp 目录——旧目录随会话删除后，
+        //   新报告会落在无主目录里，可能被启动孤儿清理误删）
+        subAgentSeq.set(0);
+        if (sessionTmpDir != null) {
+            java.nio.file.Path parent = java.nio.file.Paths.get(sessionTmpDir).getParent();
+            if (parent != null) {
+                sessionTmpDir = parent.resolve(session.id).toString();
+            }
+        }
     }
 
     /**

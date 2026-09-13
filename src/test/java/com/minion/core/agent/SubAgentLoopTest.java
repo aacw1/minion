@@ -960,4 +960,52 @@ public class SubAgentLoopTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         assertNull("主未启用压缩时子代理不压缩", noCm.buildSubContextManager());
     }
+
+    /** 终审 P3：task 工具 schema/描述只声明 description——prompt 参数全仓无消费点（runner 只读
+     *  description），从 schema 与描述移除后防误加回 */
+    @Test
+    public void taskTool_schemaOnlyDescription() {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        com.minion.core.tools.TaskTool tool = new com.minion.core.tools.TaskTool(loop);
+        JsonObject props = tool.schema().getAsJsonObject("properties");
+        assertTrue(props.has("description"));
+        assertFalse("prompt 参数无消费点，不得出现在 schema", props.has("prompt"));
+        assertFalse("描述不得再宣称 prompt 参数", tool.description().contains("prompt"));
+    }
+
+    /** 终审 P3：长报告截断点落在代理对（emoji）中间时丢弃末尾孤立高代理，不返回畸形字符
+     *  （与 OutputDump.tail 的代理对处理对齐） */
+    @Test
+    public void report_truncationMidSurrogatePair_dropsLoneHighSurrogate() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 7999; i++) big.append('x');
+        big.append('\uD83D').append('\uDE00'); // 😀（代理对）：REPORT_MAX_CHARS=8000 截点落在一对中间
+        llm.addTurn(big.toString());
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "长报告", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result = sub.run();
+
+        String head = result.substring(0, result.indexOf('\n'));
+        assertEquals("孤立高代理必须丢弃（头部 7999 字符）", 7999, head.length());
+        assertFalse("末字符不得是孤立高代理",
+                Character.isHighSurrogate(head.charAt(head.length() - 1)));
+        assertTrue("完整长度说明（8001 字符 = 7999 + 代理对 2）",
+                result.contains("完整报告 8001 字符已落盘："));
+    }
 }

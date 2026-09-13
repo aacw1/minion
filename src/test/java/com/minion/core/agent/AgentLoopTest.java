@@ -787,6 +787,30 @@ public class AgentLoopTest {
         assertEquals(loop.session().id, loop.session().createdAt); // 与 Session.create 同机制
     }
 
+    /** 终审 P3 潜伏项：startNewSession 同步子代理状态——落盘目录换新会话 id、编号归 0（新会话从 1 起） */
+    @Test
+    public void startNewSession_refreshesSubAgentTmpDirAndSeq() {
+        AgentLoop loop = newLoop();
+        String oldId = loop.session().id;
+        loop.setSessionTmpDir(tmp.getRoot().toPath().resolve("tmp").resolve(oldId).toString());
+        JsonObject args = new JsonObject();
+        args.addProperty("description", "任务A");
+        llm.addTurn("子代理1完成");
+        loop.runSubAgent(args); // 默认 runner：编号 1
+        assertEquals(Arrays.asList("1:任务A"), ui.subStarts);
+
+        loop.startNewSession();
+
+        assertNotEquals(oldId, loop.session().id);
+        assertEquals("落盘目录必须指向新会话 id（防落进旧目录被孤儿清理误删）",
+                tmp.getRoot().toPath().resolve("tmp").resolve(loop.session().id).toString(),
+                loop.sessionTmpDir());
+        llm.addTurn("新会话子代理完成");
+        loop.runSubAgent(args);
+        assertEquals("编号必须从 1 重新开始（不做则续用旧会话序号）",
+                Arrays.asList("1:任务A", "1:任务A"), ui.subStarts);
+    }
+
     /** T4 回归：startNewSession 原地清空 todo/usage，Main 注册的 TodoWriteTool
      *  捕获的实例引用在 /new 后仍指向会话清单（换新实例会导致任务状态丢失） */
     @Test

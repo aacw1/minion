@@ -268,6 +268,11 @@ public class ChatView extends VBox {
                         statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE, id);
                 // 轮次结束（AgentLoop 末尾发统计行）：强制回到底部，让回复末尾与统计行可见
                 if (scrollBottomRequest != null) scrollBottomRequest.run();
+                // 轮末兜底回收子代理流式资源（终审 P3）：失败/中断的子代理不发 SUB_AGENT_DONE
+                // （只有成功路径发），若仅靠 DONE 回收，其缓冲/段引用会随失败派发数无界增长；
+                // 轮末所有工具（含子代理）必已结束，统一清非主代理条目——成功态已被 DONE 提前回收，此处幂等
+                streams.clearSubAgents();
+                activeStreams.clearSubAgents();
                 break;
             }
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
@@ -562,6 +567,15 @@ public class ChatView extends VBox {
         /** 子代理完成（SUB_AGENT_DONE）：回收该主人缓冲条目，防会话内条目随派发数无界增长 */
         void remove(int subAgentId) { map.remove(subAgentId); }
 
+        /** 轮末兜底回收全部子代理（id>0）缓冲，主代理（0）保留：失败/中断的子代理不发
+         *  SUB_AGENT_DONE，只靠 remove(id) 会漏回收（终审 P3）；轮末工具已全部结束，幂等安全 */
+        void clearSubAgents() {
+            java.util.Iterator<Integer> it = map.keySet().iterator();
+            while (it.hasNext()) {
+                if (it.next() > 0) it.remove();
+            }
+        }
+
         /** 清空（删会话/重建视图）：所有主人缓冲一并释放 */
         void clear() { map.clear(); }
 
@@ -614,6 +628,15 @@ public class ChatView extends VBox {
 
         /** 断开某主人的全部流引用（轮次边界/子代理完成：该主人缓冲已清零，下一次增量另起新段） */
         void clearOwner(int subAgentId) { map.remove(subAgentId); }
+
+        /** 轮末兜底回收全部子代理（id>0）流引用（与 StreamBuffers.clearSubAgents 同步调用；
+         *  失败/中断子代理不会收到 SUB_AGENT_DONE，此处兜底防引用无界增长——终审 P3） */
+        void clearSubAgents() {
+            java.util.Iterator<Integer> it = map.keySet().iterator();
+            while (it.hasNext()) {
+                if (it.next() > 0) it.remove();
+            }
+        }
 
         /** 清空（删会话/重建视图）：所有主人引用一并释放 */
         void clear() { map.clear(); }

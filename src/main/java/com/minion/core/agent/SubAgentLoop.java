@@ -235,8 +235,17 @@ public class SubAgentLoop {
         if (dumped == null) {
             return report + "\n\n（报告落盘失败，以上为完整内容）";
         }
-        String head = report.length() <= REPORT_MAX_CHARS
-                ? report : report.substring(0, REPORT_MAX_CHARS);
+        String head;
+        if (report.length() <= REPORT_MAX_CHARS) {
+            head = report;
+        } else {
+            head = report.substring(0, REPORT_MAX_CHARS);
+            // 截点可能落在代理对（emoji）中间：丢弃末尾孤立高代理，避免返回文本出现畸形字符
+            // （与 OutputDump.tail 的代理对处理对齐；主代理按落盘路径取全文，损失可忽略）
+            if (Character.isHighSurrogate(head.charAt(head.length() - 1))) {
+                head = head.substring(0, head.length() - 1);
+            }
+        }
         String note = report.length() <= REPORT_MAX_CHARS
                 ? "完整报告已落盘："
                 : "完整报告 " + report.length() + " 字符已落盘：";
