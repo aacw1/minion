@@ -219,8 +219,7 @@ public class SessionManager {
                 Session s = ctx.store.load(meta.id);
                 ModelConfig mc = models.current();
                 LlmClient llm = newLlm(mc);
-                ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
-                        mc.keepRecentMessages, llm,
+                ContextManager cm = new ContextManager(mc.maxContextTokens, llm,
                         TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
                                 tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder(), projSkills)
                                 .build(sk.skills)));
@@ -395,8 +394,7 @@ public class SessionManager {
         if (sk.warning != null) notifyError(sk.warning);
         String mdAbs = projectMdOf(currentWorkspaceName);
         String projSkills = projectSkillsDirOf(currentWorkspaceName);
-        ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
-                mc.keepRecentMessages, llm,
+        ContextManager cm = new ContextManager(mc.maxContextTokens, llm,
                 TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
                         tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder(), projSkills)
                         .build(sk.skills)));
@@ -496,7 +494,7 @@ public class SessionManager {
                 ContextManager cm = h.loop.contextManager();
                 if (cm != null) {
                     cm.setLlm(fresh);
-                    cm.update(mc.maxContextTokens, mc.compressThreshold, mc.keepRecentMessages);
+                    cm.update(mc.maxContextTokens);
                 }
             }
         }

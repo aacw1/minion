@@ -284,19 +284,22 @@ public class AgentLoop {
         ui.onCompressingChanged(true);
         try {
             int before = session.messages.size();
-            session.messages = contextManager.compress(session.messages);
+            try {
+                session.messages = contextManager.compress(session.messages);
+            } catch (LlmException e) {
+                // 过渡适配：compress 改为抛 LlmException（完整重试编排见 Task 7 compressWithRetry）
+                ui.onError("压缩失败：" + e.getMessage() + "；可稍后重试或新建会话");
+                return;
+            }
             if (session.messages.size() < before) {
                 ui.onWarning("已压缩上下文（历史摘要已置前）");
-            } else if (contextManager.lastCompressAttempted()) {
-                // take>0 但压缩 LLM 调用失败（网络/超窗）原样返回：与"无可压缩"区分开，避免误导
-                ui.onWarning("压缩失败（模型调用异常），请稍后重试");
             } else {
                 ui.onWarning("暂无可压缩内容");
             }
         } finally {
             ui.onCompressingChanged(false);
+            pushContextStats(); // 压缩结束后刷新进度圈（失败原样保留亦刷新）
         }
-        pushContextStats();
     }
 
     /** 推送上下文统计（GUI 环形进度圈）：contextManager 未启用时不推送 */
@@ -400,7 +403,15 @@ public class AgentLoop {
                     ui.onCompressingChanged(true);
                     try {
                         int before = session.messages.size();
-                        session.messages = contextManager.compress(session.messages);
+                        try {
+                            session.messages = contextManager.compress(session.messages);
+                        } catch (LlmException e) {
+                            // 过渡适配：compress 改为抛 LlmException，失败中止本轮不发送请求
+                            // （完整重试编排见 Task 7 compressWithRetry）
+                            ui.onError("自动压缩失败：" + e.getMessage()
+                                    + "；本轮已停止，可稍后重试或新建会话");
+                            break;
+                        }
                         if (session.messages.size() < before) {
                             int pct = (int) (contextManager.estimate(session.messages) * 100
                                     / contextManager.maxTokens());
