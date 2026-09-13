@@ -17,7 +17,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -49,14 +48,16 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务结果：完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         // 子 agent 请求 = [system, user(任务描述)]
         assertEquals(Message.Role.SYSTEM, llm.lastRequestMessages.get(0).role);
         assertTrue(llm.lastRequestMessages.get(1).content.contains("调研一下"));
         // tool 结果已进入子 agent 自己的消息
-        assertTrue(ui.toolCalls.contains("example"));
+        assertTrue(ui.subToolCalls.contains("1:example"));
+        // 事件走子代理通道；主通道零调用（未串台）
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty());
         // C1 契约：第二轮请求中，tool 消息前必须有含对应 tool_call_id 的 assistant tool_calls 消息
         List<Message> round2 = llm.requests.get(1).messages;
         assertEquals(4, round2.size());
@@ -142,8 +143,9 @@ public class SubAgentLoopTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         class CapturingUi extends RecordingUi {
             final List<com.minion.core.tools.ToolResult> results = new ArrayList<com.minion.core.tools.ToolResult>();
-            @Override public synchronized void onToolResult(String name, com.minion.core.tools.ToolResult result) {
-                super.onToolResult(name, result);
+            @Override public synchronized void onSubAgentToolResult(int no, String name,
+                                                                    com.minion.core.tools.ToolResult result) {
+                super.onSubAgentToolResult(no, name, result);
                 results.add(result);
             }
         }
@@ -164,15 +166,16 @@ public class SubAgentLoopTest {
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("只做了自己的事");
         SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(), llm, registry,
-                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui);
+                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui, null, 1);
         assertEquals("只做了自己的事", sub.run());
-        // 防御拦截：task 调用作为错误 tool 结果回传
-        assertTrue(ui.toolResults.contains("task"));
+        // 防御拦截：task 调用作为错误 tool 结果回传（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:task"));
         com.minion.core.tools.ToolResult err = ui.results.get(0);
         assertFalse(err.ok);
         assertTrue(err.output.contains("task"));
         // 未派发嵌套子 agent：请求仅 2 次（工具轮 + 总结轮），无第三次派发请求
         assertEquals(2, llm.requests.size());
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty());
     }
 
     @Test
@@ -234,16 +237,17 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         sub.run();
         // schema 已剔除（模型不可见）
         for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
             String name = s.getAsJsonObject("function").get("name").getAsString();
             assertFalse("子 agent 不得暴露 AskUserQuestion", "AskUserQuestion".equals(name));
         }
-        // 防御：即使模型违规调用，也返回错误、不挂起
-        assertTrue(ui.toolResults.contains("AskUserQuestion"));
+        // 防御：即使模型违规调用，也返回错误、不挂起（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:AskUserQuestion"));
         assertTrue(ui.asksStarted.isEmpty());
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty());
     }
 
     /** 子 agent 工具集剔除 Skill（防正文注入主会话）；违规调用返回错误 */
@@ -271,18 +275,19 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         sub.run();
         // schema 已剔除（模型不可见）
         for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
             String name = s.getAsJsonObject("function").get("name").getAsString();
             assertFalse("子 agent 不得暴露 Skill", "Skill".equals(name));
         }
-        // 防御：即使模型违规调用，也返回错误、不注入主会话
-        assertTrue(ui.toolResults.contains("Skill"));
+        // 防御：即使模型违规调用，也返回错误、不注入主会话（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:Skill"));
         for (com.minion.core.llm.Message m : loop.messages()) {
             assertFalse("技能正文不得注入主会话", m.pinned);
         }
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty());
     }
 
     /**
@@ -329,7 +334,7 @@ public class SubAgentLoopTest {
                 + oldLlm.requests.size() + " 次", 0, oldLlm.requests.size());
     }
 
-    /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，成功后静默恢复，与主循环一致 */
+    /** 子 agent 429 长重试：先 429 后成功，进入重试提示一条走子代理通道，成功后静默恢复，与主循环一致 */
     @Test
     public void subAgent_rateLimit_retryThenSuccess() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -349,9 +354,10 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertTrue(ui.warnings.isEmpty());    // 成功后静默恢复；重试提示在指示器不进消息区
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
-        assertTrue(ui.errors.isEmpty());
+        // 进入重试只提示一条 notice（恢复静默；长重试不逐次刷屏）
+        assertTrue("仅一条进入重试提示: " + ui.subNotices,
+                ui.subNotices.size() == 1 && ui.subNotices.get(0).contains("自动重试"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
     }
 
     /** 子 agent 429 持续失败：超总时长后总结停止，不无限重试 */
@@ -374,15 +380,15 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
         assertTrue(result.contains("失败"));
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("重试了"));
-        assertTrue(ui.errors.get(0).contains("仍失败"));
+        // 第 0 条=进入重试提示，第 1 条=耗尽提示
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).contains("重试了"));
+        assertTrue(ui.subNotices.get(1).contains("仍失败"));
         assertTrue(llm.requests.size() >= 2 && llm.requests.size() <= 5);
-        assertTrue(!ui.retryAttempts().isEmpty());
-        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
-    /** 子 agent 429 长重试中遇永久性网络错误（retryable=false，DNS 解析失败）：退出重试并复位指示器 */
+    /** 子 agent 429 长重试中遇永久性网络错误（retryable=false，DNS 解析失败）：退出重试并终止 */
     @Test
     public void subAgent_rateLimit_thenPermanentNetwork_resetsRetryProgress() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -405,11 +411,10 @@ public class SubAgentLoopTest {
         assertTrue(result.contains("失败"));
         assertTrue(result.contains("域名无法解析"));
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("域名无法解析"));
-        // 指示器复位：末位必须为 0，不残留"429限流，正在重试中...N次"
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
-        assertTrue(ui.warnings.isEmpty());
+        // 进入重试 1 条 + 永久失败 1 条；不进主通道、不残留重试态
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).contains("域名无法解析"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     /** 子 agent 网络超时：进入长重试，成功后静默恢复（与主循环一致） */
@@ -432,9 +437,8 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
-        assertEquals("网络超时", ui.retryProgress.get(0).label);
-        assertTrue(ui.errors.isEmpty());
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertTrue(ui.subNotices.get(0).contains("网络超时"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     /** 子 agent 零增量闸门：已吐字后网络掉断 → 不重试 */
@@ -456,8 +460,9 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         sub.run();
         assertEquals(1, llm.requests.size());
-        assertTrue(ui.retryAttempts().isEmpty());
-        assertEquals(1, ui.errors.size());
+        assertTrue(ui.subNotices.stream().noneMatch(n -> n.contains("自动重试")));
+        assertEquals(1, ui.subNotices.size());
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     /** 子 agent 网络类耗尽：总结文案用中文标签前缀 */
@@ -477,9 +482,10 @@ public class SubAgentLoopTest {
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
         sub.retryPolicy = new RetryPolicy(10, 10, 50);
         String result = sub.run();
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).startsWith("子 agent 网络超时 重试了"));
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).startsWith("网络超时 重试了"));
         assertTrue(result.contains("网络超时"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     /** 子 agent 429 重试成功但流中断（onError 回调）：错误已在回调提示，指示器复位 */
@@ -501,12 +507,10 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        // 成功路径静默恢复（无警告），onError 回调已提示错误
-        assertTrue(ui.warnings.isEmpty());
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("连接中断"));
-        // 指示器复位：进入重试（1）→ 退出（0）
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        // 成功路径静默恢复（主通道无警告/错误/指示器事件），onError 回调已把错误发到子代理通道
+        assertTrue("末条含连接中断: " + ui.subNotices,
+                !ui.subNotices.isEmpty() && ui.subNotices.get(ui.subNotices.size() - 1).contains("连接中断"));
+        assertTrue("主通道零调用", ui.warnings.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     /** 子 agent 500 服务端报错：进长重试，成功后静默恢复（与主循环一致） */
@@ -529,9 +533,9 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
-        assertTrue(ui.warnings.isEmpty());
-        assertTrue(ui.errors.isEmpty());
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertTrue(ui.subNotices.size() == 1);
+        assertTrue(ui.subNotices.get(0).contains("500"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.warnings.isEmpty());
     }
 
     /** 子 agent 503 服务不可用：500 类纳入长重试（与主循环一致），成功后静默恢复 */
@@ -554,12 +558,12 @@ public class SubAgentLoopTest {
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次长重试
-        assertTrue(ui.warnings.isEmpty());    // 无「自动重试 1 次」
-        assertTrue(ui.errors.isEmpty());
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertTrue(ui.subNotices.size() == 1);
+        assertTrue(ui.subNotices.get(0).contains("503"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.warnings.isEmpty());
     }
 
-    /** 子 agent 重试循环内错误码切换（429 → 502）：进度携带最近一次错误码/响应体 */
+    /** 子 agent 重试循环内错误码切换（429 → 502）：只发首条进入提示，重试最终成功 */
     @Test
     public void subAgent_retry_codeSwitches_suffixFollowsLatestError() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -582,15 +586,10 @@ public class SubAgentLoopTest {
         assertEquals("子任务结果：完成", result);
         // 请求序列：原始 429 → 重试1 429 → 重试2 502 → 重试3 成功（FakeLlmClient 每 streamChat 消耗一回合）
         assertEquals(4, llm.requests.size());
-        assertEquals(4, ui.retryProgress.size());
-        assertEquals(1, ui.retryProgress.get(0).attempt);
-        assertEquals(429, ui.retryProgress.get(0).httpCode);
-        assertEquals(2, ui.retryProgress.get(1).attempt);
-        assertEquals(429, ui.retryProgress.get(1).httpCode);
-        assertEquals(3, ui.retryProgress.get(2).attempt);
-        assertEquals(502, ui.retryProgress.get(2).httpCode);
-        assertEquals("{\"message\":\"bad gateway\"}", ui.retryProgress.get(2).body);
-        assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue()); // 末位复位
+        // 只发首条进入提示；"最近错误标签"由耗尽用例覆盖
+        assertEquals(1, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(0).contains("429"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty());
     }
 
     // ===== 报告落盘（设计 2026-09-13：先落盘再返回摘要+路径，主代理不再重复落盘）=====

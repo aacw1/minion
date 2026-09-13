@@ -57,4 +57,21 @@ public class RecordingUi implements AgentUi {
         for (RetryProgress p : retryProgress) out.add(p.attempt);
         return out;
     }
+
+    // ===== 子代理专用通道（设计 2026-09-13：与主代理分道；主通道断言空 = 未串台）=====
+    public final List<String> subStarts = new ArrayList<String>();     // "编号:描述"
+    public final List<String> subThinking = new ArrayList<String>();
+    public final List<String> subDeltas = new ArrayList<String>();
+    public final List<String> subToolCalls = new ArrayList<String>();  // "编号:工具名"
+    public final List<String> subToolResults = new ArrayList<String>();
+    public final List<String> subDones = new ArrayList<String>();
+    public final List<String> subNotices = new ArrayList<String>();
+
+    @Override public synchronized void onSubAgentStart(int no, String d) { subStarts.add(no + ":" + d); }
+    @Override public synchronized void onSubAgentThinking(int no, String d) { subThinking.add(d); }
+    @Override public synchronized void onSubAgentDelta(int no, String d) { subDeltas.add(d); }
+    @Override public synchronized void onSubAgentToolCall(int no, String n, JsonObject a) { subToolCalls.add(no + ":" + n); }
+    @Override public synchronized void onSubAgentToolResult(int no, String n, ToolResult r) { subToolResults.add(no + ":" + n); }
+    @Override public synchronized void onSubAgentDone(int no, String s) { subDones.add(no + ":" + s); }
+    @Override public synchronized void onSubAgentNotice(int no, String m) { subNotices.add(m); }
 }

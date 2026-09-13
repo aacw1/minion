@@ -62,14 +62,13 @@ public class SubAgentLoop {
     public List<Message> messages() { return messages; }
 
     public String run() {
-        ui.onSubAgentStart(messages.get(1).content);
+        ui.onSubAgentStart(no, messages.get(1).content);
         int retries = 0;
-        final boolean[] inRetry = new boolean[1]; // 瞬时错误重试循环进行中（首个流式增量到达即复位指示器）；方法级：外层 InterruptedException 需访问
         try {
             while (true) {
                 // 中断路径：主循环 interrupt() 取消 in-flight 工具 future → 本线程中断 → 立即中止
                 if (Thread.currentThread().isInterrupted()) {
-                    ui.onWarning("子 agent 已中断");
+                    ui.onSubAgentNotice(no, "已中断");
                     return "子 agent 已中断";
                 }
                 final List<ToolCall>[] toolCalls = new List[1];
@@ -80,39 +79,29 @@ public class SubAgentLoop {
                 final com.minion.core.llm.StreamHandler handler = new com.minion.core.llm.StreamHandler() {
                     @Override
                     public void onThinking(String delta) {
-                        resetRetryOnFirstDelta();
                         thinking.append(delta);
-                        ui.onThinking(delta);
+                        ui.onSubAgentThinking(no, delta);
                     }
                     @Override
                     public void onContent(String delta) {
-                        resetRetryOnFirstDelta();
                         content.append(delta);
-                        ui.onSubAgentDelta(delta);
+                        ui.onSubAgentDelta(no, delta);
                     }
                     @Override
                     public void onFinish(String finishReason, Usage u, List<ToolCall> tcs) {
-                        resetRetryOnFirstDelta(); // 零增量成功（如纯 tool_calls 回复）兜底复位
                         finish[0] = finishReason;
                         usage[0] = u;
                         toolCalls[0] = tcs;
                     }
-                    /** 重试成功后的首个流式回调：立即复位指示器（"重试中"文案消失） */
-                    void resetRetryOnFirstDelta() {
-                        if (inRetry[0]) {
-                            inRetry[0] = false;
-                            ui.onRetryProgress(RetryProgress.none());
-                        }
-                    }
                     @Override
-                    public void onError(LlmException e) { finish[0] = "error"; ui.onError(e.getMessage()); }
+                    public void onError(LlmException e) { finish[0] = "error"; ui.onSubAgentNotice(no, e.getMessage()); }
                 };
                 try {
                     llm.streamChat(messages, subAgentTools(), handler);
                 } catch (LlmException e) {
                     if (Thread.currentThread().isInterrupted()) {
                         // 已被主循环中断（cancel 引发的 Canceled 错误）：不重试
-                        ui.onWarning("子 agent 已中断");
+                        ui.onSubAgentNotice(no, "已中断");
                         return "子 agent 已中断";
                     }
                     if (RetryPolicy.isTransient(e) && noOutputYet(content, thinking)) {
@@ -125,62 +114,59 @@ public class SubAgentLoop {
                         boolean exhausted = false; // 超时总结标志：break 后统一复位指示器再返回
                         String failure = null;     // 重试中遇非瞬时错误的文案：break 后统一复位指示器再返回
                         LlmException last = e;
-                        inRetry[0] = true;
                         while (true) {
                             attempts++;
                             long delay = retryPolicy.delayMs(RetryPolicy.kindOf(last));
-                            ui.onRetryProgress(RetryProgress.from(attempts, last, delay)); // 尝试前更新指示器（含等待时长）
+                            if (attempts == 1) notifyRetryEnter(last); // 只在进入重试时提示一条（长重试逐次提示会刷屏）
                             if (!sleepWithInterruptCheck(delay)) break; // 中断
                             elapsed = System.currentTimeMillis() - retryStart;
                             if (retryPolicy.isExhausted(elapsed)) {
-                                ui.onError("子 agent " + RetryProgress.tag(last) + " 重试了 " + attempts
+                                ui.onSubAgentNotice(no, RetryProgress.tag(last) + " 重试了 " + attempts
                                         + " 次，持续 " + (elapsed / 60000) + " 分钟仍失败，已停止重试");
                                 exhausted = true;
                                 break;
                             }
                             try {
                                 llm.streamChat(messages, subAgentTools(), handler);
-                                // 成功后静默恢复（不打扰正文）：首个流式增量/onFinish 已复位指示器，
+                                // 成功后静默恢复（不打扰正文）：子代理无重试指示器可复位；
                                 // 若流中断（onError 回调已提示）则落下方正常路径处理
                                 break;
                             } catch (LlmException re) {
                                 if (Thread.currentThread().isInterrupted()) break;
                                 if (!RetryPolicy.isTransient(re) || !noOutputYet(content, thinking)) {
-                                    // 永久性/非瞬时错误（DNS 配错、其他 5xx、已吐字断流）：退出重试，
-                                    // 统一复位指示器，不再继续退避
-                                    ui.onError("子 agent 请求失败: " + re.getMessage());
+                                    // 永久性/非瞬时错误（DNS 配错、其他 5xx、已吐字断流）：退出重试，不再继续退避
+                                    ui.onSubAgentNotice(no, "请求失败：" + re.getMessage());
                                     failure = re.getMessage();
                                     break;
                                 }
-                                last = re; // 仍可重试：指示器标签/错误体随最近一次失败更新
+                                last = re; // 仍可重试：下次退避间隔与失败标签随最近一次失败更新
                             }
                         }
-                        if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 退出重试态统一复位（幂等）
                         if (Thread.currentThread().isInterrupted()) {
-                            ui.onWarning("子 agent 已中断");
+                            ui.onSubAgentNotice(no, "已中断");
                             return "子 agent 已中断";
                         }
                         if (exhausted) {
-                            return "子 agent 失败: " + RetryProgress.tag(last) + " 持续 " + (elapsed / 60000) + " 分钟"; // 已 onError
+                            return "子 agent 失败: " + RetryProgress.tag(last) + " 持续 " + (elapsed / 60000) + " 分钟"; // 已发子代理提示
                         }
                         if (failure != null) {
-                            return "子 agent 失败: " + failure; // 已 onError
+                            return "子 agent 失败: " + failure; // 已发子代理提示
                         }
                         if (finish[0] == null && usage[0] == null) {
                             // 防御兜底：正常退出必有 finish/usage 回调（成功 break 后）或
                             // exhausted/failure 标志，理论不可达；保留旧文案以防回归误判
-                            return "子 agent 失败: " + RetryProgress.tag(last) + " 重试超时"; // 已 onError
+                            return "子 agent 失败: " + RetryProgress.tag(last) + " 重试超时"; // 已发子代理提示
                         }
                         // 重试成功：落入下方正常处理
                     } else if (e.retryable && retries < 1 && noOutputYet(content, thinking)) {
                         // 兜底：可重试但未归类错误（现主流错误均已被长重试覆盖，此分支实际不可达）
                         retries++;
-                        ui.onWarning("子 agent 请求失败（" + e.getMessage() + "），自动重试 1 次");
+                        ui.onSubAgentNotice(no, "请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避与主循环一致：429 限流 2s，其余（网络/超时）0.5s
                         Thread.sleep(e.type == LlmException.Type.RATE_LIMIT ? 2000 : 500);
                         continue; // 消息未变，直接重发本轮
                     } else {
-                        ui.onError("子 agent 请求失败: " + e.getMessage());
+                        ui.onSubAgentNotice(no, "请求失败：" + e.getMessage());
                         return "子 agent 失败: " + e.getMessage();
                     }
                 }
@@ -188,7 +174,7 @@ public class SubAgentLoop {
                         || !"tool_calls".equals(finish[0])) {
                     String report = content.toString();
                     String ret = persistReport(report);
-                    ui.onSubAgentDone(ret);
+                    ui.onSubAgentDone(no, ret);
                     return ret;
                 }
                 // assistant 工具调用消息先入历史——tool 消息必须紧跟含对应 tool_call_id 的
@@ -203,16 +189,15 @@ public class SubAgentLoop {
                     ToolResult result = runOneTool(call);
                     messages.add(Message.toolResult(call.id, call.name,
                             ToolResult.outputForApi(result.output, emptyOutputPlaceholder)));
-                    ui.onToolResult(call.name, result);
+                    ui.onSubAgentToolResult(no, call.name, result);
                 }
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // 恢复中断标志，不吞掉中断
-            if (inRetry[0]) { inRetry[0] = false; ui.onRetryProgress(RetryProgress.none()); } // 瞬时错误重试等待中被真实中断（future.cancel(true)）：复位指示器
-            ui.onWarning("子 agent 已中断");
+            ui.onSubAgentNotice(no, "已中断");
             return "子 agent 已中断";
         } catch (Exception e) {
-            ui.onError("子 agent 异常: " + e.getMessage());
+            ui.onSubAgentNotice(no, "运行异常：" + e.getMessage());
             return "子 agent 异常: " + e.getMessage();
         }
     }
@@ -235,6 +220,12 @@ public class SubAgentLoop {
                 ? "完整报告已落盘："
                 : "完整报告 " + report.length() + " 字符已落盘：";
         return head + "\n\n（" + note + dumped.toAbsolutePath() + "，可用 Read 查看）";
+    }
+
+    /** 进入重试提示：长重试逐次发事件会长时间刷屏（429 每 5s 一次），只在首次进入时提示一条；
+     *  恢复不另行提示（子代理无指示器，用户从后续内容行自然看出已恢复） */
+    private void notifyRetryEnter(LlmException last) {
+        ui.onSubAgentNotice(no, RetryProgress.tag(last) + "，正在按重试策略自动重试…");
     }
 
     /** 零增量闸门：已吐过正文/思考即不可长重试（与主循环一致，防重复输出） */
@@ -292,7 +283,7 @@ public class SubAgentLoop {
             if (!confirmGate.check(tool, args)) {
                 return ToolResult.error("用户拒绝了该操作（" + call.name + "）");
             }
-            ui.onToolCall(call.name, args);
+            ui.onSubAgentToolCall(no, call.name, args);
             try {
                 return tool.execute(args);
             } catch (Exception e) {

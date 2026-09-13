@@ -6,9 +6,16 @@ public interface AgentUi {
     default void onContent(String delta) { }
     default void onToolCall(String name, com.google.gson.JsonObject args) { }
     default void onToolResult(String name, com.minion.core.tools.ToolResult result) { }
-    default void onSubAgentStart(String description) { }
-    default void onSubAgentDelta(String delta) { }
-    default void onSubAgentDone(String summary) { }
+    default void onSubAgentStart(int no, String description) { }
+    /** 子代理思考增量（渲染为【子代理N】思考段；与主代理 onThinking 分道，防串台） */
+    default void onSubAgentThinking(int no, String delta) { }
+    /** 子代理正文增量（渲染为【子代理N】回复段） */
+    default void onSubAgentDelta(int no, String delta) { }
+    default void onSubAgentToolCall(int no, String name, com.google.gson.JsonObject args) { }
+    default void onSubAgentToolResult(int no, String name, com.minion.core.tools.ToolResult result) { }
+    default void onSubAgentDone(int no, String summary) { }
+    /** 子代理运行提示（重试/中断/异常等；no 用于消息区【子代理N】标识，不驱动主代理重试指示器） */
+    default void onSubAgentNotice(int no, String message) { }
     default void onStatsLine(String line) { }
     default void onError(String message) { }
     default void onWarning(String message) { }

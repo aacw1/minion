@@ -134,4 +134,11 @@ public class EventListTest {
         assertEquals(EventList.Kind.SYSTEM, seen.get(0).kind);
         assertEquals("已加载技能: x", seen.get(0).text);
     }
+
+    /** Ev 4 参构造带 subAgentId；3 参委托默认 0 */
+    @Test
+    public void ev_subAgentIdDefaultZero() {
+        assertEquals(0, new Ev(EventList.Kind.CONTENT, "a", null).subAgentId);
+        assertEquals(3, new Ev(EventList.Kind.CONTENT, "a", null, 3).subAgentId);
+    }
 }

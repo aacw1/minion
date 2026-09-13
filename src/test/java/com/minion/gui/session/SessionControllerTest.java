@@ -299,4 +299,48 @@ public class SessionControllerTest {
         assertEquals(98000, got[0]);
         assertEquals(900000, got[1]);
     }
+
+    /** 子代理事件带编号路由：思考/正文复用 THINKING/CONTENT，工具/提示/完成同样带 id；主代理事件 id=0 */
+    @Test
+    public void subAgentEvents_carrySubAgentId() {
+        SessionController c = new SessionController();
+        c.onSubAgentStart(2, "调研");
+        c.onSubAgentThinking(2, "想");
+        c.onSubAgentDelta(2, "正文");
+        c.onSubAgentToolCall(2, "Bash", new com.google.gson.JsonObject());
+        c.onSubAgentToolResult(2, "Bash", ToolResult.success("out"));
+        c.onSubAgentNotice(2, "已中断");
+        c.onSubAgentDone(2, "结论");
+        c.onContent("主回复");
+        List<Ev> evs = c.eventList().snapshot();
+        assertEquals(8, evs.size());
+        assertEquals(EventList.Kind.SUB_AGENT_START, evs.get(0).kind);
+        assertEquals(2, evs.get(0).subAgentId);
+        assertEquals(EventList.Kind.THINKING, evs.get(1).kind);
+        assertEquals(2, evs.get(1).subAgentId);
+        assertEquals(EventList.Kind.CONTENT, evs.get(2).kind);
+        assertEquals(2, evs.get(2).subAgentId);
+        assertEquals(EventList.Kind.TOOL_CALL, evs.get(3).kind);
+        assertEquals(2, evs.get(3).subAgentId);
+        assertEquals(EventList.Kind.TOOL_RESULT, evs.get(4).kind);
+        assertEquals(2, evs.get(4).subAgentId);
+        assertEquals(EventList.Kind.WARNING, evs.get(5).kind);
+        assertEquals(2, evs.get(5).subAgentId);
+        assertEquals(EventList.Kind.SUB_AGENT_DONE, evs.get(6).kind);
+        assertEquals(2, evs.get(6).subAgentId);
+        assertEquals(0, evs.get(7).subAgentId); // 主代理回复 id=0
+    }
+
+    /** 重新加载会话不显示子代理信息：replayHistory 只重演主代理历史，全部事件 subAgentId=0 */
+    @Test
+    public void replayHistory_neverEmitsSubAgentId() {
+        SessionController c = new SessionController();
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.user("任务"));
+        msgs.add(Message.assistant("报告摘要（含落盘路径）"));
+        c.replayHistory(msgs);
+        for (Ev e : c.eventList().snapshot()) {
+            assertEquals("重载历史不得带子代理标识", 0, e.subAgentId);
+        }
+    }
 }

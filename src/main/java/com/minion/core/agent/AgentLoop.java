@@ -108,7 +108,7 @@ public class AgentLoop {
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
             int no = subAgentSeq.incrementAndGet();
-            ui.onSubAgentStart(desc); // Task 3 改为 onSubAgentStart(no, desc)
+            ui.onSubAgentStart(no, desc);
             SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
                     this.llm, registry, confirmGate, ui, sessionTmpDir, no);
             sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
