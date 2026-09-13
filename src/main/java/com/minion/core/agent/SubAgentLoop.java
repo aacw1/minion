@@ -25,7 +25,7 @@ public class SubAgentLoop {
     private final ToolRegistry registry;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
-    /** 瞬时错误长重试策略（与主循环一致；测试可覆写小参数） */
+    /** 瞬时错误长重试策略（与主循环一致：429/超时/网络 5s、500 类 30s，墙钟 12 分钟；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 工具空输出占位（AgentLoop 创建时注入；开启时成功空输出发「输出内容为空」占位） */
     public boolean emptyOutputPlaceholder = false;
@@ -96,7 +96,8 @@ public class SubAgentLoop {
                         return "子 agent 已中断";
                     }
                     if (isTransientError(e) && noOutputYet(content, thinking)) {
-                        // 瞬时错误长重试与主循环一致：固定 5s/次，墙钟总时长 20 分钟；
+                        // 瞬时错误长重试与主循环一致：等待时长按最近一次失败类别（429/超时/网络 5s、500 类 30s），
+                        // 墙钟总时长 12 分钟；
                         // 覆盖 429/500/502 + 网络超时 + 可恢复网络错误；零增量闸门防重复输出
                         int attempts = 0;
                         long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次请求自身耗时
@@ -108,7 +109,7 @@ public class SubAgentLoop {
                         while (true) {
                             attempts++;
                             ui.onRetryProgress(RetryProgress.from(attempts, last)); // 尝试前立即更新指示器
-                            long delay = retryPolicy.delayMs(attempts);
+                            long delay = retryPolicy.delayMs(RetryPolicy.kindOf(last));
                             if (!sleepWithInterruptCheck(delay)) break; // 中断
                             elapsed = System.currentTimeMillis() - retryStart;
                             if (retryPolicy.isExhausted(elapsed)) {

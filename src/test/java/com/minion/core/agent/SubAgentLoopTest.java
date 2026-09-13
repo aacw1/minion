@@ -345,7 +345,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
@@ -369,7 +369,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 20, 50); // 快速耗尽
+        sub.retryPolicy = new RetryPolicy(10, 20, 50); // 快速耗尽
         long start = System.currentTimeMillis();
         String result = sub.run();
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
@@ -399,7 +399,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 20, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 20, 60000);
         String result = sub.run();
         // 永久性网络错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
         assertTrue(result.contains("失败"));
@@ -428,7 +428,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
@@ -453,7 +453,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         sub.run();
         assertEquals(1, llm.requests.size());
         assertTrue(ui.retryAttempts().isEmpty());
@@ -475,7 +475,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 50);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50);
         String result = sub.run();
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).startsWith("子 agent 网络超时 重试了"));
@@ -498,7 +498,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         // 成功路径静默恢复（无警告），onError 回调已提示错误
@@ -525,7 +525,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 测试短固定间隔
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短固定间隔
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
@@ -552,7 +552,7 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         // 请求序列：原始 429 → 重试1 429 → 重试2 502 → 重试3 成功（FakeLlmClient 每 streamChat 消耗一回合）

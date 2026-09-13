@@ -55,7 +55,7 @@ public class AgentLoop {
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
-    /** 瞬时错误长重试策略（429/500/502；默认固定 5s/次，总时长 20 分钟；测试可覆写小参数） */
+    /** 瞬时错误长重试策略（429/超时/网络 5s、500 类 30s；墙钟总时长 12 分钟；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 工具空输出占位（配置 agent.emptyOutput.placeholder 注入；开启时成功空输出发「输出内容为空」占位） */
     public boolean emptyOutputPlaceholder = false;
@@ -466,7 +466,8 @@ public class AgentLoop {
                         break;
                     }
                     if (isTransientError(e) && noOutputYet(content, thinking)) {
-                        // 瞬时错误长重试（内网模型资源差）：固定 5s/次，墙钟总时长 20 分钟（RetryPolicy.transientErrors）；
+                        // 瞬时错误长重试（内网模型资源差）：等待时长按最近一次失败类别（429/超时/网络 5s、500 类 30s），
+                        // 墙钟总时长 12 分钟（RetryPolicy.transientErrors）；
                         // 覆盖 429/500/502 + 网络超时 + 可恢复网络错误；进度经 onRetryProgress 进左下角指示器，
                         // 成功/首个流式增量静默恢复，超时一次性总结停止。
                         // 零增量闸门：本次请求已吐过正文/思考即不重试——重试复用同一 handler 与累加器，
@@ -478,7 +479,7 @@ public class AgentLoop {
                         while (true) {
                             attempts++;
                             ui.onRetryProgress(RetryProgress.from(attempts, last)); // 尝试前立即更新指示器
-                            long delay = retryPolicy.delayMs(attempts);
+                            long delay = retryPolicy.delayMs(RetryPolicy.kindOf(last));
                             if (!sleepWithInterruptCheck(delay)) break; // 用户中断
                             long elapsed = System.currentTimeMillis() - retryStart;
                             if (retryPolicy.isExhausted(elapsed)) {
