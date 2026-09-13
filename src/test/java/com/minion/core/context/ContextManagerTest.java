@@ -305,4 +305,45 @@ public class ContextManagerTest {
         cm.update(100);
         assertEquals(100, cm.maxTokens());
     }
+
+    /** 定制压缩指令：压缩请求的 system 使用构造时注入的指令（子代理版），默认构造仍用主代理版 */
+    @Test
+    public void compress_customSystemPrompt_usedInRequest() throws Exception {
+        FakeLlmClient llm = new FakeLlmClient();
+        ContextManager cm = new ContextManager(50, llm, 0, "【子代理压缩指令】保留任务目标与落盘路径");
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 4; i++) {
+            msgs.add(Message.user("历史" + i));
+            msgs.add(Message.assistant("回复" + i));
+        }
+        cm.compress(msgs);
+        assertEquals("【子代理压缩指令】保留任务目标与落盘路径",
+                llm.lastRequestMessages.get(0).content);
+    }
+
+    /** 默认构造：system 仍是主代理版指令（前缀校验，防止抽取时误改） */
+    @Test
+    public void compress_defaultSystemPrompt_isMainPrompt() throws Exception {
+        FakeLlmClient llm = new FakeLlmClient();
+        ContextManager cm = new ContextManager(50, llm, 0);
+        List<Message> msgs = new ArrayList<Message>();
+        for (int i = 0; i < 4; i++) {
+            msgs.add(Message.user("历史" + i));
+            msgs.add(Message.assistant("回复" + i));
+        }
+        cm.compress(msgs);
+        assertTrue(llm.lastRequestMessages.get(0).content.startsWith("你是 minion 的上下文压缩器"));
+    }
+
+    /** 子代理定制指令：访问器返回构造时注入的指令，且文案保留 5000 字上限（压缩输出不得失控） */
+    @Test
+    public void subAgentCompressSystem_carriesSummaryLimit() {
+        ContextManager cm = new ContextManager(50, new FakeLlmClient(), 0,
+                ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        assertEquals(ContextManager.SUB_AGENT_COMPRESS_SYSTEM, cm.compressSystem());
+        assertTrue("指令应写明 5000 字以内",
+                ContextManager.SUB_AGENT_COMPRESS_SYSTEM.contains("5000 字以内"));
+        assertTrue("指令应强调已落盘路径（后续汇报要引用）",
+                ContextManager.SUB_AGENT_COMPRESS_SYSTEM.contains("落盘"));
+    }
 }

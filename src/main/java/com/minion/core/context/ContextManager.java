@@ -10,7 +10,8 @@ import java.util.List;
 
 /** 上下文管理：token 估算、阈值判断、单次压缩（最早原子组 → 摘要置前）。
  *  阈值 0.65 / 压缩比例 0.8 / 摘要上限 5000 字 / 至少保留最近 6 个原子组为硬编码常量（不进模型配置，只保留 maxContextTokens）。
- *  压缩失败不再降级：直接抛 LlmException，由 AgentLoop 按重试策略处理。 */
+ *  压缩失败不再降级：直接抛 LlmException，由 AgentLoop 按重试策略处理。
+ *  压缩指令可定制（默认主代理版；子代理用 SUB_AGENT_COMPRESS_SYSTEM 强调任务目标/进度/落盘路径）。 */
 public class ContextManager {
 
     /** 摘要输出上限（字符）：写入压缩器 system 提示词 */
@@ -28,16 +29,36 @@ public class ContextManager {
           + "相关文件路径、代码约定、用户偏好。只输出摘要正文，不要客套，"
           + SUMMARY_MAX_CHARS + " 字以内。";
 
+    /** 子代理压缩指令：与主代理版（用户偏好/代码约定导向）不同——子代理一次只做一个任务，
+     *  压缩后必须还能继续干活/汇报，故强调任务目标与验收标准、已完成步骤与结论、
+     *  已落盘文件完整路径（后续汇报要引用）、错误与未完成项 */
+    public static final String SUB_AGENT_COMPRESS_SYSTEM =
+            "你是 minion 子代理的上下文压缩器。把对话历史压缩成一段中文摘要，保留："
+          + "当前任务目标与验收标准、已完成的步骤与结论、已落盘文件的完整路径、"
+          + "遇到的错误与未完成项。只输出摘要正文，不要客套，"
+          + SUMMARY_MAX_CHARS + " 字以内。";
+
     // FX 线程 update/setLlm 写入、会话工作线程 shouldCompress/compress 读取——volatile 防 JMM 数据竞争
     private volatile int maxContextTokens;
     private volatile LlmClient llm;
     private final int systemTokens;    // system 提示词 token 估算在构造时固定，保持不变
+    /** 压缩指令（主代理默认版 COMPRESS_SYSTEM / 子代理定制版 SUB_AGENT_COMPRESS_SYSTEM） */
+    private final String compressSystem;
 
     public ContextManager(int maxContextTokens, LlmClient llm, int systemTokens) {
+        this(maxContextTokens, llm, systemTokens, COMPRESS_SYSTEM);
+    }
+
+    /** 定制压缩指令（子代理用；默认构造 = 主代理版，行为零变化） */
+    public ContextManager(int maxContextTokens, LlmClient llm, int systemTokens, String compressSystemPrompt) {
         this.maxContextTokens = maxContextTokens;
         this.llm = llm;
         this.systemTokens = systemTokens;
+        this.compressSystem = compressSystemPrompt;
     }
+
+    /** 当前压缩指令（诊断/测试断言用：子代理实例应为 SUB_AGENT_COMPRESS_SYSTEM） */
+    public String compressSystem() { return compressSystem; }
 
     /** 模型参数热更新（设置窗修改后调用；运行时生效于下一轮压缩判断） */
     public void update(int maxContextTokens) {
@@ -160,7 +181,7 @@ public class ContextManager {
         if (prefix != null) sb.append(prefix).append('\n');
         sb.append(batch);
         String s = llm.completeChat(
-                Collections.singletonList(Message.user(sb.toString())), COMPRESS_SYSTEM);
+                Collections.singletonList(Message.user(sb.toString())), compressSystem);
         if (s == null || s.trim().isEmpty()) {
             throw new LlmException(LlmException.Type.EMPTY_RESPONSE, "压缩模型返回空摘要", true);
         }

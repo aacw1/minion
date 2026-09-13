@@ -755,4 +755,123 @@ public class SubAgentLoopTest {
             assertFalse("中断不落盘", s.findAny().isPresent());
         }
     }
+
+    // ===== 子代理上下文压缩（与主代理同策略；任务提示词 pinned 豁免）=====
+
+    /** 超阈值自动压缩：任务提示词（pinned）保留、摘要置前、压缩指令为子代理定制版、提示走子代理通道 */
+    @Test
+    public void subAgent_compressesOverThreshold_withSubAgentPrompt() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】子代理历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("压缩后继续完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        // 子代理压缩器：同参数（50×0.65 触发）+ 子代理定制指令
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertEquals("压缩后继续完成", result);
+        assertEquals("应发生一次压缩（压缩指令文案由 ContextManagerTest 直接覆盖——"
+                + "completeChat 的 lastRequestMessages 会被随后的 streamChat 覆盖，此处不断言）",
+                1, llm.completeChatRequests.size());
+        boolean hasSummary = false, taskPinned = false;
+        for (Message m : sub.messages()) {
+            if (m.summary) hasSummary = true;
+            if (m.pinned && m.content != null && m.content.contains("调研一下")) taskPinned = true;
+        }
+        assertTrue("摘要应置前存在", hasSummary);
+        assertTrue("任务提示词必须 pinned 保留（不被压进摘要）", taskPinned);
+        // 提示走子代理通道；主通道无压缩指示器事件（子代理不驱动主指示器）
+        assertTrue(ui.subNotices.stream().anyMatch(n -> n.contains("已压缩")));
+        assertTrue(ui.retryProgress.isEmpty());
+    }
+
+    /** 压缩失败（不可重试）：中止子代理并返回失败文本；未发送请求；主通道零调用 */
+    @Test
+    public void subAgent_compressFailure_stopsWithFailureText() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.throwOnCompleteChat = true; // 压缩请求异常（不可重试）
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) {
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertTrue("返回失败文本: " + result, result.startsWith("子代理失败: 上下文压缩失败（"));
+        assertTrue("失败提示走子代理通道", ui.subNotices.stream().anyMatch(n -> n.contains("上下文压缩失败")));
+        assertTrue("压缩失败后不得发送请求", llm.requests.isEmpty());
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
+    }
+
+    /** 主代理未启用压缩（contextManager=null）：子代理不压缩（不调 completeChat），行为同旧版 */
+    @Test
+    public void subAgent_withoutContextManager_noCompress() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.messages().add(Message.user("很多历史")); // 即便消息多也不判断
+        String result = sub.run();
+
+        assertEquals("完成", result);
+        assertTrue(llm.completeChatRequests.isEmpty());
+    }
+
+    /** 子代理压缩器接线（白盒）：主启用压缩 → 子代理压缩器参数与主一致且用定制指令；主未启用 → null */
+    @Test
+    public void agentLoop_buildSubContextManager_followsMain() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        com.minion.core.context.ContextManager cm =
+                new com.minion.core.context.ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+
+        com.minion.core.context.ContextManager sub = loop.buildSubContextManager();
+        assertNotNull("主启用压缩时子代理必须接线压缩器", sub);
+        assertEquals("子代理压缩参数与主代理一致", 50, sub.maxTokens());
+        assertEquals("子代理用定制压缩指令", com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM,
+                sub.compressSystem());
+
+        AgentLoop noCm = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        assertNull("主未启用压缩时子代理不压缩", noCm.buildSubContextManager());
+    }
 }

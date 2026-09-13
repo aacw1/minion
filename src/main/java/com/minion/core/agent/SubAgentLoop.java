@@ -1,6 +1,8 @@
 package com.minion.core.agent;
 
 import com.google.gson.JsonObject;
+import com.minion.core.context.ContextCompressor;
+import com.minion.core.context.ContextManager;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
@@ -37,6 +39,9 @@ public class SubAgentLoop {
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 工具空输出占位（AgentLoop 创建时注入；开启时成功空输出发「输出内容为空」占位） */
     public boolean emptyOutputPlaceholder = false;
+    /** 上下文压缩器（AgentLoop 派发时注入：与主代理同参数同策略；null=不压缩。
+     *  systemTokens=0——子代理 system 提示词在 messages 内，由 TokenCounter 统一估算） */
+    public ContextManager contextManager;
     private final List<Message> messages = new ArrayList<Message>();
 
     /** 旧签名（不落盘，供不关心落盘的测试/调用方）：委托新构造 */
@@ -55,7 +60,9 @@ public class SubAgentLoop {
         this.reportDir = reportDir;
         this.no = no;
         messages.add(Message.system(systemPrompt + SUB_SYSTEM_SUFFIX));
-        messages.add(Message.user("任务: " + taskDescription));
+        Message task = Message.user("任务: " + taskDescription);
+        task.pinned = true; // 任务提示词压缩豁免（设计要求：任务不能被压掉）
+        messages.add(task);
     }
 
     /** 消息数组（压缩判断/测试断言用） */
@@ -70,6 +77,19 @@ public class SubAgentLoop {
                 if (Thread.currentThread().isInterrupted()) {
                     ui.onSubAgentNotice(no, "已中断");
                     return "子 agent 已中断";
+                }
+                // 上下文压缩检查点（与主代理同策略）：超阈值 → 压缩；失败中止并返回失败文本
+                if (contextManager != null && contextManager.shouldCompress(messages)) {
+                    String fail = compressSubContext();
+                    if (fail != null) {
+                        if (Thread.currentThread().isInterrupted()) {
+                            // 压缩等待期间被停止：与其他中断路径同文案（spec 4.2「中断 → 子代理已中断」）
+                            ui.onSubAgentNotice(no, "已中断");
+                            return "子 agent 已中断";
+                        }
+                        ui.onSubAgentNotice(no, "上下文压缩失败：" + fail);
+                        return "子代理失败: 上下文压缩失败（" + fail + "）";
+                    }
                 }
                 final List<ToolCall>[] toolCalls = new List[1];
                 final String[] finish = new String[1];
@@ -226,6 +246,32 @@ public class SubAgentLoop {
      *  恢复不另行提示（子代理无指示器，用户从后续内容行自然看出已恢复） */
     private void notifyRetryEnter(LlmException last) {
         ui.onSubAgentNotice(no, RetryProgress.tag(last) + "，正在按重试策略自动重试…");
+    }
+
+    /** 子代理上下文压缩：ContextCompressor 承载重试算法（与主代理同一套）；
+     *  成功/无可压缩返回 null（继续任务），失败返回原因（调用方中止并返回失败文本），中断返回"已中断"。
+     *  成功时原地替换 messages 内容：messages 是 final 的稳定引用（压缩结果本身是新列表实例） */
+    private String compressSubContext() {
+        final boolean[] notified = new boolean[1];
+        ContextCompressor.Result r = new ContextCompressor(retryPolicy).run(contextManager, messages,
+                new ContextCompressor.Sink() {
+                    @Override public void onRetryProgress(RetryProgress p) {
+                        if (notified[0]) return; // 长重试逐次提示会刷屏：只在进入重试时提示一次
+                        notified[0] = true;
+                        String label = p.label != null ? p.label : String.valueOf(p.httpCode);
+                        ui.onSubAgentNotice(no, "上下文压缩失败（" + label + "），正在按重试策略自动重试…");
+                    }
+                    @Override public boolean interrupted() { return Thread.currentThread().isInterrupted(); }
+                });
+        if (r.outcome == ContextCompressor.Outcome.OK) {
+            messages.clear();
+            messages.addAll(r.messages); // 摘要置前 + pinned 任务提示词常驻（压缩结果由 ContextManager 保证）
+            ui.onSubAgentNotice(no, "已压缩上下文并继续任务");
+            return null;
+        }
+        if (r.outcome == ContextCompressor.Outcome.NOTHING) return null; // 阈值触发但暂无可压缩：继续
+        if (r.outcome == ContextCompressor.Outcome.INTERRUPTED) return "已中断";
+        return r.failReason;
     }
 
     /** 零增量闸门：已吐过正文/思考即不可长重试（与主循环一致，防重复输出） */

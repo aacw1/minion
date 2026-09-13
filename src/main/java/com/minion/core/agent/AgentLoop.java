@@ -113,6 +113,7 @@ public class AgentLoop {
             SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
                     this.llm, registry, confirmGate, ui, sessionTmpDir, no);
             sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
+            sub.contextManager = buildSubContextManager(); // 子代理压缩接线（null=主未启用，不压缩）
             return sub.run();
         });
     }
@@ -210,6 +211,16 @@ public class AgentLoop {
     /** 当前系统提示（含已加载技能），子 agent 复用 */
     public String buildSystemPrompt() {
         return promptBuilder.build(allSkills);
+    }
+
+    /** 子代理上下文压缩器：与主代理同参数（主未启用压缩则返回 null=子代理不压缩）；
+     *  指令用子代理定制版；systemTokens=0——子代理 system 提示词在 messages 内，由 TokenCounter 统一估算。
+     *  每次派发时构建（模型参数热更新后新子代理即生效）；包内可见供测试断言。 */
+    ContextManager buildSubContextManager() {
+        ContextManager mainCm = this.contextManager;
+        if (mainCm == null) return null;
+        return new ContextManager(mainCm.maxTokens(), this.llm, 0,
+                ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
     }
 
     public void setSubAgentRunner(java.util.function.Function<JsonObject, String> runner) {
