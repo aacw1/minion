@@ -121,4 +121,74 @@ public class ChatViewStreamBufferTest {
         buffers.clear();
         assertEquals("", buffers.of(1).content());
     }
+
+    // ===== Fix Round 1：并发交错合并（ActiveStreams）+ 子代理完成缓冲回收 =====
+
+    /** 并发交错下按 (kind, owner) 引用定位原段：A 的流被 B 的段隔开后仍命中 A 的段，
+     *  不会把整段累积文本注入新段（否则表现为同一子代理正文/思考重复前缀，4 路并发下为常态） */
+    @Test
+    public void activeStreams_survivesInterleaving() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        assertEquals("A1", active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+        assertNull("kind 不同不得命中", active.get(ChatView.StreamKind.THINK, 1));
+        assertNull("主人不同不得命中", active.get(ChatView.StreamKind.REPLY, 3));
+    }
+
+    /** 轮次边界只断该主人的流引用：A 的工具调用不得让 B 正在累积的流另起新段 */
+    @Test
+    public void activeStreams_clearOwner_onlyTargetOwner() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        active.clearOwner(1);
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+    }
+
+    /** 思考流定稿后引用移除：后续 THINKING 增量另起新段（与旧的末段判等语义一致） */
+    @Test
+    public void activeStreams_removeKindOnly() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.THINK, 1, "T1");
+        active.put(ChatView.StreamKind.REPLY, 1, "R1");
+        active.remove(ChatView.StreamKind.THINK, 1);
+        assertNull(active.get(ChatView.StreamKind.THINK, 1));
+        assertEquals("R1", active.get(ChatView.StreamKind.REPLY, 1));
+    }
+
+    /** 段被截断（>200 段移除头部）后引用失效：流式增量不得写进已不在场景中的段 */
+    @Test
+    public void activeStreams_removeValue_invalidatesTrimmedSegment() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        active.removeValue("A1");
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+    }
+
+    /** 清空（删会话）后所有活跃引用释放 */
+    @Test
+    public void activeStreams_clearReleasesAll() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.clear();
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+    }
+
+    /** 子代理完成回收缓冲：条目删除（防会话内条目随派发数增长），其他主人不受影响 */
+    @Test
+    public void buffers_removeReleasesOwner() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        assertEquals(2, buffers.size());
+        buffers.remove(1);
+        assertEquals(1, buffers.size());
+        assertEquals("", buffers.of(1).content()); // 移除后再取 = 全新空缓冲
+        assertEquals("子2", buffers.of(2).content());
+    }
 }

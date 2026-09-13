@@ -25,7 +25,8 @@ import java.util.function.DoubleConsumer;
  * 整区背景 #121314（.panel-dark）铺满正文窗口（配合 ScrollPane fitToHeight）；
  * 正文 TextArea 高度自适应（MessageTextArea）内容全部平铺、无内部滚动条；
  * 段内原生拖选/Ctrl+C/右键复制。
- * 流式身份 = (StreamKind, subAgentId)：THINK/REPLY 末段就地更新正文，NONE 静态行（输入/工具/系统等）永不参与就地更新；
+ * 流式身份 = (StreamKind, subAgentId)：THINK/REPLY 按活跃段引用就地更新正文（并发交错不串台、不起重复段），
+ * NONE 静态行（输入/工具/系统等）永不参与就地更新；
  * 按 subAgentId 隔离——并发子代理与主代理的思考/正文交错时不串台（子代理段带【子代理N】标签 + log-subagent 配色）。
  */
 public class ChatView extends VBox {
@@ -40,6 +41,9 @@ public class ChatView extends VBox {
     private final SessionHandle handle;
     /** 流式缓冲（按主人 subAgentId 分组）：THINKING/CONTENT 增量累积，轮次边界只清对应主人（纯逻辑，见 StreamBuffers） */
     private final StreamBuffers streams = new StreamBuffers();
+
+    /** 活跃流段引用（按主人+流身份定位最近段）：并发交错下就地更新原段，不重复起段/重复前缀（纯逻辑，见 ActiveStreams） */
+    private final ActiveStreams<Seg> activeStreams = new ActiveStreams<Seg>();
 
     /** 用户消息到达时的"滚动到底"回调（MainWindow 注入：强制贴底 + 布局完成后置底） */
     private Runnable scrollBottomRequest;
@@ -89,7 +93,7 @@ public class ChatView extends VBox {
         final MessageTextArea body;      // 焦点治理目标（collapsible 段 = 内部内容体）
         final CollapsibleText collapsible; // null = 普通段
         final StreamKind kind;
-        /** 段主人：0=主代理，>0=子代理编号（流式就地更新只在同主人同 kind 的末段进行） */
+        /** 段主人：0=主代理，>0=子代理编号（流式就地更新只在同主人同 kind 的活跃段进行，见 ActiveStreams） */
         final int subAgentId;
         boolean thinkFinalized; // THINK 段已按最终长度定稿（防 CONTENT 增量重复折叠覆盖手动展开）
         Seg(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
@@ -177,6 +181,7 @@ public class ChatView extends VBox {
         getChildren().clear();
         segs.clear();
         streams.clear();
+        activeStreams.clear();
         empty = true;
         replayed = 0; // 清空后游标归零：下次 bind 从 0 全量重放（clear 仅删除会话回收路径调用）
         getChildren().add(hint());
@@ -188,7 +193,11 @@ public class ChatView extends VBox {
         // 多轮 agent 回合间无 USER_MESSAGE，若不清零则多轮回复文本跨轮累积进同一段，
         // 每轮内容越滚越长，表现为"一直在回复同一段内容"（线上实证，用户误判上下文错乱）；
         // 按 id 只清对应主人：子代理工具调用不得清掉主代理/其他子代理正在累积的段
-        if (StreamBuffer.isRoundBoundary(e.kind)) streams.onRoundBoundary(id);
+        if (StreamBuffer.isRoundBoundary(e.kind)) {
+            streams.onRoundBoundary(id);
+            // 缓冲清零 = 该主人本轮流结束：断开流段引用，下一次增量另起新段（不合并进边界前的旧段）
+            activeStreams.clearOwner(id);
+        }
         // 思考段定稿：任何非思考事件到达即该主人思考结束，按最终长度折叠（≥阈值折叠、短展开）；
         // 按 id 隔离：主代理事件不得把并发子代理的思考段提前折叠（反之亦然）
         if (e.kind != EventList.Kind.THINKING) finalizeThinking(id);
@@ -269,8 +278,14 @@ public class ChatView extends VBox {
                         statusSummary(IconFactory.play(), "子任务: " + e.text), null, StreamKind.NONE, false, id);
                 break;
             case SUB_AGENT_DONE:
+                // 报告全文进可折叠正文（长报告沿用既有折叠机制，展开可见全文与落盘路径）；
+                // 摘要只留「完成」——原实现把 8000+ 字符报告塞进单个不可换行/不可选中的 Label，
+                // 超宽截断且路径在末尾最易被裁掉（Fix Round 1 P1，对齐 spec:156-157）
                 appendCollapsible(tagOf(id, "【工具】"), "log-subagent",
-                        statusSummary(IconFactory.check(), "子任务完成: " + e.text), null, StreamKind.NONE, false, id);
+                        statusSummary(IconFactory.check(), "完成"), e.text, StreamKind.NONE, false, id);
+                // 完成后回收缓冲与流段引用（子代理不再发事件；防会话内条目随派发数增长，Fix Round 1 P3）
+                streams.remove(id);
+                activeStreams.clearOwner(id);
                 break;
             default:
                 break;
@@ -289,8 +304,8 @@ public class ChatView extends VBox {
     }
 
     /** 追加一段控制台输出（首段先清掉占位提示；kind 仅记录流身份，NONE 静态行恒新起一段）；
-     *  subAgentId=段主人（0=主代理，>0=子代理编号，用于流式判等与思考定稿隔离） */
-    private void append(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
+     *  subAgentId=段主人（0=主代理，>0=子代理编号，用于流式判等与思考定稿隔离）；返回新段供流式引用登记 */
+    private Seg append(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
         if (empty) {
             getChildren().clear();
             empty = false;
@@ -300,6 +315,7 @@ public class ChatView extends VBox {
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
+        return seg;
     }
 
     /** 焦点治理：任一段获得焦点即清除其他段选区（选区是 TextInputControl 私有状态，多块同时显示选中
@@ -319,19 +335,19 @@ public class ChatView extends VBox {
         return !CollapsibleText.shouldCollapse(text);
     }
 
-    /** 追加可折叠段（Node 摘要：图标+文本组合行）；正文为空则只渲染摘要行 */
-    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text, int subAgentId) {
-        appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE, false, subAgentId);
+    /** 追加可折叠段（Node 摘要：图标+文本组合行）；正文为空则只渲染摘要行；返回新段供流式引用登记 */
+    private Seg appendCollapsible(String tagText, String tagColorClass, Node summary, String text, int subAgentId) {
+        return appendCollapsible(tagText, tagColorClass, summary, text, StreamKind.NONE, false, subAgentId);
     }
 
     /** 追加可折叠段（含流式身份）：THINK 流式段未知最终长度，先默认展开，定稿时按长度折叠 */
-    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
+    private Seg appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
                                    StreamKind kind, int subAgentId) {
-        appendCollapsible(tagText, tagColorClass, summary, text, kind, false, subAgentId);
+        return appendCollapsible(tagText, tagColorClass, summary, text, kind, false, subAgentId);
     }
 
     /** forcedExpanded=true：无视长度阈值默认展开（提问段——折叠成一行即「看不见提问内容」） */
-    private void appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
+    private Seg appendCollapsible(String tagText, String tagColorClass, Node summary, String text,
                                    StreamKind kind, boolean forcedExpanded, int subAgentId) {
         if (text == null || text.trim().isEmpty()) {
             // 无正文（子任务行/统计行）：CollapsibleText 空内容 → 只渲染摘要行
@@ -344,7 +360,7 @@ public class ChatView extends VBox {
             segs.add(seg);
             getChildren().add(new HBox(seg.tag, seg.node()));
             trimHead();
-            return;
+            return seg;
         }
         if (empty) {
             getChildren().clear();
@@ -356,6 +372,7 @@ public class ChatView extends VBox {
         segs.add(seg);
         getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
+        return seg;
     }
 
     /** 思考段定稿：从尾部找指定主人最后一个 THINK 段，未定稿则按最终长度设置折叠态（≥阈值折叠、短展开）。
@@ -370,6 +387,8 @@ public class ChatView extends VBox {
                     s.collapsible.finalizeLength();
                     s.thinkFinalized = true;
                 }
+                // 思考流已结束：断开引用，后续 THINKING 增量另起新段（与旧的末段判等语义一致）
+                activeStreams.remove(StreamKind.THINK, subAgentId);
                 return;
             }
         }
@@ -384,34 +403,38 @@ public class ChatView extends VBox {
         for (int i = 0; i < excess; i++) {
             // 头部段早已布局（新段只加在尾部），layoutBounds 高度准确
             removedH += getChildren().get(i).getLayoutBounds().getHeight();
+            activeStreams.removeValue(segs.get(i)); // 被截断段同步失效流引用（防增量写进已移除的段）
         }
         segs.subList(0, excess).clear();
         getChildren().remove(0, excess); // ObservableList.remove(from, to)：与 segs 同步删
         if (trimListener != null) trimListener.accept(removedH);
     }
 
-    /** 流式增量：末段是同一流（kind 相同且同主人）→ 就地更新正文不重建节点；NONE 静态行永不参与就地更新，恒新起一段。
-     *  按 (kind, subAgentId) 判等——并发子代理与主代理的思考/正文交错时不得合并进同一段
-     *  （否则 A 的增量写进 B 的段，表现为"输出串台"） */
+    /** 流式增量：命中该 (kind, subAgentId) 的活跃段 → 就地更新正文不重建节点；NONE 静态行永不参与就地更新，恒新起一段。
+     *  Fix Round 1：并发交错（A 的增量被 B 的段隔开）时按引用表定位原段——只与末段判等会把 A 的下一次增量
+     *  误判为新流并新建段，整段累积文本重复注入（同一子代理正文/思考出现重复前缀，4 路并发下为常态）；
+     *  引用表在轮次边界/思考定稿/子代理完成/段被截断时同步清理，保证同主人新回合不误合并旧段。 */
     private void stream(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
-        Seg last = segs.isEmpty() ? null : segs.get(segs.size() - 1);
-        if (last != null && sameStream(last.kind, last.subAgentId, kind, subAgentId)) {
-            if (last.collapsible != null) {
+        Seg target = kind == StreamKind.NONE ? null : activeStreams.get(kind, subAgentId);
+        if (target != null && sameStream(target.kind, target.subAgentId, kind, subAgentId)) {
+            if (target.collapsible != null) {
                 // 思考段：流式更新强制展开（内容增长需实时可见），并重置定稿标志——
                 // 新一轮思考复用同一段时，结束后需按新长度重新定稿折叠
-                last.collapsible.setStreamText(text);
-                last.thinkFinalized = false;
+                target.collapsible.setStreamText(text);
+                target.thinkFinalized = false;
             } else {
-                last.body.setStreamText(text);
+                target.body.setStreamText(text);
             }
             return;
         }
         // 思考段用可折叠结构：流式未知最终长度先默认展开，结束定稿（finalizeThinking）按长度折叠
+        Seg seg;
         if (kind == StreamKind.THINK) {
-            appendCollapsible(tagText, tagColorClass, new Label(""), text, kind, subAgentId);
+            seg = appendCollapsible(tagText, tagColorClass, new Label(""), text, kind, subAgentId);
         } else {
-            append(tagText, tagColorClass, text, kind, subAgentId);
+            seg = append(tagText, tagColorClass, text, kind, subAgentId);
         }
+        activeStreams.put(kind, subAgentId, seg);
     }
 
     /** 工具调用参数 → 展示正文：Edit/Write 生成行级 diff（仅变更行），其余完整参数 JSON；
@@ -536,7 +559,63 @@ public class ChatView extends VBox {
         /** 该主人的轮次边界：只清对应缓冲（其余主人不受影响） */
         void onRoundBoundary(int subAgentId) { of(subAgentId).onRoundBoundary(); }
 
+        /** 子代理完成（SUB_AGENT_DONE）：回收该主人缓冲条目，防会话内条目随派发数无界增长 */
+        void remove(int subAgentId) { map.remove(subAgentId); }
+
         /** 清空（删会话/重建视图）：所有主人缓冲一并释放 */
+        void clear() { map.clear(); }
+
+        /** 当前持有缓冲的主人数（package-private 供单测断言回收效果） */
+        int size() { return map.size(); }
+    }
+
+    /** 活跃流段引用表（纯逻辑、无 JavaFX 依赖，可单测）：owner→kind→最近一次流式段。
+     *  并发交错（A 的增量、B 的增量交替到达）时，A 的段被 B 的段隔开，只与"末段"判等会把 A 的
+     *  下一次增量误判为新流并另起一段（整段累积文本重复注入 → 重复前缀/重复段，4 路并发下为常态）；
+     *  按 (owner, kind) 记住原段即可原地持续更新。清引用时机与缓冲清零对齐：
+     *  轮次边界清对应主人、思考定稿清 THINK、子代理完成/删会话全清、段被截断时同步失效。 */
+    static class ActiveStreams<T> {
+        private final java.util.Map<Integer, java.util.Map<StreamKind, T>> map =
+                new java.util.HashMap<Integer, java.util.Map<StreamKind, T>>();
+
+        /** 取该主人该流身份的当前段（无则 null） */
+        T get(StreamKind kind, int subAgentId) {
+            java.util.Map<StreamKind, T> m = map.get(subAgentId);
+            return m == null ? null : m.get(kind);
+        }
+
+        /** 记录该主人该流身份的当前段（新段创建时调用） */
+        void put(StreamKind kind, int subAgentId, T seg) {
+            java.util.Map<StreamKind, T> m = map.get(subAgentId);
+            if (m == null) {
+                m = new java.util.HashMap<StreamKind, T>();
+                map.put(subAgentId, m);
+            }
+            m.put(kind, seg);
+        }
+
+        /** 移除单个流身份引用（思考流定稿后：后续 THINKING 增量另起新段） */
+        void remove(StreamKind kind, int subAgentId) {
+            java.util.Map<StreamKind, T> m = map.get(subAgentId);
+            if (m == null) return;
+            m.remove(kind);
+            if (m.isEmpty()) map.remove(subAgentId);
+        }
+
+        /** 段被截断移除时同步失效引用（防流式更新写进已不在场景中的段） */
+        void removeValue(T seg) {
+            java.util.Iterator<java.util.Map<StreamKind, T>> it = map.values().iterator();
+            while (it.hasNext()) {
+                java.util.Map<StreamKind, T> m = it.next();
+                m.values().remove(seg);
+                if (m.isEmpty()) it.remove();
+            }
+        }
+
+        /** 断开某主人的全部流引用（轮次边界/子代理完成：该主人缓冲已清零，下一次增量另起新段） */
+        void clearOwner(int subAgentId) { map.remove(subAgentId); }
+
+        /** 清空（删会话/重建视图）：所有主人引用一并释放 */
         void clear() { map.clear(); }
     }
 
