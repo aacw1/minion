@@ -95,10 +95,10 @@ public class SubAgentLoop {
                         ui.onWarning("子 agent 已中断");
                         return "子 agent 已中断";
                     }
-                    if (isTransientError(e) && noOutputYet(content, thinking)) {
-                        // 瞬时错误长重试与主循环一致：等待时长按最近一次失败类别（429/超时/网络 5s、500 类 30s），
-                        // 墙钟总时长 12 分钟；
-                        // 覆盖 429/500/502 + 网络超时 + 可恢复网络错误；零增量闸门防重复输出
+                    if (RetryPolicy.isTransient(e) && noOutputYet(content, thinking)) {
+                        // 瞬时错误长重试与主循环一致：按最近一次错误类别等待（429/超时/网络 5s、500 类/空响应 30s），
+                        // 墙钟总时长 12 分钟；覆盖 429/超时/可恢复网络错误/500 类（含 503/504）/空响应；
+                        // 零增量闸门防重复输出
                         int attempts = 0;
                         long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次请求自身耗时
                         long elapsed = 0;                             // 耗尽时的真实耗时（返回值文案用）
@@ -108,8 +108,8 @@ public class SubAgentLoop {
                         inRetry[0] = true;
                         while (true) {
                             attempts++;
-                            ui.onRetryProgress(RetryProgress.from(attempts, last)); // 尝试前立即更新指示器
                             long delay = retryPolicy.delayMs(RetryPolicy.kindOf(last));
+                            ui.onRetryProgress(RetryProgress.from(attempts, last, delay)); // 尝试前更新指示器（含等待时长）
                             if (!sleepWithInterruptCheck(delay)) break; // 中断
                             elapsed = System.currentTimeMillis() - retryStart;
                             if (retryPolicy.isExhausted(elapsed)) {
@@ -125,7 +125,7 @@ public class SubAgentLoop {
                                 break;
                             } catch (LlmException re) {
                                 if (Thread.currentThread().isInterrupted()) break;
-                                if (!isTransientError(re) || !noOutputYet(content, thinking)) {
+                                if (!RetryPolicy.isTransient(re) || !noOutputYet(content, thinking)) {
                                     // 永久性/非瞬时错误（DNS 配错、其他 5xx、已吐字断流）：退出重试，
                                     // 统一复位指示器，不再继续退避
                                     ui.onError("子 agent 请求失败: " + re.getMessage());
@@ -192,15 +192,6 @@ public class SubAgentLoop {
             ui.onError("子 agent 异常: " + e.getMessage());
             return "子 agent 异常: " + e.getMessage();
         }
-    }
-
-    /** 瞬时错误（429 / 500 / 502 / 网络超时 / 可恢复网络错误）：可进长重试（与主循环字面一致）。
-     *  网络类靠 retryable 区分永久性故障（DNS 解析失败不放行） */
-    private boolean isTransientError(LlmException e) {
-        return e.type == LlmException.Type.RATE_LIMIT
-                || e.type == LlmException.Type.TIMEOUT
-                || (e.type == LlmException.Type.NETWORK && e.retryable)
-                || e.httpCode == 500 || e.httpCode == 502;
     }
 
     /** 零增量闸门：已吐过正文/思考即不可长重试（与主循环一致，防重复输出） */

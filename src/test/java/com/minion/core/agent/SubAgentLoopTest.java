@@ -534,6 +534,31 @@ public class SubAgentLoopTest {
         assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
 
+    /** 子 agent 503 服务不可用：500 类纳入长重试（与主循环一致），成功后静默恢复 */
+    @Test
+    public void subAgent_serverError503_longRetried() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(LlmException.of(503, "unavailable"));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次长重试
+        assertTrue(ui.warnings.isEmpty());    // 无「自动重试 1 次」
+        assertTrue(ui.errors.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+    }
+
     /** 子 agent 重试循环内错误码切换（429 → 502）：进度携带最近一次错误码/响应体 */
     @Test
     public void subAgent_retry_codeSwitches_suffixFollowsLatestError() throws Exception {

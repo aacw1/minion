@@ -557,7 +557,7 @@ public class AgentLoopTest {
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
-        // NETWORK 已纳入长重试：用短墙钟快速耗尽，避免用例跑 20 分钟。
+        // NETWORK 已纳入长重试：用短墙钟快速耗尽，避免用例跑 12 分钟。
         // 100ms 而非计划初稿的 25ms——Thread.sleep 精度下 25ms 每轮只够重试 1~2 次，断言偏脆
         loop.retryPolicy = new RetryPolicy(10, 10, 100);
         loop.runUserTurn("任务一");
@@ -1410,19 +1410,31 @@ public class AgentLoopTest {
         assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
 
-    /** 503 不进长重试：仍快速重试 1 次后报错（仅 500/502 扩展） */
+    /** 503 服务不可用：纳入 500 类长重试（30s 类，测试小参数），成功后静默恢复 */
     @Test
-    public void serverError503_notLongRetried() {
+    public void serverError503_longRetried() {
         llm.addTurnThrow(LlmException.of(503, "unavailable"));
-        llm.addTurnThrow(LlmException.of(503, "unavailable"));
+        llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
         loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
-        assertEquals(2, llm.requests.size()); // 原始 + 1 次快速重试
-        assertEquals(1, ui.warnings.size());
-        assertTrue(ui.warnings.get(0).contains("自动重试 1 次"));
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.retryAttempts().isEmpty()); // 未进长重试：无进度回调
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次长重试（不再走 0.5s 快速重试）
+        assertTrue(ui.warnings.isEmpty());     // 无「自动重试 1 次」
+        assertTrue(ui.errors.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+    }
+
+    /** 等待时长按最近一次错误类别：429 → 短等待，500 → 长等待 */
+    @Test
+    public void retry_delayFollowsLatestErrorKind() {
+        llm.addTurnThrow(LlmException.of(429, null));
+        llm.addTurnThrow(LlmException.of(500, "{\"error\":\"boom\"}"));
+        llm.addTurn("最终回复");
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(3, 7, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(3L, ui.retryProgress.get(0).nextDelayMs); // 429 → SHORT
+        assertEquals(7L, ui.retryProgress.get(1).nextDelayMs); // 500 → LONG
     }
 
     /** 重试循环内错误码切换（429 → 500）：进度携带最近一次错误码/响应体，退出末位复位 */
@@ -1506,9 +1518,9 @@ public class AgentLoopTest {
         assertEquals(1, ui.errors.size());
     }
 
-    /** 闸门不影响 429：零增量失败仍正常长重试（与既有用例同源，防误伤） */
+    /** 闸门不影响 500 类：已吐字后 503 断流仍按零增量闸门拦住长重试（防重复输出优先） */
     @Test
-    public void partialOutputThen503_noFastRetry() {
+    public void partialOutputThen503_gateBlocksLongRetry() {
         llm.addTurnPartialThenThrow("半截", LlmException.of(503, "unavailable"));
         AgentLoop loop = newLoop();
         loop.retryPolicy = new RetryPolicy(10, 10, 60000);
