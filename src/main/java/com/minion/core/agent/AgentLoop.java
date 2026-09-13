@@ -276,30 +276,69 @@ public class AgentLoop {
         }
     }
 
+    /** 压缩结果：OK=已压缩；NOTHING=暂无可压缩；FAILED=失败/中断（已 onError 提示或用户中断） */
+    private enum CompressOutcome { OK, NOTHING, FAILED }
+
+    /** 压缩 + 瞬时错误重试（自动压缩与 /compact 共用）：与请求重试同一策略（分类间隔/墙钟），
+     *  可被"停止"中断；耗尽或不可重试错误 → onError 并返回 FAILED（调用方中止本轮不发送请求）。
+     *  成功不打提示文案（自动压缩与手动压缩文案不同，由调用方各自输出）。 */
+    private CompressOutcome compressWithRetry() throws InterruptedException {
+        List<Message> before = session.messages;
+        int attempts = 0;
+        long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次压缩请求自身耗时
+        boolean inRetry = false;
+        try {
+            while (true) {
+                try {
+                    session.messages = contextManager.compress(session.messages);
+                    return session.messages == before ? CompressOutcome.NOTHING : CompressOutcome.OK;
+                } catch (LlmException e) {
+                    if (!RetryPolicy.isTransient(e)) {
+                        ui.onError("自动压缩失败：" + e.getMessage()
+                                + "；本轮已停止，可稍后重试或新建会话");
+                        return CompressOutcome.FAILED;
+                    }
+                    attempts++;
+                    long delay = retryPolicy.delayMs(RetryPolicy.kindOf(e));
+                    inRetry = true;
+                    ui.onRetryProgress(RetryProgress.from(attempts, e, delay)); // 尝试前更新指示器（含等待时长）
+                    if (!sleepWithInterruptCheck(delay)) break; // 用户中断
+                    long elapsed = System.currentTimeMillis() - retryStart;
+                    if (retryPolicy.isExhausted(elapsed)) {
+                        ui.onError("自动压缩失败：" + RetryProgress.tag(e) + " 重试了 " + attempts
+                                + " 次，持续 " + (elapsed / 60000) + " 分钟仍失败；本轮已停止");
+                        return CompressOutcome.FAILED;
+                    }
+                }
+            }
+        } finally {
+            if (inRetry) ui.onRetryProgress(RetryProgress.none()); // 退出重试态复位（幂等）
+        }
+        return CompressOutcome.FAILED; // 用户中断
+    }
+
     public void compactNow() {
         if (contextManager == null) {
             ui.onWarning("未启用上下文压缩");
             return;
         }
         ui.onCompressingChanged(true);
+        CompressOutcome outcome;
         try {
-            int before = session.messages.size();
-            try {
-                session.messages = contextManager.compress(session.messages);
-            } catch (LlmException e) {
-                // 过渡适配：compress 改为抛 LlmException（完整重试编排见 Task 7 compressWithRetry）
-                ui.onError("压缩失败：" + e.getMessage() + "；可稍后重试或新建会话");
-                return;
-            }
-            if (session.messages.size() < before) {
-                ui.onWarning("已压缩上下文（历史摘要已置前）");
-            } else {
-                ui.onWarning("暂无可压缩内容");
-            }
+            outcome = compressWithRetry();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            outcome = CompressOutcome.FAILED;
         } finally {
             ui.onCompressingChanged(false);
-            pushContextStats(); // 压缩结束后刷新进度圈（失败原样保留亦刷新）
         }
+        if (outcome == CompressOutcome.OK) {
+            ui.onWarning("已压缩上下文（历史摘要已置前）");
+        } else if (outcome == CompressOutcome.NOTHING) {
+            ui.onWarning("暂无可压缩内容");
+        }
+        // FAILED：compressWithRetry 内已 onError 提示（用户中断则静默）
+        pushContextStats(); // 压缩结束后刷新进度圈（含失败/无可压缩的原样保留）
     }
 
     /** 推送上下文统计（GUI 环形进度圈）：contextManager 未启用时不推送 */
@@ -401,26 +440,24 @@ public class AgentLoop {
                 }
                 if (contextManager != null && contextManager.shouldCompress(session.messages)) {
                     ui.onCompressingChanged(true);
+                    CompressOutcome outcome;
                     try {
-                        int before = session.messages.size();
-                        try {
-                            session.messages = contextManager.compress(session.messages);
-                        } catch (LlmException e) {
-                            // 过渡适配：compress 改为抛 LlmException，失败中止本轮不发送请求
-                            // （完整重试编排见 Task 7 compressWithRetry）
-                            ui.onError("自动压缩失败：" + e.getMessage()
-                                    + "；本轮已停止，可稍后重试或新建会话");
-                            break;
-                        }
-                        if (session.messages.size() < before) {
-                            int pct = (int) (contextManager.estimate(session.messages) * 100
-                                    / contextManager.maxTokens());
-                            ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
-                            pushContextStats(); // 压缩完成：进度圈回落
-                        }
+                        outcome = compressWithRetry();
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        outcome = CompressOutcome.FAILED;
                     } finally {
                         ui.onCompressingChanged(false);
                     }
+                    if (outcome == CompressOutcome.OK) {
+                        int pct = (int) (contextManager.estimate(session.messages) * 100
+                                / contextManager.maxTokens());
+                        ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
+                        pushContextStats(); // 压缩完成：进度圈回落
+                    } else if (outcome == CompressOutcome.FAILED) {
+                        break; // 压缩失败/用户中断：中止本轮，不发送请求（失败已 onError 提示）
+                    }
+                    // NOTHING（shouldCompress 为真时理论不可达）：继续本轮请求
                 }
                 String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
