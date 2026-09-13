@@ -1,13 +1,13 @@
 package com.minion.core.agent;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolArguments;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.llm.Usage;
 import com.minion.core.llm.UsageTracker;
@@ -746,7 +746,8 @@ public class AgentLoop {
             }
             JsonObject args;
             try {
-                args = JsonParser.parseString(call.arguments == null ? "{}" : call.arguments).getAsJsonObject();
+                // 宽松解析：容忍尾部杂讯（多余括号/中文标点/第二个 JSON）与未转义换行等模型常见写法
+                args = ToolArguments.parse(call.arguments);
             } catch (Exception e) {
                 return ToolResult.error("工具参数 JSON 解析失败: " + e.getMessage()
                         + "，请检查 arguments 格式");

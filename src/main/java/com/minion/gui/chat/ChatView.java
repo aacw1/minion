@@ -200,6 +200,8 @@ public class ChatView extends VBox {
                     appendCollapsible("【工具】", "log-tool",
                             statusSummary(IconFactory.help(), askSummaryText(e.data)),
                             askBody, StreamKind.NONE, askExpanded(askBody));
+                    // 提问必须可见：模型在等回答，滚出视口会静默卡住整个流程
+                    if (scrollBottomRequest != null) scrollBottomRequest.run();
                 } else {
                     appendCollapsible("【工具】", "log-tool",
                             toolSummary(toolCallSummary(e.text, e.data)), toolCallBody(e.text, e.data));
@@ -226,6 +228,8 @@ public class ChatView extends VBox {
                 String stats = e.text != null && e.text.startsWith("⏱ ") ? e.text.substring(2) : e.text;
                 appendCollapsible("【系统】", "log-sys",
                         statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE);
+                // 轮次结束（AgentLoop 末尾发统计行）：强制回到底部，让回复末尾与统计行可见
+                if (scrollBottomRequest != null) scrollBottomRequest.run();
                 break;
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
                 append("【系统】", "log-sys", e.text, StreamKind.NONE);

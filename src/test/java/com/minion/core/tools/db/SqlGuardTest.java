@@ -486,6 +486,39 @@ public class SqlGuardTest {
         }
     }
 
+    // ===== 线上实证回归：DML 词做函数名（REPLACE/INSERT）不得被误拒 =====
+
+    @Test
+    public void allowFunctionCallsNamedLikeDml() {
+        // 线上实证（PostgreSQL）：SELECT max(replace(name,'x','y'))、COALESCE(replace(...),'') 等
+        // 嵌套函数调用被第 7 项「括号语句位」判成写语句误拒。词后紧跟左括号 = 函数调用，非语句位。
+        String[] ok = {
+                "SELECT replace(name, 'a', 'b') FROM t",
+                "SELECT REPLACE(name, 'a', '') FROM t",
+                "SELECT max(replace(name, 'x', 'y')) FROM t",
+                "SELECT COALESCE(replace(name, 'a', ''), 'x') FROM t",
+                "SELECT (replace(name, 'a', 'b')) FROM t",
+                "SELECT to_char(replace(name, 'a', 'b')) FROM t",
+                "SELECT replace (name, 'a', 'b') FROM t",
+                "SELECT insert(name, 1, 0, 'x') FROM t",
+                "SELECT * FROM t WHERE replace(a, 'x', 'y') = replace(b, 'x', 'y')",
+                "WITH x AS (SELECT replace(a, '1', '2') FROM t) SELECT * FROM x"};
+        for (String sql : ok) {
+            assertNull("函数调用被误判为写语句: " + esc(sql), SqlGuard.check(sql));
+        }
+    }
+
+    @Test
+    public void rejectDmlVerbNotFollowedByParen() {
+        // 例外只认「词后紧跟左括号」：语句位上的 DML 后接 INTO/表名，照旧拒
+        String why = SqlGuard.check("WITH a AS (SELECT 1) REPLACE INTO t SELECT * FROM a");
+        assertNotNull("WITH 后接 REPLACE INTO 应拒", why);
+        assertTrue("原因要点出写动词 REPLACE: " + why, why.contains("写动词 REPLACE"));
+        assertNotNull(SqlGuard.check("REPLACE INTO t VALUES (1)"));
+        assertNull("对照组：同位置换成函数调用放行",
+                SqlGuard.check("WITH a AS (SELECT 1) SELECT replace(x, 'a', 'b') FROM a"));
+    }
+
     // ===== round 4 必修 B：锁短语要按各家方言的锁强度配齐 =====
 
     @Test

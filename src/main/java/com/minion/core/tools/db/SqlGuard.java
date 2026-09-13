@@ -87,8 +87,11 @@ import java.util.regex.Pattern;
  *    危险短语或括号语句位写动词，则整句被拒（PG 写法「SELECT 1 斜杠星 a 斜杠星 b 星斜杠 ; c 星斜杠」
  *    会被误拒）。
  *    代价方向与其余各轴一致：这种写法在 MySQL/Oracle 里本来就是两条语句或语法错误。
+ *  - 第 7 项「括号语句位」把「DML 词后紧跟左括号」一律视为函数调用放行（REPLACE(str,a,b)、
+ *    MySQL 的 INSERT(str,pos,len,new) 等，线上实证修正）：语句位上的 DML 后面只跟表名/INTO，
+ *    不会直接跟括号，所以该例外不覆盖任何真写通道（「左括号 REPLACE INTO」照旧拒）。
  *  - 子查询的表/列别名如果恰好取名成 insert/update/delete/merge/replace（PG 里 replace 一类
- *    非保留字可以），会被第 7 项「括号语句位」误拒。
+ *    非保留字可以），仍会被第 7 项误拒（别名不跟括号的形态）。
  *  - PG 美元引用（`$$…$$`）、Oracle q 引号不识别，其内部分号按字面量外处理。
  *
  * 残余缺口（由第二层 setReadOnly + executeQuery 和数据源侧只读账号兜底；登记备查）：
@@ -336,28 +339,49 @@ public final class SqlGuard {
      * CTE 正文（WITH x AS 左括号 DELETE … 右括号）与 CTE 列表结束后真正的主语句
      * （WITH x AS (…) DELETE …），两者都会**先执行写操作**再返回结果集，
      * executeQuery 拿得到 ResultSet 也就挡不住。EXPLAIN 后面套 WITH 同理（第 6 项只看到 WITH 就停了）。
+     *
+     * 例外（线上实证修正）：词后紧跟左括号 = 函数调用（REPLACE(str,from,to)、MySQL 的
+     * INSERT(str,pos,len,newstr) 等），不是语句位，放行 —— 语句位上的 DML 动词后面只跟
+     * 表名或 INTO，不会直接跟括号（REPLACE INTO 的 REPLACE 后面是 INTO，照旧拒）。
+     * 旧实现只看词本身，把 `max(replace(name,'x','y'))`、`COALESCE(replace(...),'')`、
+     * `(replace(...))` 这类嵌套函数调用全判成写语句，误拒面远大于收益。
      */
     private static String checkDmlPositions(String text) {
         int n = text.length();
         for (int i = 0; i < n; i++) {
             char c = text.charAt(i);
             if (c != '(' && c != ')') continue;
-            String word = wordAfter(text, i + 1);
-            if (word != null && DML_HEADS.contains(word)) {
-                return REJECT + "括号后的语句位出现写动词 " + word
-                        + "（PG 的改写型 CTE、WITH 子句后接 DML 会真写数据）";
-            }
+            int start = skipSpaces(text, i + 1);
+            int end = wordEnd(text, start);
+            if (end < 0) continue;
+            String word = text.substring(start, end).toUpperCase();
+            if (!DML_HEADS.contains(word)) continue;
+            if (isCall(text, end)) continue; // 词后紧跟 ( → 函数调用，非语句位
+            return REJECT + "括号后的语句位出现写动词 " + word
+                    + "（PG 的改写型 CTE、WITH 子句后接 DML 会真写数据）";
         }
         return null;
     }
 
-    /** 从 from 起跳过空白取第一个整词；起手不是词返回 null */
-    private static String wordAfter(String text, int from) {
-        int i = from, n = text.length();
-        while (i < n && Character.isWhitespace(text.charAt(i))) i++;
-        int s = i;
-        while (i < n && isWordChar(text.charAt(i))) i++;
-        return i > s ? text.substring(s, i).toUpperCase() : null;
+    /** 从 from 起跳过空白，返回第一个非空白字符下标（到串尾返回 text.length()） */
+    private static int skipSpaces(String text, int from) {
+        int i = from;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) i++;
+        return i;
+    }
+
+    /** 从 from 起读一个整词（字母/数字/下划线），返回词尾下标；起手不是词字符返回 -1 */
+    private static int wordEnd(String text, int from) {
+        int i = from;
+        while (i < text.length() && isWordChar(text.charAt(i))) i++;
+        return i > from ? i : -1;
+    }
+
+    /** end（词尾）跳过空白后是否紧跟左括号：是则为函数调用形态（REPLACE(…)、INSERT(…)） */
+    private static boolean isCall(String text, int end) {
+        int i = end;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) i++;
+        return i < text.length() && text.charAt(i) == '(';
     }
 
     /**

@@ -64,4 +64,38 @@ public class InputViewButtonTest {
         assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.ANSWER_DIM));
         assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.STOP));
     }
+
+    // ===== 防连按误终止（线上实证：回答/发送后输入框已清空，第二次 Enter 命中 STOP 把流程掐掉） =====
+
+    @Test
+    public void stopWithinGuardWindow_isIgnored() {
+        assertTrue("距上次发送 120ms 的 STOP 应判为重复按键",
+                InputView.shouldIgnoreTrigger(InputView.BtnMode.STOP, 1000, 880, InputView.STOP_GUARD_MS));
+    }
+
+    @Test
+    public void stopAfterGuardWindow_runs() {
+        assertFalse("超过防抖窗口的 STOP 应执行终止",
+                InputView.shouldIgnoreTrigger(InputView.BtnMode.STOP, 1500, 880, InputView.STOP_GUARD_MS));
+    }
+
+    @Test
+    public void stopBoundaryIsStrictlyLessThan() {
+        assertTrue(InputView.shouldIgnoreTrigger(InputView.BtnMode.STOP, 1499, 1000, 500));
+        assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.STOP, 1500, 1000, 500));
+    }
+
+    @Test
+    public void stopWithoutRecentSend_runs() {
+        // 从未有过发送动作（lastSendActionMs=0）：会话刚启动就要终止，不能被防抖挡下
+        assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.STOP, 1500, 0, 500));
+    }
+
+    @Test
+    public void sendModesNeverBlocked() {
+        // 防抖只挡 STOP：连发消息 / 连续回答 / 连续补充都不受影响
+        assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.SEND, 1000, 999, 500));
+        assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.ANSWER, 1000, 999, 500));
+        assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.SUPPLEMENT, 1000, 999, 500));
+    }
 }

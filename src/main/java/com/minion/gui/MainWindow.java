@@ -292,7 +292,13 @@ public class MainWindow {
                     viewCache.put(h.id, chatView);
                     chatView.setScrollBottomRequest(() -> {
                         policy.forceFollow();
-                        Platform.runLater(() -> chatScroll.setVvalue(1.0)); // 布局完成后置底
+                        // 双击 runLater 等本轮布局跑完再置底（layoutBounds 未布局时是旧值）。
+                        // 若 vvalue 已是 1.0，setVvalue(1.0) 是 no-op（属性值不变不通知 skin，
+                        // 内容变高后视口不会重新定位）——先落到 0.999999 再回 1.0，保证滚动动作真正执行。
+                        Platform.runLater(() -> Platform.runLater(() -> {
+                            if (chatScroll.getVvalue() >= 1.0) chatScroll.setVvalue(0.999999);
+                            chatScroll.setVvalue(1.0);
+                        }));
                     });
                     // 截断保活补偿：头部段被删 → 内容变矮，vvalue（归一化）不变时视口绝对位置下移。
                     // 双 runLater 等布局跑完再读高度（layoutBounds 是布局缓存，删除后未布局仍返回旧值）；
@@ -444,6 +450,12 @@ public class MainWindow {
             }
         });
         javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
+            if (n != null && n.getHeight() > 0) {
+                // 内容增长后按新高度重算贴底：视口/内容行程都变了，判据必须跟着更新。
+                // 只看 vvalue 距底是否落在新容差内 —— 单次增长超过旧容差时 vvalue 监听会先判成
+                // 「离开底部」而永久停跟，这里用增长后的行程重算一次挽回（用户在容差外上滚，仍保持暂停）。
+                policy.sync(chatScroll.getVvalue(), eps());
+            }
             if (policy.shouldFollow()) requestAutoScroll();
         };
         chatScroll.vvalueProperty().addListener((obs, ov, nv) ->
@@ -454,13 +466,25 @@ public class MainWindow {
         });
     }
 
-    /** 动态半屏容差（归一化）：0.5×视口高/可滚动行程；未超一屏返回 1.0（恒贴底） */
+    /** 动态容差（归一化）：FOLLOW_SCREENS×视口高/可滚动行程；未超一屏返回 1.0（恒贴底） */
     private double eps() {
         double viewport = chatScroll.getViewportBounds().getHeight();
         double content = chatScroll.getContent() != null
                 ? chatScroll.getContent().getLayoutBounds().getHeight() : 0;
+        return followEps(viewport, content, FOLLOW_SCREENS);
+    }
+
+    /**
+     * 贴底容差倍数（用户已确认：由 0.5 屏放宽到 2 屏）。
+     * 容差是一个视口上下；0.5 屏时代，单次内容增长（长工具输出/长回复一次到位）超过
+     * 「半个视口」的像素量时，vvalue 距底距离瞬间超出旧容差 → 被判成「用户主动上滚」而永久停跟。
+     */
+    static final double FOLLOW_SCREENS = 2.0;
+
+    /** 纯函数（供单测）：归一化容差 = screens×视口高/可滚动行程；行程 ≤0（未超一屏）返回 1.0 */
+    static double followEps(double viewport, double content, double screens) {
         double scrollable = content - viewport;
-        return scrollable <= 0 ? 1.0 : 0.5 * viewport / scrollable;
+        return scrollable <= 0 ? 1.0 : screens * viewport / scrollable;
     }
 
     private void onNewSession() {

@@ -1,10 +1,10 @@
 package com.minion.core.agent;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolArguments;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.llm.Usage;
 import com.minion.core.tools.confirm.ConfirmGate;
@@ -242,7 +242,8 @@ public class SubAgentLoop {
             if (tool == null) return ToolResult.error("工具不存在或已停用: " + call.name);
             JsonObject args;
             try {
-                args = JsonParser.parseString(call.arguments == null ? "{}" : call.arguments).getAsJsonObject();
+                // 宽松解析：同主循环（尾部杂讯/未转义换行容忍，见 ToolArguments）
+                args = ToolArguments.parse(call.arguments);
             } catch (Exception e) {
                 return ToolResult.error("工具参数 JSON 解析失败: " + e.getMessage());
             }

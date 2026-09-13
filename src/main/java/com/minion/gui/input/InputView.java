@@ -47,6 +47,15 @@ public class InputView extends VBox {
     /** 按钮模式：图标/透明度/背景类/动作的判定依据（ANSWER_DIM=提问挂起且空输入，变淡箭头等待输入回答） */
     enum BtnMode { SEND, SEND_DIM, SUPPLEMENT, ANSWER, ANSWER_DIM, STOP }
 
+    /**
+     * 「发送类动作」→ STOP 的防抖窗口（毫秒）。
+     *
+     * 线上实证：回答提问 / 发送消息后输入框已清空、会话仍在运行，用户手指还没离开键盘，
+     * 第二次 Enter（或按钮连点）就会命中「运行中 + 空输入 = 终止」分支，把刚发起的流程直接掐掉。
+     * 窗口内的第二次触发视为重复按键而非终止意图；真要终止，隔开窗口再按一次即可。
+     */
+    static final long STOP_GUARD_MS = 500;
+
     private final SessionManager manager;
     private final Config config;
     private final TextArea input = new TextArea();
@@ -58,6 +67,8 @@ public class InputView extends VBox {
     private final SVGPath uploadIcon = IconFactory.attachFile();
     private final SuggestionPopup popup = new SuggestionPopup();
     private final FileSuggester fileSuggester = new FileSuggester();
+    /** 上次真正发出「发送类动作」（发送/补充/回答）的时刻（System.currentTimeMillis，仅 FX 线程读写） */
+    private long lastSendActionAt;
     /** 块行与块列表：模型 List<InputChip> 与视图 FlowPane 同步维护（增删块后须 refreshChipRow + updateButton） */
     private final List<InputChip> chips = new ArrayList<InputChip>();
     private final FlowPane chipRow = new FlowPane();
@@ -669,17 +680,23 @@ public class InputView extends VBox {
         sendButton.setTooltip(new Tooltip(tip));
     }
 
-    /** Ctrl+Enter / 按钮点击统一入口：按当前模式分发 */
+    /** Ctrl+Enter / 按钮点击统一入口：按当前模式分发（发送类动作记时刻，供 STOP 防抖判定） */
     private void onAction() {
-        switch (buttonMode(running, askPending, hasContent())) {
+        BtnMode mode = buttonMode(running, askPending, hasContent());
+        long now = System.currentTimeMillis();
+        if (shouldIgnoreTrigger(mode, now, lastSendActionAt, STOP_GUARD_MS)) return; // 防连按误终止
+        switch (mode) {
             case SEND:
-                onSend();
+                if (onSend()) lastSendActionAt = now;
                 break;
             case SUPPLEMENT: {
                 String text = composedText();
                 if (text == null || text.trim().isEmpty()) return;
                 clearComposer();
-                if (current != null) manager.sendSupplement(current, text);
+                if (current != null) {
+                    manager.sendSupplement(current, text);
+                    lastSendActionAt = now;
+                }
                 break;
             }
             case ANSWER: {
@@ -690,7 +707,10 @@ public class InputView extends VBox {
                 String text = composedText();
                 if (text == null || text.trim().isEmpty()) return;
                 clearComposer();
-                if (current != null) manager.sendAnswer(current, text);
+                if (current != null) {
+                    manager.sendAnswer(current, text);
+                    lastSendActionAt = now;
+                }
                 break;
             }
             case STOP:
@@ -702,15 +722,24 @@ public class InputView extends VBox {
         }
     }
 
-    private void onSend() {
+    /**
+     * 纯函数（供单测）：这次触发是否应被当作重复按键忽略。
+     * STOP 且距上次发送类动作不足 guardMs → 忽略；其余模式一律放行。
+     */
+    static boolean shouldIgnoreTrigger(BtnMode mode, long nowMs, long lastSendActionMs, long guardMs) {
+        return mode == BtnMode.STOP && lastSendActionMs > 0 && nowMs - lastSendActionMs < guardMs;
+    }
+
+    /** 发送：斜杠命令本地分发，其余走 send；返回是否真的发出（空输入/建会话失败时不发） */
+    private boolean onSend() {
         String text = composedText();
         List<ImagePart> images = composedImages();
-        if ((text == null || text.trim().isEmpty()) && images.isEmpty()) return;
+        if ((text == null || text.trim().isEmpty()) && images.isEmpty()) return false;
         clearComposer();
         SessionHandle target = current;
         if (target == null) {
             target = manager.createSession(null);
-            if (target == null) return;
+            if (target == null) return false;
             manager.activateSession(target);
         }
         // 带图消息不走斜杠命令分发（图片无法本地处理，照发普通消息）
@@ -719,6 +748,7 @@ public class InputView extends VBox {
         } else {
             manager.send(target, text, images);
         }
+        return true;
     }
 
     /** 图片块 → ImagePart 列表：解析 data URI 头拆 mime/base64；name 取 display 的「图片：」前缀之后 */
