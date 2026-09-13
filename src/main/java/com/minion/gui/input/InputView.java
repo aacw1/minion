@@ -39,7 +39,7 @@ import java.util.concurrent.Executors;
 
 /** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  @文件确认后内联进输入框（@路径 文本，所见即所得；扫描异步后台线程，不卡输入）；/命令、/技能、粘贴、图片为块。
- *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（提问挂起时改 Esc 终止）；
+ *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（Esc 不再终止运行，用方块按钮）；
  *  背景按状态取色（btn-send-empty #f48771 / btn-send-full #ff947c）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
 public class InputView extends VBox {
@@ -177,11 +177,6 @@ public class InputView extends VBox {
                 removeLastChip();
                 e.consume();
                 return;
-            }
-            // Esc：终止当前运行（提问挂起时亦可终止）
-            if (e.getCode() == KeyCode.ESCAPE && current != null && running) {
-                e.consume();
-                manager.stop(current);
             }
         });
 
@@ -662,7 +657,7 @@ public class InputView extends VBox {
             case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (" + sendKey + ")"); break;
             case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (" + sendKey + ")"); break;
             case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (" + sendKey + ")"); break;
-            case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行 (Esc)"); break;
+            case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行"); break;
         }
     }
 
