@@ -111,8 +111,8 @@ public class SubAgentLoop {
                         int attempts = 0;
                         long retryStart = System.currentTimeMillis(); // 墙钟基准：含每次请求自身耗时
                         long elapsed = 0;                             // 耗尽时的真实耗时（返回值文案用）
-                        boolean exhausted = false; // 超时总结标志：break 后统一复位指示器再返回
-                        String failure = null;     // 重试中遇非瞬时错误的文案：break 后统一复位指示器再返回
+                        boolean exhausted = false; // 超时总结标志：break 后统一返回（子代理无重试指示器，无需复位）
+                        String failure = null;     // 重试中遇非瞬时错误的文案：break 后统一返回
                         LlmException last = e;
                         while (true) {
                             attempts++;
