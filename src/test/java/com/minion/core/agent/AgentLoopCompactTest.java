@@ -23,7 +23,7 @@ public class AgentLoopCompactTest {
     public TemporaryFolder tmp = new TemporaryFolder();
 
     /** 预置 4 轮普通历史 = 8 个原子组（48 token，超过 50×0.65=32.5 阈值）：
-     *  压缩至少保留最近 8 组，故必须 ≥9 组（本方法 8 组 + 本轮 user 1 组）才可能真正压缩 */
+     *  压缩至少保留最近 6 组，故必须 ≥7 组（本方法 8 组 + 本轮 user 1 组 = 9 组）才可能真正压缩 */
     private static void seedHistory(AgentLoop loop) {
         for (int i = 0; i < 4; i++) {
             loop.messages().add(Message.user("历史" + i));

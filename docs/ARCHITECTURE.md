@@ -107,7 +107,7 @@ com.minion
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析；`scanTree(root, maxDepth, maxCount)` 递归扫描任意目录树（跳过 .git/node_modules/target 等噪声目录，深度/数量触顶截断并回告警，不抛异常），产出带 `[项目]` 来源标注的技能
 - `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（SkillSet 自身无缓存；调用方 `SessionManager` 按空间缓存扫描结果、配置变更时失效），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
-- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，从最早组按 token 累加到 0.65×0.8 后整体压缩，且至少保留最近 8 组；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由 AgentLoop 按重试策略处理，耗尽中止本轮）
+- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，从最早组按 token 累加到 0.65×0.8 后整体压缩，且至少保留最近 6 组；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由 AgentLoop 按重试策略处理，耗尽中止本轮）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `Config`：config.properties（classpath 默认值 + jar 同目录外部覆盖，首次运行自动生成）
 - `WorkspaceManager` / `ModelManager`：workspace.json / model.json（jar 同目录，单文件多条目；缺失自动生成，损坏备份后重建）；workspace.json 数组顺序即侧栏显示顺序，`WorkspaceManager.move(name, newIndex)` 拖拽排序持久化（越界返回 false 不改列表；SessionManager.moveWorkspace 转发但不发通知，避免拖拽时清空聊天区）

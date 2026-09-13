@@ -461,7 +461,7 @@ public class AgentLoop {
                     } else if (outcome == CompressOutcome.FAILED) {
                         break; // 压缩失败/用户中断：中止本轮，不发送请求（失败已 onError 提示）
                     }
-                    // NOTHING（组数 ≤ 8 或无可压缩组）：继续本轮请求（超窗由服务端报错兜底）
+                    // NOTHING（组数 ≤ 6 或无可压缩组）：继续本轮请求（超窗由服务端报错兜底）
                 }
                 String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
