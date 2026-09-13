@@ -79,4 +79,13 @@ public class RetryProgressTest {
     public void none_resetsLabelToo() {
         assertNull(RetryProgress.none().label);
     }
+
+    /** 空响应：中文标签 + tag 前缀（LONG 类瞬时错误） */
+    @Test
+    public void from_emptyResponse_mapsToLabel() {
+        LlmException e = new LlmException(LlmException.Type.EMPTY_RESPONSE, "空响应（服务端未返回内容）", true);
+        assertEquals("空响应", RetryProgress.from(2, e).label);
+        assertEquals("空响应", RetryProgress.tag(e));
+        assertEquals(0, RetryProgress.from(2, e).httpCode);
+    }
 }
