@@ -53,6 +53,11 @@ public class AgentLoop {
      *  队列级去重：同名已在队列 → 跳过（同轮防重复插入）；历史级幂等由 Skill 工具报告、模型判断 */
     private final List<SkillLoad> pendingSkillLoads = new ArrayList<SkillLoad>();
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
+    /** 会话内子代理编号：递增不复用（并发子代理编号必然不同；新会话/重载=新 AgentLoop，从 1 起） */
+    private final java.util.concurrent.atomic.AtomicInteger subAgentSeq =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** 会话临时目录（jarDir/.session/tmp/<会话id>；子代理报告落盘位置；null=测试/未接线不落盘） */
+    private volatile String sessionTmpDir;
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
     /** 瞬时错误长重试策略（429/超时/网络 5s、500 类 30s；墙钟总时长 12 分钟；测试可覆写小参数） */
@@ -102,9 +107,10 @@ public class AgentLoop {
         // 必须显式 this.llm 读 volatile 字段，才与主循环请求路径（456/485 行）同源。
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
-            ui.onSubAgentStart(desc);
+            int no = subAgentSeq.incrementAndGet();
+            ui.onSubAgentStart(desc); // Task 3 改为 onSubAgentStart(no, desc)
             SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
-                    this.llm, registry, confirmGate, ui);
+                    this.llm, registry, confirmGate, ui, sessionTmpDir, no);
             sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
             return sub.run();
         });
@@ -208,6 +214,9 @@ public class AgentLoop {
     public void setSubAgentRunner(java.util.function.Function<JsonObject, String> runner) {
         this.subAgentRunner = runner;
     }
+
+    /** 会话临时目录注入（SessionManager 创建/恢复会话时调用；子代理报告落盘位置） */
+    public void setSessionTmpDir(String dir) { this.sessionTmpDir = dir; }
 
     /** 回答 AskUserQuestion（SessionManager.sendAnswer 转发）；无挂起时忽略 */
     public boolean answerAskUser(String answer) {

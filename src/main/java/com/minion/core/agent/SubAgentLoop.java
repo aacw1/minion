@@ -8,6 +8,7 @@ import com.minion.core.llm.ToolArguments;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.llm.Usage;
 import com.minion.core.tools.confirm.ConfirmGate;
+import com.minion.core.tools.OutputDump;
 import com.minion.core.tools.Tool;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
@@ -21,25 +22,44 @@ public class SubAgentLoop {
     private static final String SUB_SYSTEM_SUFFIX =
             "\n\n你是一个子 agent。只负责完成上述任务，完成后用最终文本总结结果（不要客套）。";
 
+    /** 报告返回上限（字符）：超长报告只把头部返回主代理，完整内容落盘（硬编码常量，不进配置） */
+    static final int REPORT_MAX_CHARS = 8000;
+
     private final LlmClient llm;
     private final ToolRegistry registry;
     private final ConfirmGate confirmGate;
     private final AgentUi ui;
+    /** 报告落盘目录（会话 tmp：jarDir/.session/tmp/<会话id>；null=不落盘，返回原文） */
+    private final String reportDir;
+    /** 子代理编号（会话内递增；报告文件名与消息标识用） */
+    private final int no;
     /** 瞬时错误长重试策略（与主循环一致：429/超时/网络 5s、500 类 30s，墙钟 12 分钟；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 工具空输出占位（AgentLoop 创建时注入；开启时成功空输出发「输出内容为空」占位） */
     public boolean emptyOutputPlaceholder = false;
     private final List<Message> messages = new ArrayList<Message>();
 
+    /** 旧签名（不落盘，供不关心落盘的测试/调用方）：委托新构造 */
     public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
                         LlmClient llm, ToolRegistry registry, ConfirmGate confirmGate, AgentUi ui) {
+        this(systemPrompt, taskDescription, workDir, llm, registry, confirmGate, ui, null, 0);
+    }
+
+    public SubAgentLoop(String systemPrompt, String taskDescription, String workDir,
+                        LlmClient llm, ToolRegistry registry, ConfirmGate confirmGate, AgentUi ui,
+                        String reportDir, int no) {
         this.llm = llm;
         this.registry = registry;
         this.confirmGate = confirmGate;
         this.ui = ui;
+        this.reportDir = reportDir;
+        this.no = no;
         messages.add(Message.system(systemPrompt + SUB_SYSTEM_SUFFIX));
         messages.add(Message.user("任务: " + taskDescription));
     }
+
+    /** 消息数组（压缩判断/测试断言用） */
+    public List<Message> messages() { return messages; }
 
     public String run() {
         ui.onSubAgentStart(messages.get(1).content);
@@ -166,8 +186,10 @@ public class SubAgentLoop {
                 }
                 if (toolCalls[0] == null || toolCalls[0].isEmpty()
                         || !"tool_calls".equals(finish[0])) {
-                    ui.onSubAgentDone(content.toString());
-                    return content.toString();
+                    String report = content.toString();
+                    String ret = persistReport(report);
+                    ui.onSubAgentDone(ret);
+                    return ret;
                 }
                 // assistant 工具调用消息先入历史——tool 消息必须紧跟含对应 tool_call_id 的
                 // assistant tool_calls 消息（DeepSeek/OpenAI 兼容 API 契约，否则 400）；
@@ -193,6 +215,26 @@ public class SubAgentLoop {
             ui.onError("子 agent 异常: " + e.getMessage());
             return "子 agent 异常: " + e.getMessage();
         }
+    }
+
+    /** 报告落盘并返回给主代理的文本：报告一律先落盘（主代理按路径 Read 细节，避免重复落盘浪费一轮上下文）；
+     *  短报告全文 + 路径；超长报告截断到 REPORT_MAX_CHARS + 「完整报告 N 字符已落盘」；
+     *  落盘失败降级返回全文 + 失败说明（成果不丢）。空报告不落盘原样返回；reportDir=null（未接线）
+     *  视为旧语义原样返回——既有测试与降级路径不受影响。 */
+    String persistReport(String report) {
+        if (report == null || report.trim().isEmpty()) return report == null ? "" : report;
+        if (reportDir == null) return report; // 未接线：原样返回（不算失败）
+        java.nio.file.Path dumped = OutputDump.write(java.nio.file.Paths.get(reportDir),
+                "subagent-report-" + no, report);
+        if (dumped == null) {
+            return report + "\n\n（报告落盘失败，以上为完整内容）";
+        }
+        String head = report.length() <= REPORT_MAX_CHARS
+                ? report : report.substring(0, REPORT_MAX_CHARS);
+        String note = report.length() <= REPORT_MAX_CHARS
+                ? "完整报告已落盘："
+                : "完整报告 " + report.length() + " 字符已落盘：";
+        return head + "\n\n（" + note + dumped.toAbsolutePath() + "，可用 Read 查看）";
     }
 
     /** 零增量闸门：已吐过正文/思考即不可长重试（与主循环一致，防重复输出） */

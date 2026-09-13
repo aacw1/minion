@@ -232,6 +232,7 @@ public class SessionManager {
                 loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
                 loop.setAllSkills(sk.skills); // 会话级快照：本会话独享、不可变
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
+                loop.setSessionTmpDir(tmpDirOf(meta.id).toString()); // 子代理报告落盘目录（会话 tmp；Task 2）
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
                 SessionHandle h = new SessionHandle(s.id, ctx.name, s, loop, controller,
                         s.title, false, llm);
@@ -406,6 +407,7 @@ public class SessionManager {
         loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
         loop.setAllSkills(sk.skills);   // 会话级快照：本会话独享、不可变
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
+        loop.setSessionTmpDir(tmpDirOf(s.id).toString()); // 子代理报告落盘目录（会话 tmp；Task 2）
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
                 title, title == null, llm);
         controller.setAskStateListener(new java.util.function.Consumer<String>() {

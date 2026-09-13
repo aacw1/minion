@@ -14,7 +14,8 @@ public class TaskTool implements Tool {
     public String name() { return "task"; }
 
     @Override
-    public String description() { return "派发一个子 agent 完成独立子任务（完整工具集，可并行）。参数 description 说明任务，prompt 可选指定返回格式"; }
+    public String description() { return "派发一个子 agent 完成独立子任务（完整工具集，可并行）。参数 description 说明任务，prompt 可选指定返回格式。"
+            + "子 agent 报告已自动落盘，返回内容含完整报告路径——不要重复落盘，需要细节时用 Read 读取该路径"; }
 
     @Override
     public JsonObject schema() {

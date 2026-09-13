@@ -592,4 +592,145 @@ public class SubAgentLoopTest {
         assertEquals("{\"message\":\"bad gateway\"}", ui.retryProgress.get(2).body);
         assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue()); // 末位复位
     }
+
+    // ===== 报告落盘（设计 2026-09-13：先落盘再返回摘要+路径，主代理不再重复落盘）=====
+
+    /** 报告落盘：返回文本 = 全文 + 落盘路径；文件名含编号；文件内容 = 报告全文 */
+    @Test
+    public void report_dumpedWithNumberedFile() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("调研结论：ok");
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 3);
+        String result = sub.run();
+
+        assertTrue("返回应含完整正文", result.startsWith("调研结论：ok"));
+        assertTrue("返回应含落盘说明与绝对路径", result.contains("完整报告已落盘："));
+        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<java.nio.file.Path>();
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            s.forEach(files::add);
+        }
+        assertEquals(1, files.size());
+        assertTrue("文件名含编号: " + files.get(0),
+                files.get(0).getFileName().toString().startsWith("subagent-report-3-"));
+        String dumped = new String(java.nio.file.Files.readAllBytes(files.get(0)),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals("调研结论：ok", dumped);
+        assertTrue("路径在返回文本中: " + result, result.contains(files.get(0).toAbsolutePath().toString()));
+    }
+
+    /** 超长报告：只返回前 8000 字符 + 「完整报告 N 字符已落盘」说明（主代理需要细节用 Read） */
+    @Test
+    public void report_longTruncatedTo8000WithPath() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 9000; i++) big.append('x');
+        llm.addTurn(big.toString());
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "长报告", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result = sub.run();
+
+        assertTrue("头部 8000 字符保留", result.startsWith(big.substring(0, 8000)));
+        assertFalse("第 8001 字符不应返回", result.startsWith(big.substring(0, 8001)));
+        assertTrue("应说明完整长度: " + result.substring(7990, 8100),
+                result.contains("完整报告 9000 字符已落盘："));
+    }
+
+    /** 落盘失败（报告目录指向一个已存在的普通文件 → createDirectories 必失败）：
+     *  降级返回全文 + 失败说明（成果不丢，不截断） */
+    @Test
+    public void report_dumpFailure_returnsFullReport() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("短报告");
+
+        java.nio.file.Path notADir = tmp.newFile("not-a-dir").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, notADir.toString(), 0);
+        String result = sub.run();
+
+        assertTrue(result.startsWith("短报告"));
+        assertTrue("应说明落盘失败: " + result, result.contains("报告落盘失败"));
+    }
+
+    /** 未接线（reportDir=null，如旧构造器）：原样返回报告，不追加失败说明——旧构造器返回值语义不变 */
+    @Test
+    public void report_notWired_returnsPlainReport() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("短报告");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui); // 旧构造器
+        assertEquals("短报告", sub.run());
+    }
+
+    /** 空报告不落盘（不产生空文件） */
+    @Test
+    public void report_empty_notDumped() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("");
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 2);
+        String result = sub.run();
+
+        assertEquals("", result);
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            assertFalse("空报告不得落盘", s.findAny().isPresent());
+        }
+    }
+
+    /** 中断路径不落盘：run 前已中断 → 中断文案、目录内无文件 */
+    @Test
+    public void report_interrupted_notDumped() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result;
+        Thread.currentThread().interrupt(); // 模拟主循环 interrupt() 已取消该子代理
+        try {
+            result = sub.run();
+        } finally {
+            Thread.interrupted(); // 清理中断标志，避免污染后续测试（surefire 同线程复用）
+        }
+        assertTrue("中断文案: " + result, result.contains("已中断"));
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            assertFalse("中断不落盘", s.findAny().isPresent());
+        }
+    }
 }
