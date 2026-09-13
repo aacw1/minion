@@ -8,8 +8,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** 上下文管理：token 估算、阈值判断、单次压缩（最早链 → 摘要置前）。
- *  阈值 0.65 / 压缩比例 0.8 / 摘要上限 5000 字为硬编码常量（不进模型配置，只保留 maxContextTokens）。
+/** 上下文管理：token 估算、阈值判断、单次压缩（最早原子组 → 摘要置前）。
+ *  阈值 0.65 / 压缩比例 0.8 / 摘要上限 5000 字 / 至少保留最近 8 个原子组为硬编码常量（不进模型配置，只保留 maxContextTokens）。
  *  压缩失败不再降级：直接抛 LlmException，由 AgentLoop 按重试策略处理。 */
 public class ContextManager {
 
@@ -19,6 +19,8 @@ public class ContextManager {
     static final double THRESHOLD = 0.65;
     /** 触发量中要压缩的比例（其余为保留区） */
     static final double COMPRESS_RATIO = 0.8;
+    /** 至少保留的最近原子组数：压缩可在当前任务内部滚动进行，不把进行中的上下文压光 */
+    static final int KEEP_RECENT_GROUPS = 8;
 
     private static final String COMPRESS_SYSTEM =
             "你是 minion 的上下文压缩器。把用户提供的对话历史压缩成一段中文摘要，保留："
@@ -59,77 +61,97 @@ public class ContextManager {
         return estimate(messages) >= maxContextTokens * THRESHOLD;
     }
 
-    /** 按完整回合链切块。summary 消息跳过（已压缩过，不再参与）；pinned 消息跳过（技能
-     *  正文常驻，压缩豁免，由 compress 原样保留）；system 消息跳过（系统提示词不并入链、
-     *  不进入压缩批次，由 compress 原样保留）。 */
-    public static List<List<Message>> chunkChains(List<Message> messages) {
-        List<List<Message>> chains = new ArrayList<List<Message>>();
-        List<Message> cur = new ArrayList<Message>();
+    /** 按原子组切块：原子组是可安全切割的最小单位——有工具调用的 assistant 与其后的 tool 结果
+     *  捆为一组（保证 tool_call↔tool 配对不被切断，否则接口 400）；普通 user、assistant（无工具调用）
+     *  各自一组。summary 消息跳过（已压缩过，不再参与）；pinned 消息跳过（技能正文常驻，压缩豁免，
+     *  由 compress 原样保留）；system 消息跳过（系统提示词不并入组、不进入压缩批次，由 compress 原样保留）。 */
+    public static List<List<Message>> chunkGroups(List<Message> messages) {
+        List<List<Message>> groups = new ArrayList<List<Message>>();
+        List<Message> cur = null; // 当前工具组（assistant(tool_calls) + 其后 tool）
         for (Message m : messages) {
             if (m.summary || m.pinned || m.role == Message.Role.SYSTEM) {
-                flush(chains, cur);
+                flush(groups, cur);
+                cur = null;
                 continue;
             }
-            cur.add(m);
-            if (m.role == Message.Role.ASSISTANT
-                    && (m.toolCalls == null || m.toolCalls.isEmpty())) {
-                flush(chains, cur); // 无工具调用的 assistant 结束一条链
+            if (cur != null) {
+                if (m.role == Message.Role.TOOL) {
+                    cur.add(m); // 工具结果并入所属工具组，配对不外泄
+                    continue;
+                }
+                flush(groups, cur);
+                cur = null;
+            }
+            if (m.role == Message.Role.ASSISTANT && m.toolCalls != null && !m.toolCalls.isEmpty()) {
+                cur = new ArrayList<Message>();
+                cur.add(m);
+            } else {
+                List<Message> g = new ArrayList<Message>();
+                g.add(m); // 普通 user / assistant / 孤立 tool：各自一组
+                groups.add(g);
             }
         }
-        flush(chains, cur);
-        return chains;
+        flush(groups, cur);
+        return groups;
     }
 
-    private static void flush(List<List<Message>> chains, List<Message> cur) {
-        if (!cur.isEmpty()) {
-            chains.add(new ArrayList<Message>(cur));
-            cur.clear();
+    private static void flush(List<List<Message>> groups, List<Message> cur) {
+        if (cur != null && !cur.isEmpty()) {
+            groups.add(cur);
         }
     }
 
     /** 压缩：单次 LLM 调用，无递归、无降级。
-     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无链）；
-     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩链」；
+     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无原子组，或组数 ≤ KEEP_RECENT_GROUPS 不足以保证保留最近 8 组）；
+     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩原子组」；
      *  - 失败（请求异常/空摘要）：抛 LlmException，由调用方按重试策略处理。 */
     public List<Message> compress(List<Message> messages) throws LlmException {
-        List<List<Message>> chains = chunkChains(messages);
-        if (chains.isEmpty()) return messages;
-        int take = takeCount(chains);
-        String summary = callLlm(existingSummaryText(messages), buildBatch(chains, 0, take));
+        List<List<Message>> groups = chunkGroups(messages);
+        int take = takeCount(groups);
+        if (take <= 0) return messages; // 暂无可压缩：不调 LLM、不改变历史
+        String summary = callLlm(existingSummaryText(messages), buildBatch(groups, 0, take));
         List<Message> result = new ArrayList<Message>();
         for (Message m : messages) {
             if (m.role == Message.Role.SYSTEM) result.add(m); // system 原样保留，置于最前
         }
         result.add(summaryMsg(summary));
         for (Message m : messages) {
-            if (m.pinned) result.add(m); // 技能加载消息（pinned）常驻：不入链不参与摘要
+            if (m.pinned) result.add(m); // 技能加载消息（pinned）常驻：不入组不参与摘要
         }
-        for (int i = take; i < chains.size(); i++) {
-            result.addAll(chains.get(i)); // 保留未被压缩的链；旧 summary 由新摘要取代
+        for (int i = take; i < groups.size(); i++) {
+            result.addAll(groups.get(i)); // 保留未被压缩的原子组；旧 summary 由新摘要取代
         }
         return result;
     }
 
-    /** 要压缩的链数：从最早链逐链累加 token，累计首次 ≥ compressTokens 时的链数（含该链，
-     *  保证压缩量 ≥ COMPRESS_RATIO）；全部链合计仍不足时全压。有链时恒 ≥ 1。 */
-    private int takeCount(List<List<Message>> chains) {
+    /** 要压缩的原子组数：maxTake = 组数 − KEEP_RECENT_GROUPS（硬性至少保留最近 8 组）；
+     *  从最早组逐组累加 token，累计首次 ≥ compressTokens 时截断（含该组，保证压缩量 ≥ COMPRESS_RATIO），
+     *  且受 maxTake 封顶；maxTake ≤ 0 时返回 0（无可压缩）。 */
+    private int takeCount(List<List<Message>> groups) {
+        int maxTake = groups.size() - KEEP_RECENT_GROUPS;
+        if (maxTake <= 0) return 0;
         long compressTokens = (long) (maxContextTokens * THRESHOLD * COMPRESS_RATIO);
         long acc = 0;
         int take = 0;
-        for (List<Message> chain : chains) {
-            acc += TokenCounter.estimateMessages(chain);
-            take++;
-            if (acc >= compressTokens) return take;
+        for (int i = 0; i < maxTake; i++) {
+            acc += TokenCounter.estimateMessages(groups.get(i));
+            take = i + 1;
+            if (acc >= compressTokens) break;
         }
         return take;
     }
 
-    /** 既有摘要文本（二次压缩并入输入，避免旧摘要内容丢失）；无则 null */
+    /** 既有摘要文本（二次压缩并入输入，避免旧摘要内容丢失）：拼接全部 summary 消息
+     *  （兼容历史遗留多条摘要的会话），无则 null */
     private static String existingSummaryText(List<Message> messages) {
+        StringBuilder sb = new StringBuilder();
         for (Message m : messages) {
-            if (m.summary && m.content != null) return m.content;
+            if (m.summary && m.content != null && !m.content.trim().isEmpty()) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(m.content);
+            }
         }
-        return null;
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     /** 单次压缩请求：prefix（旧摘要）非空时置前参与合并；空摘要视为失败抛 EMPTY_RESPONSE */
@@ -145,11 +167,11 @@ public class ContextManager {
         return s.trim();
     }
 
-    /** 拼压缩批次文本 */
-    private String buildBatch(List<List<Message>> chains, int from, int to) {
+    /** 拼压缩批次文本（按原子组区间 [from, to)） */
+    private String buildBatch(List<List<Message>> groups, int from, int to) {
         StringBuilder batch = new StringBuilder();
         for (int i = from; i < to; i++) {
-            for (Message m : chains.get(i)) {
+            for (Message m : groups.get(i)) {
                 batch.append('[').append(m.role).append(']');
                 if (m.content != null) batch.append(' ').append(m.content);
                 if (m.reasoningContent != null) batch.append(" (思考: ").append(m.reasoningContent).append(')');

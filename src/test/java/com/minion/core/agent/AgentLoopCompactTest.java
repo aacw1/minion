@@ -3,6 +3,7 @@ package com.minion.core.agent;
 import com.minion.core.config.Config;
 import com.minion.core.context.ContextManager;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.Message;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
@@ -21,6 +22,15 @@ public class AgentLoopCompactTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /** 预置 4 轮普通历史 = 8 个原子组（48 token，超过 50×0.65=32.5 阈值）：
+     *  压缩至少保留最近 8 组，故必须 ≥9 组（本方法 8 组 + 本轮 user 1 组）才可能真正压缩 */
+    private static void seedHistory(AgentLoop loop) {
+        for (int i = 0; i < 4; i++) {
+            loop.messages().add(Message.user("历史" + i));
+            loop.messages().add(Message.assistant("回复" + i));
+        }
+    }
+
     @Test
     public void autoCompress_triggersOverThreshold() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -30,7 +40,7 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        // 小上下文上限，快速触发压缩（50×0.65=32.5 在第 4 轮触发）
+        // 小上下文上限，快速触发压缩（50×0.65=32.5；seed 后 9 组 54 token 必然超阈值）
         ContextManager cm = new ContextManager(50, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
@@ -39,14 +49,9 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        // 塞满历史：3 轮 user+assistant ≈ 每轮 12 token
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
-        // 第 4 轮触发压缩
+        seedHistory(loop);
         llm.addTurn("压缩后回复");
-        loop.runUserTurn("触发压缩");
+        loop.runUserTurn("触发压缩"); // 本轮 user 入历史后触发压缩
         boolean compressed = ui.warnings.stream().anyMatch(w -> w.contains("自动压缩"));
         assertTrue("应触发自动压缩", compressed);
         assertTrue(loop.messages().get(0).summary);
@@ -68,6 +73,7 @@ public class AgentLoopCompactTest {
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
+        seedHistory(loop);
         llm.addTurn("回复");
         loop.runUserTurn("问题");
         assertFalse(loop.messages().get(0).summary); // 未触发
@@ -94,11 +100,9 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        // 每轮 ≈12 token（4+2 开销+文本），50×0.65=32.5 阈值：第 4 轮 user 入历史后触发
-        for (int i = 0; i < 4; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
+        seedHistory(loop);
+        llm.addTurn("压缩后回复");
+        loop.runUserTurn("触发压缩");
         assertFalse("应触发自动压缩", ui.compressing.isEmpty());
         assertTrue("首事件=压缩开始", ui.compressing.get(0));
         assertFalse("末事件=压缩结束", ui.compressing.get(ui.compressing.size() - 1));
@@ -174,10 +178,7 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
+        seedHistory(loop);
         llm.addTurn("压缩后回复");
         loop.runUserTurn("触发压缩");
         assertFalse("整个流程应有上下文统计推送", ui.ctxStats.isEmpty());
@@ -202,12 +203,9 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.roundLimit = 10;
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
+        seedHistory(loop); // 8 组（48 token）+ 本轮 user = 9 组，超阈值且可压缩
         llm.addTurn("压缩后回复"); // 压缩成功后仍发送本轮请求
-        loop.runUserTurn("触发压缩"); // 第 4 轮 user 入历史后触发压缩（42 ≥ 32.5）
+        loop.runUserTurn("触发压缩");
         assertEquals(2, llm.completeChatRequests.size()); // 失败 1 次 + 重试 1 次
         assertTrue(loop.messages().get(0).summary);
         assertFalse(ui.retryProgress.isEmpty());                     // 进过重试态
@@ -233,12 +231,9 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 50); // 快速耗尽
         loop.roundLimit = 10;
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
-        loop.runUserTurn("触发压缩"); // 第 4 轮触发压缩：持续失败耗尽后中止，未发送请求
-        assertEquals(3, llm.requests.size()); // 前三轮各 1 次请求；第 4 轮压缩失败后中止，未发送
+        seedHistory(loop);
+        loop.runUserTurn("触发压缩"); // 压缩持续失败耗尽后中止，未发送请求
+        assertTrue("压缩失败中止本轮：未发送请求", llm.requests.isEmpty());
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).contains("自动压缩失败"));
         assertTrue(ui.errors.get(0).contains("仍失败"));
@@ -263,13 +258,10 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.roundLimit = 10;
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
-        loop.runUserTurn("触发压缩"); // 第 4 轮触发压缩：不可重试 → 立即失败中止
+        seedHistory(loop);
+        loop.runUserTurn("触发压缩"); // 不可重试 → 立即失败中止
         assertTrue(ui.retryProgress.isEmpty());                 // 未进重试态
         assertTrue(ui.errors.get(0).contains("自动压缩失败"));
-        assertEquals(3, llm.requests.size());                   // 第 4 轮中止：未发送请求
+        assertTrue("中止本轮：未发送请求", llm.requests.isEmpty());
     }
 }
