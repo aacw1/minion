@@ -28,18 +28,18 @@ public class ModelManagerTest {
         ModelManager m = ModelManager.load(dir);
         assertEquals(2, m.list().size());
         ModelConfig c = m.current();
-        assertEquals("deepseek-v4-flash", c.displayName);
-        assertEquals(900000, c.maxContextTokens);
+        assertEquals("deepseek", c.displayName);
+        assertEquals(200000, c.maxContextTokens);
         assertEquals("", c.apiKey);
         assertEquals("max", c.reasoningEffort);
-        ModelConfig q = m.get("qwen3-max");
+        ModelConfig q = m.get("qwen");
         assertNotNull(q);
         assertEquals("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", q.url);
-        assertEquals("qwen3-max", q.modelName);
+        assertEquals("qwen", q.modelName);
         assertEquals("qwen", q.provider);
         assertTrue(q.thinking);
         assertEquals("xhigh", q.reasoningEffort);
-        assertEquals(131072, q.maxContextTokens);
+        assertEquals(200000, q.maxContextTokens);
         assertEquals("", q.apiKey);
         assertTrue(Files.exists(dir.resolve("model.json")));
     }
@@ -66,7 +66,7 @@ public class ModelManagerTest {
     public void remove_lastModelRejected() throws IOException {
         Path dir = jarDir();
         ModelManager m = ModelManager.load(dir);
-        assertTrue(m.remove("deepseek-v4-flash")); // 先删到只剩一个
+        assertTrue(m.remove("deepseek")); // 先删到只剩一个
         assertEquals(1, m.list().size());
         assertFalse(m.remove(m.currentName()));    // 最后一个不可删
         assertEquals(1, m.list().size());
@@ -77,10 +77,10 @@ public class ModelManagerTest {
     public void remove_otherModelOkAndCurrentFallsBack() throws IOException {
         Path dir = jarDir();
         ModelManager m = ModelManager.load(dir);
-        m.setCurrent("qwen3-max");
-        assertTrue(m.remove("deepseek-v4-flash"));
+        m.setCurrent("qwen");
+        assertTrue(m.remove("deepseek"));
         assertEquals(1, m.list().size());
-        assertEquals("qwen3-max", m.current().displayName);
+        assertEquals("qwen", m.current().displayName);
     }
 
     /** 损坏文件：备份 .bak + 重建默认 */
@@ -101,7 +101,7 @@ public class ModelManagerTest {
                 "{\"model\":[{\"displayName\":\"x\"}]}".getBytes(StandardCharsets.UTF_8));
         ModelManager m = ModelManager.load(dir);
         assertEquals(2, m.list().size());
-        assertEquals("deepseek-v4-flash", m.current().displayName);
+        assertEquals("deepseek", m.current().displayName);
         assertTrue(Files.exists(dir.resolve("model.json.bak")));
     }
 
@@ -109,12 +109,12 @@ public class ModelManagerTest {
     @Test
     public void load_nullDisplayNameEntryFiltered() throws IOException {
         Path dir = jarDir();
-        String json = "{\"models\":[{\"displayName\":null,\"url\":\"http://x\"}],\"currentModelName\":\"deepseek-v4-flash\"}";
+        String json = "{\"models\":[{\"displayName\":null,\"url\":\"http://x\"}],\"currentModelName\":\"deepseek\"}";
         Files.write(dir.resolve("model.json"), json.getBytes(StandardCharsets.UTF_8));
         ModelManager m = ModelManager.load(dir);
         assertEquals(2, m.list().size());
         assertNotNull(m.current());
-        assertEquals("deepseek-v4-flash", m.current().displayName);
+        assertEquals("deepseek", m.current().displayName);
     }
 
     /** 合法已有配置（仅 deepseek 自定义模型）：重载后原样保留，不追加千问、不备份（零迁移） */

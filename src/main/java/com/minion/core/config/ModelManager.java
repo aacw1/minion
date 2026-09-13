@@ -61,28 +61,28 @@ public class ModelManager {
 
     public static ModelConfig createDeepseek() {
         ModelConfig c = new ModelConfig();
-        c.displayName = "deepseek-v4-flash";
+        c.displayName = "deepseek";
         c.url = "https://api.deepseek.com/v1/chat/completions";
         c.apiKey = "";
-        c.modelName = "deepseek-v4-flash";
+        c.modelName = "deepseek";
         c.provider = "deepseek";
         c.thinking = true;
         c.reasoningEffort = "max";
-        c.maxContextTokens = 900000;
+        c.maxContextTokens = 200000;
         return c;
     }
 
     /** 千问（阿里百炼 DashScope OpenAI 兼容模式）；effort 档位至 xhigh（平台默认 xhigh） */
     public static ModelConfig createQwen() {
         ModelConfig c = new ModelConfig();
-        c.displayName = "qwen3-max";
+        c.displayName = "qwen";
         c.url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
         c.apiKey = "";
-        c.modelName = "qwen3-max";
+        c.modelName = "qwen";
         c.provider = "qwen";
         c.thinking = true;
         c.reasoningEffort = "xhigh";
-        c.maxContextTokens = 131072;
+        c.maxContextTokens = 200000;
         return c;
     }
 

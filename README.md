@@ -160,7 +160,7 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
     key=sk-你的百炼APIKey
     # 选混合模型（qwen3 系列/qwen-plus）；纯思考模型（qwq/-thinking 变体）思考不可关闭
     name=qwen3-max
-    # 千问窗口通常 128k~256k；默认 900000 会超窗报 400
+    # 按你的模型窗口填写（千问常见 128k~256k）
     maxContextTokens=131072
 
 说明：

@@ -243,7 +243,7 @@ public class SettingsDialog {
         ComboBox<String> effort = new ComboBox<String>();
         effort.getItems().addAll("low", "medium", "high", "xhigh", "max");
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
-        TextField maxCtx = new TextField(mc == null ? "900000" : String.valueOf(mc.maxContextTokens));
+        TextField maxCtx = new TextField(mc == null ? "200000" : String.valueOf(mc.maxContextTokens));
 
         grid.addRow(0, new Label("标识名:"), displayName);
         grid.addRow(1, new Label("URL:"), url);
@@ -265,7 +265,7 @@ public class SettingsDialog {
             out.provider = provider.getValue() == null ? "deepseek" : provider.getValue();
             out.thinking = thinking.isSelected();
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
-            out.maxContextTokens = parseInt(maxCtx.getText(), 900000);
+            out.maxContextTokens = parseInt(maxCtx.getText(), 200000);
             return out;
         });
         Optional<ModelConfig> r = d.showAndWait();
