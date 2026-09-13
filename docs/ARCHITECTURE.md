@@ -59,8 +59,8 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行 → 落盘；轮数上限 DEFAULT_ROUND_LIMIT=10000；TaskTool 在此注册；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
-| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集，但不注册 task/Skill/AskUserQuestion（防无限递归与上下文污染）；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
+| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行 → 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
+| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
 | SystemPromptBuilder | system prompt 组装：内置提示词 → 项目主说明文件（未配置则整段不注入）→ 技能列表 → 已加载技能 |
@@ -182,7 +182,7 @@ com.minion
 
 | 常量 | 值 | 位置 |
 |---|---|---|
-| 主循环工具轮数上限 DEFAULT_ROUND_LIMIT | 10000 | AgentLoop.java |
+| 主循环工具轮数上限 DEFAULT_ROUND_LIMIT | 1000 | AgentLoop.java |
 | Bash 默认超时（timeoutSeconds 可覆盖） | 120s | BashTool.DEFAULT_TIMEOUT |
 | Bash 输出截断（内存保留上限 TOTAL_MAX，头 18k+尾 12k） | 30k 字符 | BashTool.HEAD_MAX/TAIL_MAX/TOTAL_MAX |
 | Bash/Grep 超限落盘目录 | `<jarDir>/.session/tmp/<sessionId>/`（返回绝对路径；含子代理报告 `subagent-report-*.txt`） | OutputDump |

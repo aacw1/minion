@@ -69,7 +69,8 @@ public class SubAgentLoop {
     public List<Message> messages() { return messages; }
 
     public String run() {
-        ui.onSubAgentStart(no, messages.get(1).content);
+        // START 事件只由 AgentLoop 派发时发送一次（Fix Round 1：此处曾重复发「任务: <desc>」，
+        // 与派发点的 desc 叠成两行开始行；直构本类的测试/调用方不再收到 START）
         int retries = 0;
         try {
             while (true) {

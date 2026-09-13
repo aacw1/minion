@@ -61,8 +61,11 @@ public class SubAgentLoopTest {
                 ui.subThinking.contains("子agent思考"));
         assertTrue("子代理正文须走子代理通道: " + ui.subDeltas,
                 ui.subDeltas.contains("子任务结果：完成"));
-        assertTrue("起始/完成事件带编号: " + ui.subStarts + " / " + ui.subDones,
-                ui.subStarts.contains("1:任务: 调研一下") && ui.subDones.contains("1:子任务结果：完成"));
+        // Fix Round 1：START 收敛为仅 AgentLoop 派发路径单发——直构 SubAgentLoop（本用例）不再发，
+        // 否则真实 GUI 会被派发点与 run() 各发一次渲染成两行开始行
+        assertTrue("直构路径不应发 START（由 AgentLoop 派发时统一发）: " + ui.subStarts,
+                ui.subStarts.isEmpty());
+        assertTrue("完成事件带编号: " + ui.subDones, ui.subDones.contains("1:子任务结果：完成"));
         // 事件走子代理通道；主通道零调用（未串台，含主代理思考/正文通道）
         assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty()
                 && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
@@ -140,6 +143,8 @@ public class SubAgentLoopTest {
         // 子 agent 请求 = [system, user(任务描述)]，system 包含任务说明
         assertEquals(2, llm.requests.get(1).messages.size());
         assertTrue(llm.requests.get(1).messages.get(1).content.contains("子任务甲"));
+        // Fix Round 1：START 恰 1 条且文本为派发描述（不带「任务: 」前缀）——收敛双发后锁死单发不回归
+        assertEquals(Collections.singletonList("1:子任务甲"), ui.subStarts);
     }
 
     /** I4-④ 子 agent 内 task 调用被防御拦截：错误 tool 结果，不派发嵌套子 agent */
