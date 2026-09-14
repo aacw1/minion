@@ -530,4 +530,26 @@ public class DeepSeekClientTest {
             c.close();
         }
     }
+
+    /** HTTP 200 之外的成功码但无响应体（204 无 body）→ EMPTY_RESPONSE 且可重试（按 500 类） */
+    @Test
+    public void emptyResponseBody_isRetryableEmptyResponse() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(204));
+        DeepSeekClient client = new DeepSeekClient(
+                server.url("/v1/chat/completions").toString(), "sk-test", "m",
+                false, null, "deepseek");
+        try {
+            client.streamChat(Collections.singletonList(Message.user("hi")), null,
+                    new StreamHandler() {
+                        @Override
+                        public void onFinish(String f, Usage u, List<ToolCall> t) { }
+                    });
+            fail("应抛 EMPTY_RESPONSE");
+        } catch (LlmException e) {
+            assertEquals(LlmException.Type.EMPTY_RESPONSE, e.type);
+            assertTrue(e.retryable);
+        } finally {
+            client.close();
+        }
+    }
 }

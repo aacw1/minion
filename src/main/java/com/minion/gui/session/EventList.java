@@ -12,18 +12,25 @@ public class EventList {
 
     public enum Kind {
         USER_MESSAGE, USER_SUPPLEMENT, THINKING, CONTENT, TOOL_CALL, TOOL_RESULT,
-        SUB_AGENT_START, SUB_AGENT_DELTA, SUB_AGENT_DONE, STATS, SYSTEM, ERROR, WARNING
-    }
+        SUB_AGENT_START, SUB_AGENT_DONE, STATS, SYSTEM, ERROR, WARNING
+    }   // SUB_AGENT_DELTA 删除：正文改走 CONTENT + subAgentId（渲染层按 id 区分）
 
     public static class Ev {
         public final Kind kind;
         public final String text;
         public final Object data;
+        /** 事件主人：0=主代理，>0=子代理编号（渲染层据此加【子代理N】前缀与独立流式缓冲） */
+        public final int subAgentId;
 
         public Ev(Kind kind, String text, Object data) {
+            this(kind, text, data, 0);
+        }
+
+        public Ev(Kind kind, String text, Object data, int subAgentId) {
             this.kind = kind;
             this.text = text;
             this.data = data;
+            this.subAgentId = subAgentId;
         }
     }
 

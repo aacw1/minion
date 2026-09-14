@@ -105,25 +105,41 @@ public class SessionController implements AgentUi {
                 args == null ? "{}" : args.toString()));
     }
     @Override public void onToolResult(String name, ToolResult result) {
-        if (result == null) {
-            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name, "ok"));
-        } else if (result.ok) {
-            // "ok" 前缀保持 ChatView 现有 ok 判断兼容；换行后接完整输出（可能为空串）
-            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name,
-                    "ok\n" + (result.output == null ? "" : result.output)));
-        } else {
-            events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name,
-                    "error:" + (result.output == null ? "" : result.output)));
-        }
+        events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name, resultData(result)));
     }
-    @Override public void onSubAgentStart(String description) {
-        events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_START, description, null));
+
+    /** ToolResult → 事件 data（"ok"/"ok\n输出"/"error:原因"；null 降级为成功态空输出）；
+     *  主代理与子代理共用——ChatView 解析协议只有一份 */
+    private static String resultData(ToolResult result) {
+        if (result == null) return "ok";
+        return result.ok ? "ok\n" + (result.output == null ? "" : result.output)
+                : "error:" + (result.output == null ? "" : result.output);
     }
-    @Override public void onSubAgentDelta(String delta) {
-        events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_DELTA, delta, null));
+
+    // ===== 子代理事件（带编号；思考/正文复用 THINKING/CONTENT kind，靠 subAgentId 区分渲染）=====
+
+    @Override public void onSubAgentStart(int no, String description) {
+        events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_START, description, null, no));
     }
-    @Override public void onSubAgentDone(String summary) {
-        events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_DONE, summary, null));
+    @Override public void onSubAgentThinking(int no, String delta) {
+        events.add(new EventList.Ev(EventList.Kind.THINKING, delta, null, no));
+    }
+    @Override public void onSubAgentDelta(int no, String delta) {
+        events.add(new EventList.Ev(EventList.Kind.CONTENT, delta, null, no));
+    }
+    @Override public void onSubAgentToolCall(int no, String name, JsonObject args) {
+        events.add(new EventList.Ev(EventList.Kind.TOOL_CALL, name,
+                args == null ? "{}" : args.toString(), no));
+    }
+    @Override public void onSubAgentToolResult(int no, String name, ToolResult result) {
+        events.add(new EventList.Ev(EventList.Kind.TOOL_RESULT, name, resultData(result), no));
+    }
+    @Override public void onSubAgentDone(int no, String summary) {
+        events.add(new EventList.Ev(EventList.Kind.SUB_AGENT_DONE, summary, null, no));
+    }
+    @Override public void onSubAgentNotice(int no, String message) {
+        // WARNING kind + subAgentId：渲染层按 id 显示【子代理N】，不驱动主代理错误横幅
+        events.add(new EventList.Ev(EventList.Kind.WARNING, message, null, no));
     }
     @Override public void onStatsLine(String line) {
         events.add(new EventList.Ev(EventList.Kind.STATS, line, null));

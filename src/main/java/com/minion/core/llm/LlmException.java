@@ -2,7 +2,7 @@ package com.minion.core.llm;
 
 public class LlmException extends Exception {
 
-    public enum Type { AUTH, RATE_LIMIT, BAD_REQUEST, NETWORK, TIMEOUT, OTHER }
+    public enum Type { AUTH, RATE_LIMIT, BAD_REQUEST, NETWORK, TIMEOUT, OTHER, EMPTY_RESPONSE }
 
     public final Type type;
     public final boolean retryable;

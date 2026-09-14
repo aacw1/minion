@@ -557,9 +557,9 @@ public class AgentLoopTest {
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
-        // NETWORK 已纳入长重试：用短墙钟快速耗尽，避免用例跑 20 分钟。
+        // NETWORK 已纳入长重试：用短墙钟快速耗尽，避免用例跑 12 分钟。
         // 100ms 而非计划初稿的 25ms——Thread.sleep 精度下 25ms 每轮只够重试 1~2 次，断言偏脆
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 100);
+        loop.retryPolicy = new RetryPolicy(10, 10, 100);
         loop.runUserTurn("任务一");
         loop.runUserTurn("任务二");
         // 每轮：user + assistant(tool_calls) + tool(result) = 3 条；2 轮共 6 条，无叠加
@@ -591,7 +591,7 @@ public class AgentLoopTest {
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.roundLimit = 10;
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 充裕墙钟：证明不重试是闸门所致而非耗尽
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 充裕墙钟：证明不重试是闸门所致而非耗尽
         loop.runUserTurn("任务");
         assertEquals("闸门下不得重发出第二条 assistant", 1, loop.messages().size());
         assertEquals(Message.Role.USER, loop.messages().get(0).role);
@@ -785,6 +785,30 @@ public class AgentLoopTest {
         assertNotEquals(oldId, loop.session().id);
         assertNotEquals(oldCreatedAt, loop.session().createdAt);
         assertEquals(loop.session().id, loop.session().createdAt); // 与 Session.create 同机制
+    }
+
+    /** 终审 P3 潜伏项：startNewSession 同步子代理状态——落盘目录换新会话 id、编号归 0（新会话从 1 起） */
+    @Test
+    public void startNewSession_refreshesSubAgentTmpDirAndSeq() {
+        AgentLoop loop = newLoop();
+        String oldId = loop.session().id;
+        loop.setSessionTmpDir(tmp.getRoot().toPath().resolve("tmp").resolve(oldId).toString());
+        JsonObject args = new JsonObject();
+        args.addProperty("description", "任务A");
+        llm.addTurn("子代理1完成");
+        loop.runSubAgent(args); // 默认 runner：编号 1
+        assertEquals(Arrays.asList("1:任务A"), ui.subStarts);
+
+        loop.startNewSession();
+
+        assertNotEquals(oldId, loop.session().id);
+        assertEquals("落盘目录必须指向新会话 id（防落进旧目录被孤儿清理误删）",
+                tmp.getRoot().toPath().resolve("tmp").resolve(loop.session().id).toString(),
+                loop.sessionTmpDir());
+        llm.addTurn("新会话子代理完成");
+        loop.runSubAgent(args);
+        assertEquals("编号必须从 1 重新开始（不做则续用旧会话序号）",
+                Arrays.asList("1:任务A", "1:任务A"), ui.subStarts);
     }
 
     /** T4 回归：startNewSession 原地清空 todo/usage，Main 注册的 TodoWriteTool
@@ -1318,7 +1342,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         loop.runUserTurn("任务");
         assertEquals(2, loop.messages().size()); // user + assistant
         assertEquals("最终回复", loop.messages().get(1).content);
@@ -1335,7 +1359,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         llm.addTurnError("连接中断"); // 重试请求：streamChat 正常返回但 handler 走 onError 回调
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         // 成功路径静默恢复（无警告），onError 回调的流中断错误由检查点提示
@@ -1351,7 +1375,7 @@ public class AgentLoopTest {
     public void rateLimit_exhausted_stopsWithSummary() {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 10, 20, 50); // 10+20+20=50ms 耗尽
+        loop.retryPolicy = new RetryPolicy(10, 20, 50); // SHORT 10ms/次，墙钟 50ms 内耗尽
         long start = System.currentTimeMillis();
         loop.runUserTurn("任务");
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
@@ -1371,7 +1395,7 @@ public class AgentLoopTest {
     public void rateLimit_interruptedDuringBackoff_stopsPromptly() throws Exception {
         llm.addTurnThrow(new LlmException(LlmException.Type.RATE_LIMIT, "请求过于频繁(429)", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(60000, 60000, 60000, 3600000L); // 长退避
+        loop.retryPolicy = new RetryPolicy(60000, 60000, 3600000L); // 长退避
         Thread t = new Thread(() -> loop.runUserTurn("任务"));
         t.start();
         Thread.sleep(200); // 等首次失败进入退避等待
@@ -1389,7 +1413,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(LlmException.of(500, "{\"error\":\"internal\"}"));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 测试短固定间隔
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短固定间隔
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
         assertTrue(ui.warnings.isEmpty());
@@ -1403,26 +1427,38 @@ public class AgentLoopTest {
         llm.addTurnThrow(LlmException.of(502, "{\"message\":\"bad gateway\"}"));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size());
         assertTrue(ui.errors.isEmpty());
         assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
     }
 
-    /** 503 不进长重试：仍快速重试 1 次后报错（仅 500/502 扩展） */
+    /** 503 服务不可用：纳入 500 类长重试（30s 类，测试小参数），成功后静默恢复 */
     @Test
-    public void serverError503_notLongRetried() {
+    public void serverError503_longRetried() {
         llm.addTurnThrow(LlmException.of(503, "unavailable"));
-        llm.addTurnThrow(LlmException.of(503, "unavailable"));
+        llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
-        assertEquals(2, llm.requests.size()); // 原始 + 1 次快速重试
-        assertEquals(1, ui.warnings.size());
-        assertTrue(ui.warnings.get(0).contains("自动重试 1 次"));
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.retryAttempts().isEmpty()); // 未进长重试：无进度回调
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次长重试（不再走 0.5s 快速重试）
+        assertTrue(ui.warnings.isEmpty());     // 无「自动重试 1 次」
+        assertTrue(ui.errors.isEmpty());
+        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+    }
+
+    /** 等待时长按最近一次错误类别：429 → 短等待，500 → 长等待 */
+    @Test
+    public void retry_delayFollowsLatestErrorKind() {
+        llm.addTurnThrow(LlmException.of(429, null));
+        llm.addTurnThrow(LlmException.of(500, "{\"error\":\"boom\"}"));
+        llm.addTurn("最终回复");
+        AgentLoop loop = newLoop();
+        loop.retryPolicy = new RetryPolicy(3, 7, 60000);
+        loop.runUserTurn("任务");
+        assertEquals(3L, ui.retryProgress.get(0).nextDelayMs); // 429 → SHORT
+        assertEquals(7L, ui.retryProgress.get(1).nextDelayMs); // 500 → LONG
     }
 
     /** 重试循环内错误码切换（429 → 500）：进度携带最近一次错误码/响应体，退出末位复位 */
@@ -1433,7 +1469,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(LlmException.of(500, "{\"error\":\"boom\"}"));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         // 请求序列：原始 429 → 重试1 429 → 重试2 500 → 重试3 成功（FakeLlmClient 每 streamChat 消耗一回合）
         assertEquals(4, llm.requests.size());
@@ -1455,7 +1491,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时：60 秒内未收到模型输出", true));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size());
         assertTrue(ui.errors.isEmpty());
@@ -1470,7 +1506,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK, "网络错误: Connection reset", true));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(2, llm.requests.size());
         assertEquals("网络错误", ui.retryProgress.get(0).label);
@@ -1484,7 +1520,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.NETWORK,
                 "网络错误: minion-nonexistent.invalid（域名无法解析，请检查设置中的 API 地址）", false));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(1, llm.requests.size());         // 无重发
         assertTrue(ui.retryAttempts().isEmpty());      // 未进长重试
@@ -1498,7 +1534,7 @@ public class AgentLoopTest {
         llm.addTurnPartialThenThrow("已经吐出的半截正文",
                 new LlmException(LlmException.Type.NETWORK, "网络错误: Connection reset", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(1, llm.requests.size());
         assertTrue(ui.retryAttempts().isEmpty());
@@ -1506,12 +1542,12 @@ public class AgentLoopTest {
         assertEquals(1, ui.errors.size());
     }
 
-    /** 闸门不影响 429：零增量失败仍正常长重试（与既有用例同源，防误伤） */
+    /** 闸门不影响 500 类：已吐字后 503 断流仍按零增量闸门拦住长重试（防重复输出优先） */
     @Test
-    public void partialOutputThen503_noFastRetry() {
+    public void partialOutputThen503_gateBlocksLongRetry() {
         llm.addTurnPartialThenThrow("半截", LlmException.of(503, "unavailable"));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(1, llm.requests.size());
         assertTrue(ui.warnings.isEmpty());
@@ -1524,7 +1560,7 @@ public class AgentLoopTest {
         llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时", true));
         llm.addTurn("最终回复");
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.runUserTurn("任务");
         assertEquals(3, ui.retryProgress.size());
         assertNull(ui.retryProgress.get(0).label);
@@ -1539,7 +1575,7 @@ public class AgentLoopTest {
     public void networkTimeout_exhausted_summaryUsesLabel() {
         llm.addTurnThrow(new LlmException(LlmException.Type.TIMEOUT, "请求超时", true));
         AgentLoop loop = newLoop();
-        loop.retryPolicy = new RetryPolicy(10, 0, 10, 50); // 墙钟 ~5 次内耗尽
+        loop.retryPolicy = new RetryPolicy(10, 10, 50); // 墙钟 ~5 次内耗尽
         loop.runUserTurn("任务");
         assertEquals(1, ui.errors.size());
         assertTrue(ui.errors.get(0).startsWith("网络超时 重试了"));

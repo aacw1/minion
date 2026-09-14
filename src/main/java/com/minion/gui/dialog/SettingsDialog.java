@@ -243,9 +243,7 @@ public class SettingsDialog {
         ComboBox<String> effort = new ComboBox<String>();
         effort.getItems().addAll("low", "medium", "high", "xhigh", "max");
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
-        TextField maxCtx = new TextField(mc == null ? "900000" : String.valueOf(mc.maxContextTokens));
-        TextField thr = new TextField(mc == null ? "0.8" : String.valueOf(mc.compressThreshold));
-        TextField keep = new TextField(mc == null ? "50" : String.valueOf(mc.keepRecentMessages));
+        TextField maxCtx = new TextField(mc == null ? "200000" : String.valueOf(mc.maxContextTokens));
 
         grid.addRow(0, new Label("标识名:"), displayName);
         grid.addRow(1, new Label("URL:"), url);
@@ -255,8 +253,6 @@ public class SettingsDialog {
         grid.addRow(5, new Label("思考:"), thinking);
         grid.addRow(6, new Label("effort:"), effort);
         grid.addRow(7, new Label("maxContextTokens:"), maxCtx);
-        grid.addRow(8, new Label("compressThreshold:"), thr);
-        grid.addRow(9, new Label("keepRecentMessages:"), keep);
         d.getDialogPane().setContent(grid);
 
         d.setResultConverter(bt -> {
@@ -269,9 +265,7 @@ public class SettingsDialog {
             out.provider = provider.getValue() == null ? "deepseek" : provider.getValue();
             out.thinking = thinking.isSelected();
             out.reasoningEffort = effort.getValue() == null ? "max" : effort.getValue();
-            out.maxContextTokens = parseInt(maxCtx.getText(), 900000);
-            out.compressThreshold = parseDouble(thr.getText(), 0.8);
-            out.keepRecentMessages = parseInt(keep.getText(), 50);
+            out.maxContextTokens = parseMaxContextTokens(maxCtx.getText());
             return out;
         });
         Optional<ModelConfig> r = d.showAndWait();
@@ -719,8 +713,12 @@ public class SettingsDialog {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
     }
 
-    private static double parseDouble(String s, double def) {
-        try { return Double.parseDouble(s.trim()); } catch (Exception e) { return def; }
+    /** maxContextTokens 解析：非数字回退 200000；<=0 同样回退——0 会让压缩成功百分比
+     *  表达式除零（主代理自动压缩与子代理压缩两路同型，终审 P3；一处修两路）。
+     *  package-private 供单测（无 JavaFX 环境） */
+    static int parseMaxContextTokens(String s) {
+        int v = parseInt(s, 200000);
+        return v > 0 ? v : 200000;
     }
 
     private static void error(String title, String msg) {

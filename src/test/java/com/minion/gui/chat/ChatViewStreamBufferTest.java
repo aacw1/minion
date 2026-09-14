@@ -68,4 +68,154 @@ public class ChatViewStreamBufferTest {
         assertFalse(ChatView.StreamBuffer.isRoundBoundary(EventList.Kind.ERROR));
         assertFalse(ChatView.StreamBuffer.isRoundBoundary(EventList.Kind.WARNING));
     }
+
+    // ===== 子代理流式隔离（设计 2026-09-13：并发子代理的思考/正文必须按编号分道互不串台）=====
+
+    /** 并发子代理流式隔离：不同 subAgentId 的正文/思考各自累积，互不串台 */
+    @Test
+    public void buffers_isolatedPerSubAgent() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子代理1正文");
+        buffers.of(2).onContent("子代理2正文");
+        buffers.of(0).onContent("主代理正文");
+        assertEquals("子代理1正文", buffers.of(1).content());
+        assertEquals("子代理2正文", buffers.of(2).content());
+        assertEquals("主代理正文", buffers.of(0).content());
+    }
+
+    /** 轮次边界只清对应主人的缓冲（子代理工具调用不得清掉主代理正在累积的回复） */
+    @Test
+    public void buffers_roundBoundary_onlyClearsTarget() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        buffers.onRoundBoundary(2);
+        assertEquals("子1", buffers.of(1).content());
+        assertEquals("", buffers.of(2).content());
+    }
+
+    /** 流式段身份判等：kind 相同 + 主人相同才就地更新；NONE 恒不参与 */
+    @Test
+    public void sameStream_requiresSameKindAndOwner() {
+        assertTrue(ChatView.sameStream(ChatView.StreamKind.REPLY, 0, ChatView.StreamKind.REPLY, 0));
+        assertFalse("不同主人不得合并同段", ChatView.sameStream(ChatView.StreamKind.REPLY, 1, ChatView.StreamKind.REPLY, 2));
+        assertFalse(ChatView.sameStream(ChatView.StreamKind.THINK, 1, ChatView.StreamKind.REPLY, 1));
+        assertFalse(ChatView.sameStream(ChatView.StreamKind.NONE, 1, ChatView.StreamKind.NONE, 1));
+    }
+
+    /** 标签与配色：子代理事件用【子代理N】+ log-subagent，主代理保持原标签 */
+    @Test
+    public void tagAndColor_subAgentVsMain() {
+        assertEquals("【思考】", ChatView.tagOf(0, "【思考】"));
+        assertEquals("【子代理2】", ChatView.tagOf(2, "【思考】"));
+        assertEquals("【子代理12】", ChatView.tagOf(12, "【回复】"));
+        assertEquals("log-reply", ChatView.colorOf(0, "log-reply"));
+        assertEquals("log-subagent", ChatView.colorOf(3, "log-reply"));
+    }
+
+    /** 清空（删会话）后所有子代理缓冲一并释放 */
+    @Test
+    public void buffers_clearReleasesAll() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("x");
+        buffers.clear();
+        assertEquals("", buffers.of(1).content());
+    }
+
+    // ===== Fix Round 1：并发交错合并（ActiveStreams）+ 子代理完成缓冲回收 =====
+
+    /** 并发交错下按 (kind, owner) 引用定位原段：A 的流被 B 的段隔开后仍命中 A 的段，
+     *  不会把整段累积文本注入新段（否则表现为同一子代理正文/思考重复前缀，4 路并发下为常态） */
+    @Test
+    public void activeStreams_survivesInterleaving() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        assertEquals("A1", active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+        assertNull("kind 不同不得命中", active.get(ChatView.StreamKind.THINK, 1));
+        assertNull("主人不同不得命中", active.get(ChatView.StreamKind.REPLY, 3));
+    }
+
+    /** 轮次边界只断该主人的流引用：A 的工具调用不得让 B 正在累积的流另起新段 */
+    @Test
+    public void activeStreams_clearOwner_onlyTargetOwner() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        active.clearOwner(1);
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+    }
+
+    /** 思考流定稿后引用移除：后续 THINKING 增量另起新段（与旧的末段判等语义一致） */
+    @Test
+    public void activeStreams_removeKindOnly() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.THINK, 1, "T1");
+        active.put(ChatView.StreamKind.REPLY, 1, "R1");
+        active.remove(ChatView.StreamKind.THINK, 1);
+        assertNull(active.get(ChatView.StreamKind.THINK, 1));
+        assertEquals("R1", active.get(ChatView.StreamKind.REPLY, 1));
+    }
+
+    /** 段被截断（>200 段移除头部）后引用失效：流式增量不得写进已不在场景中的段 */
+    @Test
+    public void activeStreams_removeValue_invalidatesTrimmedSegment() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.put(ChatView.StreamKind.REPLY, 2, "B1");
+        active.removeValue("A1");
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertEquals("B1", active.get(ChatView.StreamKind.REPLY, 2));
+    }
+
+    /** 清空（删会话）后所有活跃引用释放 */
+    @Test
+    public void activeStreams_clearReleasesAll() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 1, "A1");
+        active.clear();
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+    }
+
+    /** 子代理完成回收缓冲：条目删除（防会话内条目随派发数增长），其他主人不受影响 */
+    @Test
+    public void buffers_removeReleasesOwner() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        assertEquals(2, buffers.size());
+        buffers.remove(1);
+        assertEquals(1, buffers.size());
+        assertEquals("", buffers.of(1).content()); // 移除后再取 = 全新空缓冲
+        assertEquals("子2", buffers.of(2).content());
+    }
+
+    /** 轮末兜底回收（终审 P3）：失败/中断的子代理不发 SUB_AGENT_DONE，轮末清全部子代理缓冲、主代理保留 */
+    @Test
+    public void buffers_clearSubAgents_keepsMain() {
+        ChatView.StreamBuffers buffers = new ChatView.StreamBuffers();
+        buffers.of(0).onContent("主");
+        buffers.of(1).onContent("子1");
+        buffers.of(2).onContent("子2");
+        assertEquals(3, buffers.size());
+        buffers.clearSubAgents();
+        assertEquals("仅主代理保留", 1, buffers.size());
+        assertEquals("主", buffers.of(0).content());
+        assertEquals("子代理条目已回收（再取 = 全新空缓冲）", "", buffers.of(1).content());
+    }
+
+    /** 轮末兜底回收流引用（终审 P3）：失败/中断路径没有 DONE 回收点，主代理引用保留 */
+    @Test
+    public void activeStreams_clearSubAgents_keepsMain() {
+        ChatView.ActiveStreams<String> active = new ChatView.ActiveStreams<String>();
+        active.put(ChatView.StreamKind.REPLY, 0, "M");
+        active.put(ChatView.StreamKind.REPLY, 1, "A");
+        active.put(ChatView.StreamKind.THINK, 2, "B");
+        active.clearSubAgents();
+        assertEquals("M", active.get(ChatView.StreamKind.REPLY, 0));
+        assertNull(active.get(ChatView.StreamKind.REPLY, 1));
+        assertNull(active.get(ChatView.StreamKind.THINK, 2));
+    }
 }

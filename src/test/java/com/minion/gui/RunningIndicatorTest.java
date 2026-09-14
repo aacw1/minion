@@ -1,6 +1,7 @@
 package com.minion.gui;
 
 import com.minion.core.agent.RetryProgress;
+import com.minion.core.llm.LlmException;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -75,10 +76,12 @@ public class RunningIndicatorTest {
                 .contains(longBody.substring(0, 200)));
     }
 
-    /** 未知错误码防御性显示（理论不可达：长重试仅 429/500/502） */
+    /** 未知错误码防御性显示；503/504 已纳入 500 类长重试 */
     @Test
     public void retryText_unknownCode_defensive() {
-        assertEquals("HTTP 503", RunningIndicator.codeLabel(503));
+        assertEquals("503服务不可用", RunningIndicator.codeLabel(503));
+        assertEquals("504网关超时", RunningIndicator.codeLabel(504));
+        assertEquals("HTTP 599", RunningIndicator.codeLabel(599));
     }
 
     /** 网络超时：中文标签 + "："分隔 + 剥掉与标签重复的自带前缀 */
@@ -121,5 +124,34 @@ public class RunningIndicatorTest {
         RetryProgress p = RetryProgress.ofNetwork(1, "网络错误", sb.toString());
         assertEquals(201, RunningIndicator.bodyPart(p).length());
         assertTrue(RunningIndicator.bodyPart(p).startsWith("："));
+    }
+
+    /** 带下次等待时长：文案追加「约 N 秒后重试」（毫秒向上取整到秒） */
+    @Test
+    public void retryText_withDelay_appendsWaitHint() {
+        RetryProgress p = RetryProgress.from(2, LlmException.of(500, "{\"error\":\"boom\"}"), 30000);
+        assertEquals("正在加载中...(500服务报错，重试第2次{\"error\":\"boom\"}，约 30 秒后重试)",
+                RunningIndicator.retryText(p, "正在加载中..."));
+        RetryProgress q = RetryProgress.from(1,
+                new LlmException(LlmException.Type.RATE_LIMIT, "429", true), 5000);
+        assertEquals("可随时补充信息...(429限流，重试第1次，约 5 秒后重试)",
+                RunningIndicator.retryText(q, "可随时补充信息..."));
+    }
+
+    /** 不足 1 秒向上取整到 1 秒；无等待时长（<=0）不追加 */
+    @Test
+    public void delayPart_roundsUpAndSkipsZero() {
+        assertEquals("，约 1 秒后重试",
+                RunningIndicator.delayPart(RetryProgress.from(1, LlmException.of(429, null), 1)));
+        assertEquals("", RunningIndicator.delayPart(RetryProgress.of(1, 429, null)));
+    }
+
+    /** 压缩期间的重试：基础文案取压缩固定文案（setRetryProgress 内 retryBase 选择），等待时长可见 */
+    @Test
+    public void retryText_duringCompressing_usesCompressingBase() {
+        RetryProgress p = RetryProgress.from(1,
+                new LlmException(LlmException.Type.EMPTY_RESPONSE, "空响应", true), 30000);
+        assertEquals("上下文压缩中...(空响应，重试第1次，约 30 秒后重试)",
+                RunningIndicator.retryText(p, RunningIndicator.COMPRESSING_TEXT));
     }
 }

@@ -1,13 +1,14 @@
 package com.minion.core.agent;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.minion.core.context.ContextCompressor;
 import com.minion.core.context.ContextManager;
 import com.minion.core.context.TokenCounter;
 import com.minion.core.llm.ImagePart;
 import com.minion.core.llm.LlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolArguments;
 import com.minion.core.llm.ToolCall;
 import com.minion.core.llm.Usage;
 import com.minion.core.llm.UsageTracker;
@@ -53,9 +54,14 @@ public class AgentLoop {
      *  队列级去重：同名已在队列 → 跳过（同轮防重复插入）；历史级幂等由 Skill 工具报告、模型判断 */
     private final List<SkillLoad> pendingSkillLoads = new ArrayList<SkillLoad>();
     private java.util.function.Function<JsonObject, String> subAgentRunner; // Task 15 注入
+    /** 会话内子代理编号：递增不复用（并发子代理编号必然不同；新会话/重载=新 AgentLoop，从 1 起） */
+    private final java.util.concurrent.atomic.AtomicInteger subAgentSeq =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** 会话临时目录（jarDir/.session/tmp/<会话id>；子代理报告落盘位置；null=测试/未接线不落盘） */
+    private volatile String sessionTmpDir;
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
-    /** 瞬时错误长重试策略（429/500/502；默认固定 5s/次，总时长 20 分钟；测试可覆写小参数） */
+    /** 瞬时错误长重试策略（429/超时/网络 5s、500 类 30s；墙钟总时长 12 分钟；测试可覆写小参数） */
     public RetryPolicy retryPolicy = RetryPolicy.transientErrors();
     /** 工具空输出占位（配置 agent.emptyOutput.placeholder 注入；开启时成功空输出发「输出内容为空」占位） */
     public boolean emptyOutputPlaceholder = false;
@@ -102,10 +108,12 @@ public class AgentLoop {
         // 必须显式 this.llm 读 volatile 字段，才与主循环请求路径（456/485 行）同源。
         setSubAgentRunner(args -> {
             String desc = args.has("description") ? args.get("description").getAsString() : "无描述";
-            ui.onSubAgentStart(desc);
+            int no = subAgentSeq.incrementAndGet();
+            ui.onSubAgentStart(no, desc);
             SubAgentLoop sub = new SubAgentLoop(buildSystemPrompt(), desc, workspace.workDir(),
-                    this.llm, registry, confirmGate, ui);
+                    this.llm, registry, confirmGate, ui, sessionTmpDir, no);
             sub.emptyOutputPlaceholder = emptyOutputPlaceholder; // 与主循环同开关（子 agent 同请求体风险）
+            sub.contextManager = buildSubContextManager(); // 子代理压缩接线（null=主未启用，不压缩）
             return sub.run();
         });
     }
@@ -205,9 +213,25 @@ public class AgentLoop {
         return promptBuilder.build(allSkills);
     }
 
+    /** 子代理上下文压缩器：与主代理同参数（主未启用压缩则返回 null=子代理不压缩）；
+     *  指令用子代理定制版；systemTokens=0——子代理 system 提示词在 messages 内，由 TokenCounter 统一估算。
+     *  每次派发时构建（模型参数热更新后新子代理即生效）；包内可见供测试断言。 */
+    ContextManager buildSubContextManager() {
+        ContextManager mainCm = this.contextManager;
+        if (mainCm == null) return null;
+        return new ContextManager(mainCm.maxTokens(), this.llm, 0,
+                ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+    }
+
     public void setSubAgentRunner(java.util.function.Function<JsonObject, String> runner) {
         this.subAgentRunner = runner;
     }
+
+    /** 会话临时目录注入（SessionManager 创建/恢复会话时调用；子代理报告落盘位置） */
+    public void setSessionTmpDir(String dir) { this.sessionTmpDir = dir; }
+
+    /** 当前会话临时目录（诊断/测试断言用；startNewSession 后应指向新会话 id 目录） */
+    String sessionTmpDir() { return sessionTmpDir; }
 
     /** 回答 AskUserQuestion（SessionManager.sendAnswer 转发）；无挂起时忽略 */
     public boolean answerAskUser(String answer) {
@@ -276,27 +300,59 @@ public class AgentLoop {
         }
     }
 
+    /** 压缩结果：OK=已压缩；NOTHING=暂无可压缩；FAILED=失败/中断（已 onError 提示或用户中断） */
+    private enum CompressOutcome { OK, NOTHING, FAILED }
+
+    /** 压缩 + 瞬时错误重试（自动压缩与 /compact 共用）：算法复用 ContextCompressor（与子代理同一套），
+     *  可被"停止"中断；耗尽或不可重试错误 → onError 并返回 FAILED（调用方中止本轮不发送请求）。
+     *  成功不打提示文案（自动压缩与手动压缩文案不同，由调用方各自输出）。
+     *  @param manual true=用户手动 /compact（文案「压缩失败：…」，不提"自动"/"本轮已停止"）；
+     *                false=主循环自动压缩（文案「自动压缩失败：…；本轮已停止」） */
+    private CompressOutcome compressWithRetry(boolean manual) {
+        String failPrefix = manual ? "压缩失败：" : "自动压缩失败：";
+        String stopTail = manual ? "；可稍后重试或新建会话" : "；本轮已停止，可稍后重试或新建会话";
+        String exhaustedTail = manual ? "；可稍后重试或新建会话" : "；本轮已停止";
+        ContextCompressor.Result r = new ContextCompressor(retryPolicy).run(
+                contextManager, session.messages, new ContextCompressor.Sink() {
+                    @Override public void onRetryProgress(RetryProgress p) { ui.onRetryProgress(p); }
+                    @Override public boolean interrupted() {
+                        // 停止按钮只置 interrupted 标志（不中断工作线程）；线程中断（会话删除/退出收口）同样中止
+                        return interrupted || Thread.currentThread().isInterrupted();
+                    }
+                });
+        switch (r.outcome) {
+            case OK:
+                session.messages = r.messages;
+                return CompressOutcome.OK;
+            case NOTHING:
+                return CompressOutcome.NOTHING;
+            case FAILED:
+                ui.onError(failPrefix + r.failReason + (r.exhausted ? exhaustedTail : stopTail));
+                return CompressOutcome.FAILED;
+            default:
+                return CompressOutcome.FAILED; // INTERRUPTED：静默（原实现用户中断同样不提示）
+        }
+    }
+
     public void compactNow() {
         if (contextManager == null) {
             ui.onWarning("未启用上下文压缩");
             return;
         }
         ui.onCompressingChanged(true);
+        CompressOutcome outcome;
         try {
-            int before = session.messages.size();
-            session.messages = contextManager.compress(session.messages);
-            if (session.messages.size() < before) {
-                ui.onWarning("已压缩上下文（历史摘要已置前）");
-            } else if (contextManager.lastCompressAttempted()) {
-                // take>0 但压缩 LLM 调用失败（网络/超窗）原样返回：与"无可压缩"区分开，避免误导
-                ui.onWarning("压缩失败（模型调用异常），请稍后重试");
-            } else {
-                ui.onWarning("暂无可压缩内容");
-            }
+            outcome = compressWithRetry(true); // 手动 /compact：失败文案不带"自动"
         } finally {
             ui.onCompressingChanged(false);
         }
-        pushContextStats();
+        if (outcome == CompressOutcome.OK) {
+            ui.onWarning("已压缩上下文（历史摘要已置前）");
+        } else if (outcome == CompressOutcome.NOTHING) {
+            ui.onWarning("暂无可压缩内容");
+        }
+        // FAILED：compressWithRetry 内已 onError 提示（用户中断则静默）
+        pushContextStats(); // 压缩结束后刷新进度圈（含失败/无可压缩的原样保留）
     }
 
     /** 推送上下文统计（GUI 环形进度圈）：contextManager 未启用时不推送 */
@@ -336,7 +392,10 @@ public class AgentLoop {
      *  todo/usage 必须原地清空而非换新实例：Main 注册 TodoWriteTool 时捕获的是 session.todos
      *  的实例引用，换新实例会让工具继续写已废弃的空清单（任务状态丢失）。
      *  id/createdAt 必须重新生成：旧 id 会话已随 /new 落盘，沿用旧 id 会让新会话的
-     *  自动落盘覆盖上一个会话文件。 */
+     *  自动落盘覆盖上一个会话文件。
+     *  前置条件（终审 P3）：生产 /new 走 SessionManager.createSession 新建会话（新 AgentLoop，
+     *  落盘目录与编号天然正确）；本方法为复用旧实例的接口，子代理状态已在方法内同步
+     *  （临时目录换新 id、编号归零），会话落盘等外壳状态仍由调用方负责。 */
     public void startNewSession() {
         session.messages.clear();
         session.pendingSupplements.clear();
@@ -344,6 +403,17 @@ public class AgentLoop {
         session.usage.reset();
         session.regenerateId();
         workspace.resetCwd();
+        // 子代理状态随新会话重置（终审 P3 潜伏项）：
+        // ①编号从 1 起（spec：递增不复用、新会话从 1 起；防【子代理N】与报告文件名续用旧会话序号）；
+        // ②落盘目录换到新 id（否则子代理报告落进旧会话 tmp 目录——旧目录随会话删除后，
+        //   新报告会落在无主目录里，可能被启动孤儿清理误删）
+        subAgentSeq.set(0);
+        if (sessionTmpDir != null) {
+            java.nio.file.Path parent = java.nio.file.Paths.get(sessionTmpDir).getParent();
+            if (parent != null) {
+                sessionTmpDir = parent.resolve(session.id).toString();
+            }
+        }
     }
 
     /**
@@ -398,18 +468,21 @@ public class AgentLoop {
                 }
                 if (contextManager != null && contextManager.shouldCompress(session.messages)) {
                     ui.onCompressingChanged(true);
+                    CompressOutcome outcome;
                     try {
-                        int before = session.messages.size();
-                        session.messages = contextManager.compress(session.messages);
-                        if (session.messages.size() < before) {
-                            int pct = (int) (contextManager.estimate(session.messages) * 100
-                                    / contextManager.maxTokens());
-                            ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
-                            pushContextStats(); // 压缩完成：进度圈回落
-                        }
+                        outcome = compressWithRetry(false); // 自动压缩：失败文案带"自动"与"本轮已停止"
                     } finally {
                         ui.onCompressingChanged(false);
                     }
+                    if (outcome == CompressOutcome.OK) {
+                        int pct = (int) (contextManager.estimate(session.messages) * 100
+                                / contextManager.maxTokens());
+                        ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
+                        pushContextStats(); // 压缩完成：进度圈回落
+                    } else if (outcome == CompressOutcome.FAILED) {
+                        break; // 压缩失败/用户中断：中止本轮，不发送请求（失败已 onError 提示）
+                    }
+                    // NOTHING（组数 ≤ 6 或无可压缩组）：继续本轮请求（超窗由服务端报错兜底）
                 }
                 String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
@@ -465,9 +538,10 @@ public class AgentLoop {
                         appendPartialAssistant(content, thinking);
                         break;
                     }
-                    if (isTransientError(e) && noOutputYet(content, thinking)) {
-                        // 瞬时错误长重试（内网模型资源差）：固定 5s/次，墙钟总时长 20 分钟（RetryPolicy.transientErrors）；
-                        // 覆盖 429/500/502 + 网络超时 + 可恢复网络错误；进度经 onRetryProgress 进左下角指示器，
+                    if (RetryPolicy.isTransient(e) && noOutputYet(content, thinking)) {
+                        // 瞬时错误长重试（内网模型资源差）：按最近一次错误类别等待（429/超时/网络 5s、500 类/空响应 30s），
+                        // 墙钟总时长 12 分钟（RetryPolicy.transientErrors）；覆盖 429/超时/可恢复网络错误/
+                        // 500 类（含 503/504）/空响应；进度经 onRetryProgress 进左下角指示器，
                         // 成功/首个流式增量静默恢复，超时一次性总结停止。
                         // 零增量闸门：本次请求已吐过正文/思考即不重试——重试复用同一 handler 与累加器，
                         // ChatView 已渲染的半截无法回退，重来必然重复输出
@@ -477,8 +551,8 @@ public class AgentLoop {
                         inRetry[0] = true;
                         while (true) {
                             attempts++;
-                            ui.onRetryProgress(RetryProgress.from(attempts, last)); // 尝试前立即更新指示器
-                            long delay = retryPolicy.delayMs(attempts);
+                            long delay = retryPolicy.delayMs(RetryPolicy.kindOf(last));
+                            ui.onRetryProgress(RetryProgress.from(attempts, last, delay)); // 尝试前更新指示器（含等待时长）
                             if (!sleepWithInterruptCheck(delay)) break; // 用户中断
                             long elapsed = System.currentTimeMillis() - retryStart;
                             if (retryPolicy.isExhausted(elapsed)) {
@@ -493,7 +567,7 @@ public class AgentLoop {
                                 break;
                             } catch (LlmException re) {
                                 if (interrupted) break;
-                                if (!isTransientError(re) || !noOutputYet(content, thinking)) {
+                                if (!RetryPolicy.isTransient(re) || !noOutputYet(content, thinking)) {
                                     ui.onError("请求失败: " + re.getMessage());
                                     break;
                                 }
@@ -510,6 +584,7 @@ public class AgentLoop {
                         }
                         // 重试成功：落入下方正常处理（usage 记录、回复入历史）
                     } else if (e.retryable && retries < 1 && noOutputYet(content, thinking)) {
+                        // 兜底：可重试但未归类错误（现主流错误均已被长重试覆盖，此分支实际不可达）
                         retries++;
                         ui.onWarning("请求失败（" + e.getMessage() + "），自动重试 1 次");
                         // 退避：429 限流 2s，其余（网络/超时）0.5s；立即重试 429 几乎必然再 429
@@ -631,16 +706,6 @@ public class AgentLoop {
         ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
     }
 
-    /** 瞬时错误（429 限流 / 500 服务端报错 / 502 网关报错 / 网络超时 / 可恢复网络错误）：可进长重试。
-     *  网络类靠 retryable 区分永久性故障——DNS 解析失败在 DeepSeekClient 置 retryable=false，此处不放行。
-     *  与 SubAgentLoop 同名方法保持字面一致（两处重复，本次不抽公共组件） */
-    private boolean isTransientError(LlmException e) {
-        return e.type == LlmException.Type.RATE_LIMIT
-                || e.type == LlmException.Type.TIMEOUT
-                || (e.type == LlmException.Type.NETWORK && e.retryable)
-                || e.httpCode == 500 || e.httpCode == 502;
-    }
-
     /** 零增量闸门：本次请求是否还没吐出任何可见内容。tool_calls 不参与判定——
      *  它累积在 DeepSeekClient 方法内的局部变量里，onFinish 前既不对外暴露也不渲染，重来无重复显示风险 */
     private boolean noOutputYet(StringBuilder content, StringBuilder thinking) {
@@ -702,7 +767,8 @@ public class AgentLoop {
             }
             JsonObject args;
             try {
-                args = JsonParser.parseString(call.arguments == null ? "{}" : call.arguments).getAsJsonObject();
+                // 宽松解析：容忍尾部杂讯（多余括号/中文标点/第二个 JSON）与未转义换行等模型常见写法
+                args = ToolArguments.parse(call.arguments);
             } catch (Exception e) {
                 return ToolResult.error("工具参数 JSON 解析失败: " + e.getMessage()
                         + "，请检查 arguments 格式");

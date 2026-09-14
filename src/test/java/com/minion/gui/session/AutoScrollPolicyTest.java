@@ -5,22 +5,22 @@ import org.junit.Test;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/** 归一化语义：vvalue ∈ [0,1]（1=底部），eps 为动态半屏容差（0.5×视口/可滚动行程） */
+/** 归一化语义：vvalue ∈ [0,1]（1=底部），eps 为动态容差（倍数×视口/可滚动行程，倍数由调用方 MainWindow.followEps 计算） */
 public class AutoScrollPolicyTest {
 
-    @Test public void epsHalf_nearBottom_pinned() {
+    @Test public void nearBottom_pinned() {
         AutoScrollPolicy p = new AutoScrollPolicy();
         p.sync(0.6, 0.5);
         assertTrue(p.shouldFollow());
     }
 
-    @Test public void epsHalf_farFromBottom_unpinned() {
+    @Test public void farFromBottom_unpinned() {
         AutoScrollPolicy p = new AutoScrollPolicy();
         p.sync(0.4, 0.5);
         assertFalse(p.shouldFollow());
     }
 
-    @Test public void epsHalf_boundary_exactlyThreshold_pinned() {
+    @Test public void boundary_exactlyThreshold_pinned() {
         AutoScrollPolicy p = new AutoScrollPolicy();
         p.sync(0.5, 0.5);
         assertTrue(p.shouldFollow());

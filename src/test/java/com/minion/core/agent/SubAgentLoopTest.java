@@ -17,7 +17,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -49,14 +48,27 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务结果：完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         // 子 agent 请求 = [system, user(任务描述)]
         assertEquals(Message.Role.SYSTEM, llm.lastRequestMessages.get(0).role);
         assertTrue(llm.lastRequestMessages.get(1).content.contains("调研一下"));
         // tool 结果已进入子 agent 自己的消息
-        assertTrue(ui.toolCalls.contains("example"));
+        assertTrue(ui.subToolCalls.contains("1:example"));
+        // 思考/正文增量必须走子代理通道（编号透传；回归到主通道 onThinking/onContent 时本断言必红）
+        assertTrue("子代理思考须走子代理通道: " + ui.subThinking,
+                ui.subThinking.contains("子agent思考"));
+        assertTrue("子代理正文须走子代理通道: " + ui.subDeltas,
+                ui.subDeltas.contains("子任务结果：完成"));
+        // Fix Round 1：START 收敛为仅 AgentLoop 派发路径单发——直构 SubAgentLoop（本用例）不再发，
+        // 否则真实 GUI 会被派发点与 run() 各发一次渲染成两行开始行
+        assertTrue("直构路径不应发 START（由 AgentLoop 派发时统一发）: " + ui.subStarts,
+                ui.subStarts.isEmpty());
+        assertTrue("完成事件带编号: " + ui.subDones, ui.subDones.contains("1:子任务结果：完成"));
+        // 事件走子代理通道；主通道零调用（未串台，含主代理思考/正文通道）
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
         // C1 契约：第二轮请求中，tool 消息前必须有含对应 tool_call_id 的 assistant tool_calls 消息
         List<Message> round2 = llm.requests.get(1).messages;
         assertEquals(4, round2.size());
@@ -131,6 +143,8 @@ public class SubAgentLoopTest {
         // 子 agent 请求 = [system, user(任务描述)]，system 包含任务说明
         assertEquals(2, llm.requests.get(1).messages.size());
         assertTrue(llm.requests.get(1).messages.get(1).content.contains("子任务甲"));
+        // Fix Round 1：START 恰 1 条且文本为派发描述（不带「任务: 」前缀）——收敛双发后锁死单发不回归
+        assertEquals(Collections.singletonList("1:子任务甲"), ui.subStarts);
     }
 
     /** I4-④ 子 agent 内 task 调用被防御拦截：错误 tool 结果，不派发嵌套子 agent */
@@ -142,8 +156,9 @@ public class SubAgentLoopTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         class CapturingUi extends RecordingUi {
             final List<com.minion.core.tools.ToolResult> results = new ArrayList<com.minion.core.tools.ToolResult>();
-            @Override public synchronized void onToolResult(String name, com.minion.core.tools.ToolResult result) {
-                super.onToolResult(name, result);
+            @Override public synchronized void onSubAgentToolResult(int no, String name,
+                                                                    com.minion.core.tools.ToolResult result) {
+                super.onSubAgentToolResult(no, name, result);
                 results.add(result);
             }
         }
@@ -164,15 +179,17 @@ public class SubAgentLoopTest {
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("只做了自己的事");
         SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(), llm, registry,
-                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui);
+                new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)), ui, null, 1);
         assertEquals("只做了自己的事", sub.run());
-        // 防御拦截：task 调用作为错误 tool 结果回传
-        assertTrue(ui.toolResults.contains("task"));
+        // 防御拦截：task 调用作为错误 tool 结果回传（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:task"));
         com.minion.core.tools.ToolResult err = ui.results.get(0);
         assertFalse(err.ok);
         assertTrue(err.output.contains("task"));
         // 未派发嵌套子 agent：请求仅 2 次（工具轮 + 总结轮），无第三次派发请求
         assertEquals(2, llm.requests.size());
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     @Test
@@ -234,16 +251,18 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         sub.run();
         // schema 已剔除（模型不可见）
         for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
             String name = s.getAsJsonObject("function").get("name").getAsString();
             assertFalse("子 agent 不得暴露 AskUserQuestion", "AskUserQuestion".equals(name));
         }
-        // 防御：即使模型违规调用，也返回错误、不挂起
-        assertTrue(ui.toolResults.contains("AskUserQuestion"));
+        // 防御：即使模型违规调用，也返回错误、不挂起（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:AskUserQuestion"));
         assertTrue(ui.asksStarted.isEmpty());
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 工具集剔除 Skill（防正文注入主会话）；违规调用返回错误 */
@@ -271,18 +290,20 @@ public class SubAgentLoopTest {
         llm.addTurn("子任务完成");
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
-                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+                tmp.getRoot().getPath(), llm, registry, confirm, ui, null, 1);
         sub.run();
         // schema 已剔除（模型不可见）
         for (com.google.gson.JsonObject s : llm.requests.get(0).tools) {
             String name = s.getAsJsonObject("function").get("name").getAsString();
             assertFalse("子 agent 不得暴露 Skill", "Skill".equals(name));
         }
-        // 防御：即使模型违规调用，也返回错误、不注入主会话
-        assertTrue(ui.toolResults.contains("Skill"));
+        // 防御：即使模型违规调用，也返回错误、不注入主会话（子代理通道）
+        assertTrue(ui.subToolResults.contains("1:Skill"));
         for (com.minion.core.llm.Message m : loop.messages()) {
             assertFalse("技能正文不得注入主会话", m.pinned);
         }
+        assertTrue("主通道零调用", ui.toolCalls.isEmpty() && ui.errors.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /**
@@ -329,7 +350,7 @@ public class SubAgentLoopTest {
                 + oldLlm.requests.size() + " 次", 0, oldLlm.requests.size());
     }
 
-    /** 子 agent 429 长重试：先 429 后成功，进度经 onRetryProgress 进指示器，成功后静默恢复，与主循环一致 */
+    /** 子 agent 429 长重试：先 429 后成功，进入重试提示一条走子代理通道，成功后静默恢复，与主循环一致 */
     @Test
     public void subAgent_rateLimit_retryThenSuccess() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -345,13 +366,15 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertTrue(ui.warnings.isEmpty());    // 成功后静默恢复；重试提示在指示器不进消息区
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
-        assertTrue(ui.errors.isEmpty());
+        // 进入重试只提示一条 notice（恢复静默；长重试不逐次刷屏）
+        assertTrue("仅一条进入重试提示: " + ui.subNotices,
+                ui.subNotices.size() == 1 && ui.subNotices.get(0).contains("自动重试"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 429 持续失败：超总时长后总结停止，不无限重试 */
@@ -369,20 +392,21 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 20, 50); // 快速耗尽
+        sub.retryPolicy = new RetryPolicy(10, 20, 50); // 快速耗尽
         long start = System.currentTimeMillis();
         String result = sub.run();
         assertTrue("应在数百毫秒内停止", System.currentTimeMillis() - start < 5000);
         assertTrue(result.contains("失败"));
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("重试了"));
-        assertTrue(ui.errors.get(0).contains("仍失败"));
+        // 第 0 条=进入重试提示，第 1 条=耗尽提示
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).contains("重试了"));
+        assertTrue(ui.subNotices.get(1).contains("仍失败"));
         assertTrue(llm.requests.size() >= 2 && llm.requests.size() <= 5);
-        assertTrue(!ui.retryAttempts().isEmpty());
-        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
-    /** 子 agent 429 长重试中遇永久性网络错误（retryable=false，DNS 解析失败）：退出重试并复位指示器 */
+    /** 子 agent 429 长重试中遇永久性网络错误（retryable=false，DNS 解析失败）：退出重试并终止 */
     @Test
     public void subAgent_rateLimit_thenPermanentNetwork_resetsRetryProgress() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -399,17 +423,17 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 20, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 20, 60000);
         String result = sub.run();
         // 永久性网络错误：不继续退避，立即失败返回，错误文案准确（非"429 重试超时"）
         assertTrue(result.contains("失败"));
         assertTrue(result.contains("域名无法解析"));
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("域名无法解析"));
-        // 指示器复位：末位必须为 0，不残留"429限流，正在重试中...N次"
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
-        assertTrue(ui.warnings.isEmpty());
+        // 进入重试 1 条 + 永久失败 1 条；不进主通道、不残留重试态
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).contains("域名无法解析"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 网络超时：进入长重试，成功后静默恢复（与主循环一致） */
@@ -428,13 +452,13 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
-        assertEquals("网络超时", ui.retryProgress.get(0).label);
-        assertTrue(ui.errors.isEmpty());
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertTrue(ui.subNotices.get(0).contains("网络超时"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 零增量闸门：已吐字后网络掉断 → 不重试 */
@@ -453,11 +477,15 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         sub.run();
         assertEquals(1, llm.requests.size());
-        assertTrue(ui.retryAttempts().isEmpty());
-        assertEquals(1, ui.errors.size());
+        assertTrue(ui.subNotices.stream().noneMatch(n -> n.contains("自动重试")));
+        assertEquals(1, ui.subNotices.size());
+        assertTrue("已吐出的半截正文须走子代理正文通道: " + ui.subDeltas,
+                ui.subDeltas.contains("半截正文"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 网络类耗尽：总结文案用中文标签前缀 */
@@ -475,14 +503,16 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 50);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50);
         String result = sub.run();
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).startsWith("子 agent 网络超时 重试了"));
+        assertEquals(2, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(1).startsWith("网络超时 重试了"));
         assertTrue(result.contains("网络超时"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
-    /** 子 agent 429 重试成功但流中断（onError 回调）：错误已在回调提示，指示器复位 */
+    /** 子 agent 429 重试成功但流中断（onError 回调）：错误已在回调提示（子代理通道末条即失败原因），主通道无重试进度 */
     @Test
     public void subAgent_rateLimit_thenStreamError_noFalseRecovery() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -498,15 +528,14 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 10, 100, 60000); // 测试短退避
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        // 成功路径静默恢复（无警告），onError 回调已提示错误
-        assertTrue(ui.warnings.isEmpty());
-        assertEquals(1, ui.errors.size());
-        assertTrue(ui.errors.get(0).contains("连接中断"));
-        // 指示器复位：进入重试（1）→ 退出（0）
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        // 成功路径静默恢复（主通道无警告/错误/重试进度事件），onError 回调已把错误发到子代理通道
+        assertTrue("末条含连接中断: " + ui.subNotices,
+                !ui.subNotices.isEmpty() && ui.subNotices.get(ui.subNotices.size() - 1).contains("连接中断"));
+        assertTrue("主通道零调用", ui.warnings.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
     /** 子 agent 500 服务端报错：进长重试，成功后静默恢复（与主循环一致） */
@@ -525,16 +554,43 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000); // 测试短固定间隔
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短固定间隔
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         assertEquals(2, llm.requests.size());
-        assertTrue(ui.warnings.isEmpty());
-        assertTrue(ui.errors.isEmpty());
-        assertEquals(Arrays.asList(1, 0), ui.retryAttempts());
+        assertTrue(ui.subNotices.size() == 1);
+        assertTrue(ui.subNotices.get(0).contains("500"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.warnings.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
 
-    /** 子 agent 重试循环内错误码切换（429 → 502）：进度携带最近一次错误码/响应体 */
+    /** 子 agent 503 服务不可用：500 类纳入长重试（与主循环一致），成功后静默恢复 */
+    @Test
+    public void subAgent_serverError503_longRetried() throws Exception {
+        com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config,
+                new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        llm.addTurnThrow(LlmException.of(503, "unavailable"));
+        llm.addTurn("子任务结果：完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
+                tmp.getRoot().getPath(), llm, registry, confirm, ui);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
+        String result = sub.run();
+        assertEquals("子任务结果：完成", result);
+        assertEquals(2, llm.requests.size()); // 原始请求 + 1 次长重试
+        assertTrue(ui.subNotices.size() == 1);
+        assertTrue(ui.subNotices.get(0).contains("503"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.warnings.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
+    }
+
+    /** 子 agent 重试循环内错误码切换（429 → 502）：只发首条进入提示，重试最终成功 */
     @Test
     public void subAgent_retry_codeSwitches_suffixFollowsLatestError() throws Exception {
         com.minion.core.config.Config config = Config.load(tmp.getRoot().toPath());
@@ -552,19 +608,404 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下",
                 tmp.getRoot().getPath(), llm, registry, confirm, ui);
-        sub.retryPolicy = new RetryPolicy(10, 0, 10, 60000);
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
         String result = sub.run();
         assertEquals("子任务结果：完成", result);
         // 请求序列：原始 429 → 重试1 429 → 重试2 502 → 重试3 成功（FakeLlmClient 每 streamChat 消耗一回合）
         assertEquals(4, llm.requests.size());
-        assertEquals(4, ui.retryProgress.size());
-        assertEquals(1, ui.retryProgress.get(0).attempt);
-        assertEquals(429, ui.retryProgress.get(0).httpCode);
-        assertEquals(2, ui.retryProgress.get(1).attempt);
-        assertEquals(429, ui.retryProgress.get(1).httpCode);
-        assertEquals(3, ui.retryProgress.get(2).attempt);
-        assertEquals(502, ui.retryProgress.get(2).httpCode);
-        assertEquals("{\"message\":\"bad gateway\"}", ui.retryProgress.get(2).body);
-        assertEquals(0, ui.retryAttempts().get(ui.retryAttempts().size() - 1).intValue()); // 末位复位
+        // 只发首条进入提示；"最近错误标签"由耗尽用例覆盖
+        assertEquals(1, ui.subNotices.size());
+        assertTrue(ui.subNotices.get(0).contains("429"));
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty()
+                && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
+    }
+
+    // ===== 报告落盘（设计 2026-09-13：先落盘再返回摘要+路径，主代理不再重复落盘）=====
+
+    /** 报告落盘：返回文本 = 全文 + 落盘路径；文件名含编号；文件内容 = 报告全文 */
+    @Test
+    public void report_dumpedWithNumberedFile() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("调研结论：ok");
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 3);
+        String result = sub.run();
+
+        assertTrue("返回应含完整正文", result.startsWith("调研结论：ok"));
+        assertTrue("返回应含落盘说明与绝对路径", result.contains("完整报告已落盘："));
+        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<java.nio.file.Path>();
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            s.forEach(files::add);
+        }
+        assertEquals(1, files.size());
+        assertTrue("文件名含编号: " + files.get(0),
+                files.get(0).getFileName().toString().startsWith("subagent-report-3-"));
+        String dumped = new String(java.nio.file.Files.readAllBytes(files.get(0)),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals("调研结论：ok", dumped);
+        assertTrue("路径在返回文本中: " + result, result.contains(files.get(0).toAbsolutePath().toString()));
+    }
+
+    /** 超长报告：只返回前 8000 字符 + 「完整报告 N 字符已落盘」说明（主代理需要细节用 Read） */
+    @Test
+    public void report_longTruncatedTo8000WithPath() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 9000; i++) big.append('x');
+        llm.addTurn(big.toString());
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "长报告", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result = sub.run();
+
+        assertTrue("头部 8000 字符保留", result.startsWith(big.substring(0, 8000)));
+        assertFalse("第 8001 字符不应返回", result.startsWith(big.substring(0, 8001)));
+        assertTrue("应说明完整长度: " + result.substring(7990, 8100),
+                result.contains("完整报告 9000 字符已落盘："));
+    }
+
+    /** 落盘失败（报告目录指向一个已存在的普通文件 → createDirectories 必失败）：
+     *  降级返回全文 + 失败说明（成果不丢，不截断） */
+    @Test
+    public void report_dumpFailure_returnsFullReport() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("短报告");
+
+        java.nio.file.Path notADir = tmp.newFile("not-a-dir").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, notADir.toString(), 0);
+        String result = sub.run();
+
+        assertTrue(result.startsWith("短报告"));
+        assertTrue("应说明落盘失败: " + result, result.contains("报告落盘失败"));
+    }
+
+    /** 未接线（reportDir=null，如旧构造器）：原样返回报告，不追加失败说明——旧构造器返回值语义不变 */
+    @Test
+    public void report_notWired_returnsPlainReport() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("短报告");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui); // 旧构造器
+        assertEquals("短报告", sub.run());
+    }
+
+    /** 空报告不落盘（不产生空文件） */
+    @Test
+    public void report_empty_notDumped() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("");
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 2);
+        String result = sub.run();
+
+        assertEquals("", result);
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            assertFalse("空报告不得落盘", s.findAny().isPresent());
+        }
+    }
+
+    /** 中断路径不落盘：run 前已中断 → 中断文案、目录内无文件 */
+    @Test
+    public void report_interrupted_notDumped() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result;
+        Thread.currentThread().interrupt(); // 模拟主循环 interrupt() 已取消该子代理
+        try {
+            result = sub.run();
+        } finally {
+            Thread.interrupted(); // 清理中断标志，避免污染后续测试（surefire 同线程复用）
+        }
+        assertTrue("中断文案: " + result, result.contains("已中断"));
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
+            assertFalse("中断不落盘", s.findAny().isPresent());
+        }
+    }
+
+    // ===== 子代理上下文压缩（与主代理同策略；任务提示词 pinned 豁免）=====
+
+    /** 超阈值自动压缩：任务提示词（pinned）保留、摘要置前、压缩指令为子代理定制版、提示走子代理通道 */
+    @Test
+    public void subAgent_compressesOverThreshold_withSubAgentPrompt() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】子代理历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("压缩后继续完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        // 子代理压缩器：同参数（50×0.65 触发）+ 子代理定制指令
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertEquals("压缩后继续完成", result);
+        assertEquals("应发生一次压缩（压缩指令文案由 ContextManagerTest 直接覆盖——"
+                + "completeChat 的 lastRequestMessages 会被随后的 streamChat 覆盖，此处不断言）",
+                1, llm.completeChatRequests.size());
+        boolean hasSummary = false, taskPinned = false;
+        for (Message m : sub.messages()) {
+            if (m.summary) hasSummary = true;
+            if (m.pinned && m.content != null && m.content.contains("调研一下")) taskPinned = true;
+        }
+        assertTrue("摘要应置前存在", hasSummary);
+        assertTrue("任务提示词必须 pinned 保留（不被压进摘要）", taskPinned);
+        // 提示走子代理通道；主通道无压缩指示器事件（子代理不驱动主指示器）
+        // spec 4.2 文案锁定：`已压缩上下文（降低至 x%）`（防回归为无百分比旧文案）
+        assertTrue("成功提示应为「已压缩上下文（降低至 x%）」: " + ui.subNotices,
+                ui.subNotices.stream().anyMatch(n -> n.matches("已压缩上下文（降低至 \\d+%）")));
+        assertTrue(ui.retryProgress.isEmpty());
+    }
+
+    /** 压缩失败（不可重试）：中止子代理并返回失败文本；未发送请求；主通道零调用 */
+    @Test
+    public void subAgent_compressFailure_stopsWithFailureText() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.throwOnCompleteChat = true; // 压缩请求异常（不可重试）
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) {
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertTrue("返回失败文本: " + result, result.startsWith("子代理失败: 上下文压缩失败（"));
+        assertTrue("失败提示走子代理通道", ui.subNotices.stream().anyMatch(n -> n.contains("上下文压缩失败")));
+        assertTrue("压缩失败后不得发送请求", llm.requests.isEmpty());
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
+    }
+
+    /** 压缩失败（重试耗尽）：中止子代理并返回「重试了 N 次…仍失败」文本；未发送请求。
+     *  与上一用例互补：那条只覆盖不可重试错误（立即失败），本条覆盖可重试错误的墙钟耗尽路径（spec §6）。 */
+    @Test
+    public void subAgent_compressRetryExhausted_stopsWithFailureText() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = ""; // 恒空摘要 → 恒 EMPTY_RESPONSE（可重试），重试至墙钟耗尽
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数快速耗尽（防真等）
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result = sub.run();
+
+        assertTrue("返回失败文本: " + result, result.startsWith("子代理失败: 上下文压缩失败（"));
+        assertTrue("应为重试耗尽原因（含「仍失败」）: " + result,
+                result.contains("重试了") && result.contains("仍失败"));
+        assertTrue("确实经历过多次重试: " + llm.completeChatRequests.size(),
+                llm.completeChatRequests.size() >= 2);
+        assertTrue("失败提示走子代理通道", ui.subNotices.stream().anyMatch(n -> n.contains("上下文压缩失败")));
+        assertTrue("压缩失败后不得发送请求", llm.requests.isEmpty());
+        assertTrue("主通道零调用", ui.errors.isEmpty() && ui.retryProgress.isEmpty() && ui.toolCalls.isEmpty());
+    }
+
+    /** 压缩等待期间被中断（偏差 1 的代码分支）：ContextCompressor 检出中断 → 按 spec 4.2 返回「子 agent 已中断」。
+     *  注意不能"run() 前置 interrupt"：那样会在 run 循环首个中断检查就返回，覆盖不到压缩分支；
+     *  故在压缩请求执行时置位中断标志（模拟主循环同一时刻按下停止），让重试等待的轮询检出声命中。 */
+    @Test
+    public void subAgent_compressInterruptedWhileWaiting_returnsInterrupted() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        // 压缩请求执行时置位中断标志并抛可重试异常：进入等待 → sink.interrupted() 命中 → INTERRUPTED
+        class InterruptingLlm extends FakeLlmClient {
+            int compressCalls = 0;
+            @Override
+            public String completeChat(List<Message> messages, String systemPrompt) throws LlmException {
+                compressCalls++;
+                Thread.currentThread().interrupt(); // 压缩期间收到"停止"
+                throw new LlmException(LlmException.Type.RATE_LIMIT, "压缩期间收到停止", true);
+            }
+        }
+        InterruptingLlm llm = new InterruptingLlm();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数：等待切片 10ms（中断检查立即可达）
+        sub.contextManager = new com.minion.core.context.ContextManager(
+                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+            sub.messages().add(Message.user("步骤" + i));
+            sub.messages().add(Message.assistant("结论" + i));
+        }
+
+        String result;
+        try {
+            result = sub.run();
+        } finally {
+            Thread.interrupted(); // 清理中断标志，避免污染后续测试（surefire 同线程复用）
+        }
+
+        assertEquals("中断文案（spec 4.2）", "子 agent 已中断", result);
+        assertEquals("应进入过压缩流程（压缩等待中被中断）", 1, llm.compressCalls);
+        assertTrue("中断提示走子代理通道: " + ui.subNotices, ui.subNotices.contains("已中断"));
+        assertTrue("中断后不得发送请求", llm.requests.isEmpty());
+    }
+
+    /** 主代理未启用压缩（contextManager=null）：子代理不压缩（不调 completeChat），行为同旧版 */
+    @Test
+    public void subAgent_withoutContextManager_noCompress() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("完成");
+
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.messages().add(Message.user("很多历史")); // 即便消息多也不判断
+        String result = sub.run();
+
+        assertEquals("完成", result);
+        assertTrue(llm.completeChatRequests.isEmpty());
+    }
+
+    /** 子代理压缩器接线（白盒）：主启用压缩 → 子代理压缩器参数与主一致且用定制指令；主未启用 → null */
+    @Test
+    public void agentLoop_buildSubContextManager_followsMain() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        com.minion.core.context.ContextManager cm =
+                new com.minion.core.context.ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+
+        com.minion.core.context.ContextManager sub = loop.buildSubContextManager();
+        assertNotNull("主启用压缩时子代理必须接线压缩器", sub);
+        assertEquals("子代理压缩参数与主代理一致", 50, sub.maxTokens());
+        assertEquals("子代理用定制压缩指令", com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM,
+                sub.compressSystem());
+
+        AgentLoop noCm = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        assertNull("主未启用压缩时子代理不压缩", noCm.buildSubContextManager());
+    }
+
+    /** 终审 P3：task 工具 schema/描述只声明 description——prompt 参数全仓无消费点（runner 只读
+     *  description），从 schema 与描述移除后防误加回 */
+    @Test
+    public void taskTool_schemaOnlyDescription() {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, null, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        com.minion.core.tools.TaskTool tool = new com.minion.core.tools.TaskTool(loop);
+        JsonObject props = tool.schema().getAsJsonObject("properties");
+        assertTrue(props.has("description"));
+        assertFalse("prompt 参数无消费点，不得出现在 schema", props.has("prompt"));
+        assertFalse("描述不得再宣称 prompt 参数", tool.description().contains("prompt"));
+    }
+
+    /** 终审 P3：长报告截断点落在代理对（emoji）中间时丢弃末尾孤立高代理，不返回畸形字符
+     *  （与 OutputDump.tail 的代理对处理对齐） */
+    @Test
+    public void report_truncationMidSurrogatePair_dropsLoneHighSurrogate() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 7999; i++) big.append('x');
+        big.append('\uD83D').append('\uDE00'); // 😀（代理对）：REPORT_MAX_CHARS=8000 截点落在一对中间
+        llm.addTurn(big.toString());
+
+        java.nio.file.Path reportDir = tmp.newFolder("tmp-session").toPath();
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "长报告", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, reportDir.toString(), 1);
+        String result = sub.run();
+
+        String head = result.substring(0, result.indexOf('\n'));
+        assertEquals("孤立高代理必须丢弃（头部 7999 字符）", 7999, head.length());
+        assertFalse("末字符不得是孤立高代理",
+                Character.isHighSurrogate(head.charAt(head.length() - 1)));
+        assertTrue("完整长度说明（8001 字符 = 7999 + 代理对 2）",
+                result.contains("完整报告 8001 字符已落盘："));
     }
 }

@@ -11,13 +11,13 @@ com.minion
 ├── Main                    入口：装配配置/技能/可插拔工具/MCP/GUI，启动 JavaFX 主窗口（GUI 为唯一界面，CLI 已移除）
 ├── gui/                    JavaFX 界面：主窗口、侧栏、聊天渲染、输入、弹窗、确认、图标、会话管理、plugin/（工具页与配置弹窗）
 └── core/
-    ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（长重试策略）、RetryProgress（重试进度值对象）
+    ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent，报告落盘+带编号事件+上下文压缩）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（重试策略：按类别 5s/30s、墙钟 12 分钟）、RetryProgress（重试进度值对象）
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
     ├── tools/              Tool 接口、ToolRegistry（带插件 gate）、13 个内置工具、db/（只读数据库）、plugin/（可插拔工具）、browser/、mcp/（McpProxyTool）、PathsGuard
     ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，stdio/SSE/Streamable 三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
     ├── skills/             SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
-    ├── context/            ContextManager、TokenCounter
-    ├── storage/            SessionStore
+    ├── context/            ContextManager、ContextCompressor、TokenCounter
+    ├── storage/            SessionStore、SessionTempCleaner
     └── config/             Config、WorkspaceManager、ModelManager（workspace.json / model.json）、WorkspacePaths（相对路径按项目路径解析）
 ```
 
@@ -38,8 +38,8 @@ com.minion
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停重命名/删除、工作空间项悬停修改/删除（重命名并入修改弹窗）；当前工作空间名称右侧主色圆点标记（SVG）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
-| chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读）；AskUserQuestion 提问渲染委托 core `AskUserQuestionTool.normalize`（键名写错/数组退化成字符串/参数标记吞正文皆可救回，永不产出空白），摘要行带 header，提问段无视 500 字折叠阈值恒展开（超 4000 才折叠），`toolResultBody(name,data)` 对 AskUserQuestion 成功态抑制正文（回答已由【输入】段渲染，失败态仍显示） |
-| input/InputView | 输入区 0.618 黄金比例宽居中大框（占正文面板宽 61.8%，上=块行+输入框、下=底部操作行：上传按钮左+发送按钮右，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层/终止运行；键盘经 capture 过滤器处理（弹层 ↑↓/Enter/Tab 选择优先于 TextArea 默认行为）；按钮状态机（提问挂起空输入=变淡回答箭头），发送/补充/回答/终止统一 btn-danger 红底；回形针上传按钮（FileChooser 选图→5MB/3 张校验→base64 建 IMAGE 块），带图消息跳过斜杠命令直发 send，回答模式带图拦截提示；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
+| chat/ChatView（控制台输出流：每条消息 HBox = 彩色加粗标签 Label + 白色正文 MessageTextArea，段间无缝；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读）；AskUserQuestion 提问渲染委托 core `AskUserQuestionTool.normalize`（键名写错/数组退化成字符串/参数标记吞正文皆可救回，永不产出空白），摘要行带 header，提问段无视 500 字折叠阈值恒展开（超 4000 才折叠），`toolResultBody(name,data)` 对 AskUserQuestion 成功态抑制正文（回答已由【输入】段渲染，失败态仍显示）；子代理事件按 `subAgentId` 渲染【子代理N】标签 + 独立配色（`log-subagent`），流式缓冲/思考定稿/轮次边界均按 id 分组隔离（并发子代理不串台），重新加载会话不重演子代理过程 |
+| input/InputView | 输入区 0.618 黄金比例宽居中大框（占正文面板宽 61.8%，上=块行+输入框、下=底部操作行：上传按钮左+发送按钮右，LCD 抗锯齿）：Ctrl+Enter 发送、Enter 换行、Esc 关闭补全弹层；键盘经 capture 过滤器处理（弹层 ↑↓/Enter/Tab 选择优先于 TextArea 默认行为）；按钮状态机（提问挂起空输入=变淡回答箭头），发送/补充/回答/终止统一 btn-danger 红底；回形针上传按钮（FileChooser 选图→5MB/3 张校验→base64 建 IMAGE 块），带图消息跳过斜杠命令直发 send，回答模式带图拦截提示；发送走 SessionManager.dispatchCommand（斜杠命令本地分发） |
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标 cell 级确认）+ 触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间全量文件遍历：跳过点目录与 .gitignore 忽略、字典序、每工作空间独立 5 分钟缓存，会话绑定预热/过期先用旧缓存异步刷新）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
@@ -49,9 +49,9 @@ com.minion
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
-| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记（内容以 `AskUserQuestionTool.INVALID_PREFIX` 开头的失败输出不重演为回答，避免伪装成用户发言）、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
-| session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放） |
-| session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态半屏容差 eps=0.5×视口高/可滚动行程，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
+| session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；子代理事件带编号路由（思考→THINKING、正文→CONTENT、工具→TOOL_CALL/TOOL_RESULT、提示→WARNING、起止→SUB_AGENT_START/DONE，均置 `Ev.subAgentId`）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记（内容以 `AskUserQuestionTool.INVALID_PREFIX` 开头的失败输出不重演为回答，避免伪装成用户发言）、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
+| session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放）；`Ev.subAgentId`（0=主代理）区分事件主人，供渲染层加【子代理N】前缀与按 id 隔离流式缓冲 |
+| session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态容差 eps=screens×视口高/可滚动行程，screens 由 MainWindow.FOLLOW_SCREENS=2.0 给定，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
 | WheelScrollAccelerator | 正文消息区滚轮加速：ScrollEvent 过滤器把滚轮增量换算为固定像素（每格 100px，Windows WHEEL_DELTA=40 基准，平滑滚轮小数增量连续换算），setVvalue + consume 阻止皮肤默认比例滚动；Ctrl/Shift 修饰或无滚动行程放行皮肤；MainWindow 构造 chatScroll 后 attach 一次（换 content 无需重挂） |
 | plugin/ToolsPane、DataSourceDialog、BrowserConfigDialog、PluginUi | 设置窗「工具」页（每行=显示名+状态文案+启用开关+配置入口；开关/下拉改动即落 tools.json）+ 数据源管理弹窗（新建/修改/删除/测试连接）+ 浏览器配置弹窗（保存即重建 Chrome）+ 表单共用件（row/errorLabel/alert/parsePositiveInt） |
 
@@ -59,8 +59,8 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行 → 落盘；轮数上限 DEFAULT_ROUND_LIMIT=10000；TaskTool 在此注册；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
-| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集，但不注册 task 工具（防无限递归）；无轮数/输出上限 |
+| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行 → 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
+| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
 | SystemPromptBuilder | system prompt 组装：内置提示词 → 项目主说明文件（未配置则整段不注入）→ 技能列表 → 已加载技能 |
@@ -84,7 +84,7 @@ com.minion
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
 - `PathsGuard`：文件工具路径限制（工作路径 + 额外放行目录 + 技能目录 + 会话临时目录；技能目录可配置为工作路径外的绝对路径）。`Workspace.extraAllowedDirs()`（volatile 替换语义）放行项目级技能目录——`SessionManager.buildCtx` 按当前空间配置热更新，文件工具据此可读取项目技能源文件（Read 按绝对路径读）
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件
-- `OutputDump`：工具输出超限落盘公共类——Bash/Grep 输出超上限时完整结果写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级），`cleanup(Path, long)` 启动时扫所有会话子目录清理修改超 3 天（`RETENTION_MS`）的旧文件，`tail` 供截断显示读取
+- `OutputDump`：工具输出超限 / 子代理报告落盘公共类——写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级）、`tail` 供截断显示读取；**清理不做**：文件生命周期=会话生命周期（SessionManager 删会话递归删除；启动孤儿兜底 `SessionTempCleaner.cleanOrphans(sessionRoot, tmpRoot, 1h)`）
 - `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
@@ -107,8 +107,10 @@ com.minion
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析；`scanTree(root, maxDepth, maxCount)` 递归扫描任意目录树（跳过 .git/node_modules/target 等噪声目录，深度/数量触顶截断并回告警，不抛异常），产出带 `[项目]` 来源标注的技能
 - `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（SkillSet 自身无缓存；调用方 `SessionManager` 按空间缓存扫描结果、配置变更时失效），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
-- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×compressThreshold 触发，按完整回合链压缩；保留区按 token 占比动态缩小、下限 12 条；压缩失败时按 token 均衡分段递归降级，部分成功自动应用、全部失败原样返回）
+- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，从最早组按 token 累加到 0.65×0.8 后整体压缩，且至少保留最近 6 组；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由调用方按重试策略处理，耗尽中止本轮）；压缩指令可定制（默认主代理版，子代理传 `SUB_AGENT_COMPRESS_SYSTEM` 定制版）
+- `ContextCompressor`：压缩执行器（单次 `compress` + 瞬时错误长重试——分类间隔/墙钟 12 分钟/100ms 中断轮询；主代理自动压缩、/compact 与子代理压缩共用，成功/无可压缩/失败/中断由 `Result` 返回，文案由调用方决定）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
+- `SessionTempCleaner`：启动孤儿兜底清理——`.session/tmp` 下无对应 `session/*/*.json` 且 mtime 超 1 小时的会话目录递归删除（正常删除由 SessionManager 删会话/工作空间时递归清理；生命周期=会话生命周期，取代旧 3 天过期）
 - `Config`：config.properties（classpath 默认值 + jar 同目录外部覆盖，首次运行自动生成）
 - `WorkspaceManager` / `ModelManager`：workspace.json / model.json（jar 同目录，单文件多条目；缺失自动生成，损坏备份后重建）；workspace.json 数组顺序即侧栏显示顺序，`WorkspaceManager.move(name, newIndex)` 拖拽排序持久化（越界返回 false 不改列表；SessionManager.moveWorkspace 转发但不发通知，避免拖拽时清空聊天区）
 
@@ -180,11 +182,11 @@ com.minion
 
 | 常量 | 值 | 位置 |
 |---|---|---|
-| 主循环工具轮数上限 DEFAULT_ROUND_LIMIT | 10000 | AgentLoop.java |
+| 主循环工具轮数上限 DEFAULT_ROUND_LIMIT | 1000 | AgentLoop.java |
 | Bash 默认超时（timeoutSeconds 可覆盖） | 120s | BashTool.DEFAULT_TIMEOUT |
 | Bash 输出截断（内存保留上限 TOTAL_MAX，头 18k+尾 12k） | 30k 字符 | BashTool.HEAD_MAX/TAIL_MAX/TOTAL_MAX |
-| Bash/Grep 超限落盘目录 | `<jarDir>/.session/tmp/<sessionId>/`（返回绝对路径） | OutputDump |
-| 落盘文件保留期 RETENTION_MS | 3 天（启动清理） | OutputDump |
+| Bash/Grep 超限落盘目录 | `<jarDir>/.session/tmp/<sessionId>/`（返回绝对路径；含子代理报告 `subagent-report-*.txt`） | OutputDump |
+| 会话 tmp 孤儿清理 | 启动时删除无对应 session/\*/\*.json 的 tmp 目录（mtime 超 1 小时） | SessionTempCleaner |
 | Grep 单行截断 LINE_MAX | 1000 字符 | GrepTool |
 | Grep 结果条数 MAX_RESULTS / 显示层 DISPLAY_CHARS | 250 条 / 30k 字符 | GrepTool |
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |

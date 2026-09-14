@@ -219,8 +219,7 @@ public class SessionManager {
                 Session s = ctx.store.load(meta.id);
                 ModelConfig mc = models.current();
                 LlmClient llm = newLlm(mc);
-                ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
-                        mc.keepRecentMessages, llm,
+                ContextManager cm = new ContextManager(mc.maxContextTokens, llm,
                         TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
                                 tmpDirOf(meta.id).toString(), config.emptyOutputPlaceholder(), projSkills)
                                 .build(sk.skills)));
@@ -233,6 +232,7 @@ public class SessionManager {
                 loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
                 loop.setAllSkills(sk.skills); // 会话级快照：本会话独享、不可变
                 loop.setSessionStore(ctx.store); // 落盘接线：恢复后随每轮/退出兜底落盘
+                loop.setSessionTmpDir(tmpDirOf(meta.id).toString()); // 子代理报告落盘目录（会话 tmp；Task 2）
                 loop.restoreSession(s); // 原地装载 + 半轮残留清洗 + cwd 恢复
                 SessionHandle h = new SessionHandle(s.id, ctx.name, s, loop, controller,
                         s.title, false, llm);
@@ -395,8 +395,7 @@ public class SessionManager {
         if (sk.warning != null) notifyError(sk.warning);
         String mdAbs = projectMdOf(currentWorkspaceName);
         String projSkills = projectSkillsDirOf(currentWorkspaceName);
-        ContextManager cm = new ContextManager(mc.maxContextTokens, mc.compressThreshold,
-                mc.keepRecentMessages, llm,
+        ContextManager cm = new ContextManager(mc.maxContextTokens, llm,
                 TokenCounter.estimate(new SystemPromptBuilder(mdAbs, ctx.workspace.workDir(),
                         tmpDirOf(s.id).toString(), config.emptyOutputPlaceholder(), projSkills)
                         .build(sk.skills)));
@@ -408,6 +407,7 @@ public class SessionManager {
         loop.emptyOutputPlaceholder = config.emptyOutputPlaceholder(); // 工具空输出占位开关注入
         loop.setAllSkills(sk.skills);   // 会话级快照：本会话独享、不可变
         loop.setSessionStore(ctx.store); // 落盘接线：每轮/退出兜底落盘生效
+        loop.setSessionTmpDir(tmpDirOf(s.id).toString()); // 子代理报告落盘目录（会话 tmp；Task 2）
         SessionHandle h = new SessionHandle(s.id, currentWorkspaceName, s, loop, controller,
                 title, title == null, llm);
         controller.setAskStateListener(new java.util.function.Consumer<String>() {
@@ -496,7 +496,7 @@ public class SessionManager {
                 ContextManager cm = h.loop.contextManager();
                 if (cm != null) {
                     cm.setLlm(fresh);
-                    cm.update(mc.maxContextTokens, mc.compressThreshold, mc.keepRecentMessages);
+                    cm.update(mc.maxContextTokens);
                 }
             }
         }
@@ -542,7 +542,7 @@ public class SessionManager {
             notifyError("删除会话文件失败: " + e.getMessage());
         }
         // 会话临时目录一并清理；运行中删除时落盘文件可能被占用（Windows 句柄），
-        // 删除失败静默容错（deleteRecursively 内部吞错），由启动清理（Main 3 天过期清理）兜底
+        // 删除失败静默容错（deleteRecursively 内部吞错），由启动孤儿清理（SessionTempCleaner）兜底
         deleteRecursively(tmpDirOf(h.id));
         h.controller.eventList().setActive(false, null); // 移除被删会话的 active 残留
         if (currentSession == h) currentSession = null;

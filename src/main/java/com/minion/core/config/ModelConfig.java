@@ -11,8 +11,6 @@ public class ModelConfig {
     public boolean thinking;
     public String reasoningEffort;
     public int maxContextTokens;
-    public double compressThreshold;
-    public int keepRecentMessages;
 
     public ModelConfig() { }
 
@@ -27,8 +25,6 @@ public class ModelConfig {
         c.thinking = thinking;
         c.reasoningEffort = reasoningEffort;
         c.maxContextTokens = maxContextTokens;
-        c.compressThreshold = compressThreshold;
-        c.keepRecentMessages = keepRecentMessages;
         return c;
     }
 }

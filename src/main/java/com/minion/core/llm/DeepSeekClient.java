@@ -168,7 +168,11 @@ public class DeepSeekClient implements LlmClient {
         }, firstTokenTimeoutMs, TimeUnit.MILLISECONDS);
         try (Response response = call.execute()) {
             if (!response.isSuccessful()) throw LlmException.of(response.code(), responseBody(response));
-            if (response.body() == null) throw new LlmException(LlmException.Type.OTHER, "空响应", false);
+            // 空响应：okhttp 4 对 204 等无 body 响应返回的是"长度为 0 的空 body"（body() 不再为 null），
+            // 故按 contentLength()==0 判定；body()==null 分支保留作防御
+            if (response.body() == null || response.body().contentLength() == 0L) {
+                throw new LlmException(LlmException.Type.EMPTY_RESPONSE, "空响应（服务端未返回内容）", true);
+            }
             BufferedSource source = response.body().source();
             String line;
             while ((line = source.readUtf8Line()) != null) {

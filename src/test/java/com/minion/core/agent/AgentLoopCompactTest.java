@@ -3,6 +3,7 @@ package com.minion.core.agent;
 import com.minion.core.config.Config;
 import com.minion.core.context.ContextManager;
 import com.minion.core.llm.FakeLlmClient;
+import com.minion.core.llm.Message;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
@@ -21,6 +22,15 @@ public class AgentLoopCompactTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /** 预置 4 轮普通历史 = 8 个原子组（48 token，超过 50×0.65=32.5 阈值）：
+     *  压缩至少保留最近 6 组，故必须 ≥7 组（本方法 8 组 + 本轮 user 1 组 = 9 组）才可能真正压缩 */
+    private static void seedHistory(AgentLoop loop) {
+        for (int i = 0; i < 4; i++) {
+            loop.messages().add(Message.user("历史" + i));
+            loop.messages().add(Message.assistant("回复" + i));
+        }
+    }
+
     @Test
     public void autoCompress_triggersOverThreshold() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -30,22 +40,18 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        // 小上下文上限，快速触发压缩（60×0.8=48 需 5 轮才够，50×0.8=40 在第 4 轮触发）
-        ContextManager cm = new ContextManager(50, 0.8, 2, llm, 0);
+        // 小上下文上限，快速触发压缩（50×0.65=32.5；seed 后 9 组 55 token 必然超阈值）
+        ContextManager cm = new ContextManager(50, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        // 塞满历史：3 轮 user+assistant ≈ 每轮 12 token
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
-        // 第 4 轮触发压缩
+        seedHistory(loop);
         llm.addTurn("压缩后回复");
-        loop.runUserTurn("触发压缩");
+        loop.runUserTurn("触发压缩"); // 本轮 user 入历史后触发压缩
         boolean compressed = ui.warnings.stream().anyMatch(w -> w.contains("自动压缩"));
         assertTrue("应触发自动压缩", compressed);
         assertTrue(loop.messages().get(0).summary);
@@ -60,12 +66,14 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(100000, 0.8, 1, llm, 0);
+        ContextManager cm = new ContextManager(100000, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
+        seedHistory(loop);
         llm.addTurn("回复");
         loop.runUserTurn("问题");
         assertFalse(loop.messages().get(0).summary); // 未触发
@@ -84,18 +92,17 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(50, 0.8, 2, llm, 0);
+        ContextManager cm = new ContextManager(50, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        // 每轮 ≈12 token（4+2 开销+文本），50×0.8=40 阈值：第 4 轮 user 入历史后触发
-        for (int i = 0; i < 4; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
+        seedHistory(loop);
+        llm.addTurn("压缩后回复");
+        loop.runUserTurn("触发压缩");
         assertFalse("应触发自动压缩", ui.compressing.isEmpty());
         assertTrue("首事件=压缩开始", ui.compressing.get(0));
         assertFalse("末事件=压缩结束", ui.compressing.get(ui.compressing.size() - 1));
@@ -111,12 +118,13 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(100000, 0.8, 1, llm, 0); // 大阈值不自动压缩
+        ContextManager cm = new ContextManager(100000, llm, 0); // 大阈值不自动压缩
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         llm.addTurn("回复");
         loop.runUserTurn("问题");
         ui.compressing.clear();
@@ -134,12 +142,13 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(100000, 0.8, 1, llm, 0);
+        ContextManager cm = new ContextManager(100000, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         llm.addTurn("回复");
         loop.runUserTurn("问题");
         assertFalse("用户消息入历史即应推送一次", ui.ctxStats.isEmpty());
@@ -161,19 +170,124 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(50, 0.8, 2, llm, 0);
+        ContextManager cm = new ContextManager(50, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
                 new Workspace(tmp.getRoot().getPath()),
                 Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000); // 压缩失败重试的小参数（防真等）
         loop.roundLimit = 10;
-        for (int i = 0; i < 3; i++) {
-            llm.addTurn("回复" + i);
-            loop.runUserTurn("问题" + i);
-        }
+        seedHistory(loop);
         llm.addTurn("压缩后回复");
         loop.runUserTurn("触发压缩");
         assertFalse("整个流程应有上下文统计推送", ui.ctxStats.isEmpty());
+    }
+
+    /** 压缩瞬时失败（空摘要 → EMPTY_RESPONSE）→ 同策略小参数重试后成功 */
+    @Test
+    public void autoCompress_transientFailureThenSuccess() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】重试成功";
+        llm.failAtCompleteChat.add(1); // 第 1 次压缩返回空串 → EMPTY_RESPONSE（可重试）
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0); // 50×0.65=32.5 触发
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop); // 8 组（48 token）+ 本轮 user = 9 组，超阈值且可压缩
+        llm.addTurn("压缩后回复"); // 压缩成功后仍发送本轮请求
+        loop.runUserTurn("触发压缩");
+        assertEquals(2, llm.completeChatRequests.size()); // 失败 1 次 + 重试 1 次
+        assertTrue(loop.messages().get(0).summary);
+        assertFalse(ui.retryProgress.isEmpty());                     // 进过重试态
+        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
+        assertTrue(ui.errors.isEmpty());
+    }
+
+    /** 压缩持续失败至墙钟耗尽：报错并中止本轮（不发送请求），指示器复位 */
+    @Test
+    public void autoCompress_retryExhausted_stopsTurnWithoutRequest() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = ""; // 恒空摘要 → 恒 EMPTY_RESPONSE
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 50); // 快速耗尽
+        loop.roundLimit = 10;
+        seedHistory(loop);
+        loop.runUserTurn("触发压缩"); // 压缩持续失败耗尽后中止，未发送请求
+        assertTrue("压缩失败中止本轮：未发送请求", llm.requests.isEmpty());
+        assertEquals(1, ui.errors.size());
+        assertTrue(ui.errors.get(0).contains("自动压缩失败"));
+        assertTrue(ui.errors.get(0).contains("仍失败"));
+        assertEquals(Integer.valueOf(0), ui.retryAttempts().get(ui.retryAttempts().size() - 1));
+    }
+
+    /** 压缩不可重试错误（OTHER/retryable=false）：立即失败中止本轮，不进重试态 */
+    @Test
+    public void autoCompress_nonRetryableError_stopsImmediately() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.throwOnCompleteChat = true; // LlmException(OTHER, retryable=false)
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop);
+        loop.runUserTurn("触发压缩"); // 不可重试 → 立即失败中止
+        assertTrue(ui.retryProgress.isEmpty());                 // 未进重试态
+        assertTrue(ui.errors.get(0).contains("自动压缩失败"));
+        assertTrue("中止本轮：未发送请求", llm.requests.isEmpty());
+    }
+
+    /** 手动 /compact 失败文案：中性「压缩失败」，不带「自动」字样（与自动压缩路径区分） */
+    @Test
+    public void compactNow_failure_wordingIsNeutral() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.throwOnCompleteChat = true; // 不可重试错误 → 立即失败
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(100000, llm, 0); // 大阈值：手动触发
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        seedHistory(loop);
+        llm.addTurn("回复");
+        loop.runUserTurn("问题");
+        loop.compactNow();
+        assertEquals(1, ui.errors.size());
+        assertTrue("手动压缩失败应报「压缩失败：…」", ui.errors.get(0).startsWith("压缩失败："));
+        assertFalse("不应出现「自动」字样", ui.errors.get(0).contains("自动"));
     }
 }

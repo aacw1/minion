@@ -7,10 +7,10 @@ import com.minion.core.mcp.McpManager;
 import com.minion.core.mcp.McpStore;
 import com.minion.core.skills.Skill;
 import com.minion.core.skills.SkillManager;
+import com.minion.core.storage.SessionTempCleaner;
 import com.minion.core.tools.plugin.ToolPluginManager;
 import com.minion.core.tools.plugin.ToolStore;
 import com.minion.core.tools.confirm.ConfirmUi;
-import com.minion.core.tools.OutputDump;
 import com.minion.gui.MinionApp;
 import com.minion.gui.confirm.GuiConfirmUi;
 import com.minion.gui.session.SessionManager;
@@ -26,8 +26,10 @@ public class Main {
         java.nio.file.Path jarDir = Config.jarDir();
         WorkspaceManager workspaces = WorkspaceManager.load(jarDir);
 
-        // 工具输出落盘目录清理：仅删修改超 3 天的旧文件（最近的可供回溯 Read）
-        OutputDump.cleanup(jarDir.resolve(".session").resolve("tmp"), OutputDump.RETENTION_MS);
+        // 会话临时目录孤儿清理：落盘文件生命周期 = 会话生命周期（删会话时 SessionManager 已递归删除），
+        // 启动只兜底清理无对应会话文件的残留目录；1 小时宽限防竞态（正在落盘的活跃会话目录不误删）
+        SessionTempCleaner.cleanOrphans(jarDir.resolve("session"),
+                jarDir.resolve(".session").resolve("tmp"), 3600_000L);
         ModelManager models = ModelManager.load(jarDir);
 
         // 全局技能目录（所有工作空间/模型共用）

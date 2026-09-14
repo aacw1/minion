@@ -72,10 +72,15 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 重试文案：冻结基础文案 + 错误标签/次数/错误详情后缀
-     *  （如"正在加载中...(429限流，重试第3次)"、"...(网络超时，重试第3次：60 秒内未收到模型输出)"） */
+    /** 重试文案：冻结基础文案 + 错误标签/次数/详情 + 等待时长后缀 */
     static String retryText(RetryProgress p, String base) {
-        return base + "(" + labelOf(p) + "，重试第" + p.attempt + "次" + bodyPart(p) + ")";
+        return base + "(" + labelOf(p) + "，重试第" + p.attempt + "次" + bodyPart(p) + delayPart(p) + ")";
+    }
+
+    /** 等待时长后缀：如「，约 30 秒后重试」；nextDelayMs<=0 时为空（毫秒向上取整到秒） */
+    static String delayPart(RetryProgress p) {
+        if (p.nextDelayMs <= 0) return "";
+        return "，约 " + ((p.nextDelayMs + 999) / 1000) + " 秒后重试";
     }
 
     /** 错误标签：网络类直接用 RetryProgress.label（无 HTTP 码）；HTTP 类按状态码查表 */
@@ -83,11 +88,13 @@ public class RunningIndicator extends HBox {
         return p.label != null ? p.label : codeLabel(p.httpCode);
     }
 
-    /** 错误码标签：429 限流 / 500 服务报错 / 502 网关报错；未知码防御性显示 HTTP xxx */
+    /** 错误码标签：429 限流 / 500 服务报错 / 502 网关报错 / 503、504 等 5xx（长重试覆盖）；未知码防御性显示 HTTP xxx */
     static String codeLabel(int httpCode) {
         if (httpCode == 429) return "429限流";
         if (httpCode == 500) return "500服务报错";
         if (httpCode == 502) return "502网关报错";
+        if (httpCode == 503) return "503服务不可用";
+        if (httpCode == 504) return "504网关超时";
         return "HTTP " + httpCode;
     }
 
@@ -99,6 +106,7 @@ public class RunningIndicator extends HBox {
             return p.body.length() > BODY_MAX_CHARS ? p.body.substring(0, BODY_MAX_CHARS) : p.body;
         }
         String detail = stripNetworkPrefix(p.body);
+        if (detail.equals(p.label)) return ""; // 详情与标签重复（如空响应）：不重复展示
         detail = detail.length() > BODY_MAX_CHARS ? detail.substring(0, BODY_MAX_CHARS) : detail;
         return "：" + detail;
     }
@@ -137,8 +145,8 @@ public class RunningIndicator extends HBox {
 
     /** 压缩状态：true → 固定压缩文案并暂停轮换；false → 恢复轮换（仅运行态生效） */
     public void setCompressing(boolean compressing) {
-        if (retryBase != null) return; // 重试态：忽略压缩切换（压缩发生在请求前，理论不可达）
-        this.compressing = compressing;
+        this.compressing = compressing;   // 重试态也更新字段：重试结束后能回到正确文案
+        if (retryBase != null) return;    // 重试态：不重绘（重试文案优先）
         if (!running) return;
         text.setText(displayText(compressing, pickText(rnd)));
         if (compressing) {
@@ -148,14 +156,15 @@ public class RunningIndicator extends HBox {
         }
     }
 
-    /** 瞬时错误重试进度：attempt ≥ 1 → 首次进入随机取一条基础文案并冻结（停轮换），
-     *  之后每次更新后缀（错误标签/详情随最近一次失败更新）；attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
+    /** 瞬时错误重试进度：attempt ≥ 1 → 首次进入取基础文案并冻结（停轮换），
+     *  之后每次更新后缀（错误标签/详情/等待时长随最近一次失败更新）；attempt == 0 → 恢复压缩/轮换文案（仅运行态生效） */
     public void setRetryProgress(RetryProgress p) {
         if (!running) return;
         retryProgress = p;
         if (p.attempt >= 1) {
             if (retryBase == null) {
-                retryBase = pickText(rnd); // 首次进入：随机取一条基础文案并冻结
+                // 压缩中的重试：基础文案取压缩固定文案（否则显示成普通加载文案，用户不知在压缩）
+                retryBase = compressing ? COMPRESSING_TEXT : pickText(rnd);
                 if (rotateText != null) rotateText.stop();
             }
             text.setText(retryText(p, retryBase));
