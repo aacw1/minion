@@ -82,10 +82,10 @@ com.minion
 - `SchemaGenerator`：Java 结构 → JSON Schema
 - `ConfirmGate`：高危确认（Write 覆盖已有文件 / Edit 始终 / Bash 命中危险命令表）；确认交互经 `ConfirmUi` 接口注入（GUI 下为 GuiConfirmUi）
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
-- `PathsGuard`：文件工具路径限制（工作路径 + 额外放行目录 + 技能目录 + 会话临时目录；技能目录可配置为工作路径外的绝对路径）。`Workspace.extraAllowedDirs()`（volatile 替换语义）放行项目级技能目录——`SessionManager.buildCtx` 按当前空间配置热更新，文件工具据此可读取项目技能源文件（Read 按绝对路径读）
+- `PathsGuard`：文件工具路径限制。读工具走 `errorIfOutsideRead`（工作路径 + 额外放行目录 + 只读放行目录 + 技能目录 + 会话临时目录），写工具走 `errorIfOutside`（不含只读放行目录）；技能目录可配置为工作路径外的绝对路径。`Workspace.extraAllowedDirs()`（volatile 替换语义）放行项目级技能目录、`extraReadDirs()` 只读放行会话存储目录（`<jarDir>/session/<空间名>`，写仍拒绝）——`SessionManager.buildCtx` 按当前空间配置热更新（renameWorkspace 换目录同步替换），文件工具据此可读项目技能源文件（Read 按绝对路径读）与会话落盘文件；`inside(dir, p)` 在 dir 尚未创建时退化为规范化路径词法前缀比较（惰性创建的放行目录不误报越界，路径已存在仍走 toRealPath 真实校验）
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件
 - `OutputDump`：工具输出超限 / 子代理报告落盘公共类——写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级）、`tail` 供截断显示读取；**清理不做**：文件生命周期=会话生命周期（SessionManager 删会话递归删除；启动孤儿兜底 `SessionTempCleaner.cleanOrphans(sessionRoot, tmpRoot, 1h)`）
-- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数
+- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `core/tools/db/` 子包：**只读数据库**（mysql/postgresql/oracle）。`SqlGuard` SQL 白名单（去前导注释、拒多语句/INTO OUTFILE/FOR UPDATE/LOCK IN SHARE MODE）；`DbExecutor`（新建连接即用即关、setReadOnly(true)、maxRows=100 探测截断、queryTimeout=300s、Oracle 表清单限定 getUserName()）；`DbTool` 三个工具实例（动态 description 带当前数据源与按类型的 action 能力提示）；`DataSourceConfig`/`DataSourceValidator`（标识名唯一、URL 须 `jdbc:` 前缀）；`DbType` 枚举（MySQL 8.0.33 / PostgreSQL 42.7.4 / Oracle 21 OJDBC 驱动，双保险显式 Class.forName）

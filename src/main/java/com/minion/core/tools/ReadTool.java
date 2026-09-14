@@ -52,16 +52,23 @@ public class ReadTool implements Tool {
         if (path.isEmpty()) return ToolResult.error("缺少 path 参数");
         Path p = PathsGuard.resolve(workspace.cwd().toString(), path);
         if (!Files.exists(p)) {
-            // 不存在且在工作区外（含技能目录）：明确提示当前工作目录，防模型编造路径误入其他项目
-            if (!PathsGuard.inside(workspace.workDir(), p) && !PathsGuard.insideExtra(workspace, p)
-                    && !PathsGuard.inside(skillsDir, p) && !PathsGuard.inside(tmpDir, p)) {
+            // 不存在且不在任何放行范围（工作区/额外放行/技能目录/会话临时目录/会话存储目录/
+            // 越界读开关开或本会话已放行）：明确提示当前工作目录，防模型编造路径误入其他项目。
+            // 放行范围内一律直接报「文件不存在」——放行目录可能尚未创建（惰性创建）。
+            boolean allowed = PathsGuard.inside(workspace.workDir(), p)
+                    || PathsGuard.insideExtra(workspace, p)
+                    || PathsGuard.insideReadExtra(workspace, p)
+                    || PathsGuard.inside(skillsDir, p)
+                    || PathsGuard.inside(tmpDir, p)
+                    || (confirm != null && confirm.readOutsideAllowed());
+            if (!allowed) {
                 return ToolResult.error("文件不存在: " + p
                         + "（路径在工作目录之外，访问将被拒绝。当前工作目录: " + workspace.workDir() + "）");
             }
             return ToolResult.error("文件不存在: " + p);
         }
         if (Files.isDirectory(p)) return ToolResult.error("是目录: " + p);
-        ToolResult guard = PathsGuard.errorIfOutside(workspace, skillsDir, tmpDir, p);
+        ToolResult guard = PathsGuard.errorIfOutsideRead(workspace, skillsDir, tmpDir, p);
         if (guard != null) {
             if (confirm == null || !confirm.checkReadOutside(this, args, p.toString())) return guard;
         }

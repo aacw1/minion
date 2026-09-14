@@ -128,6 +128,56 @@ public class PathsGuardTest {
         assertNotNull(PathsGuard.errorIfOutside(ws, null, null, outsideFile));
     }
 
+    /** 回归：放行目录自身尚未创建（会话临时目录/会话存储目录惰性创建）时，其下不存在的路径仍判在目录内 */
+    @Test
+    public void inside_dirItselfMissing_pathUnderIt_returnsTrue() throws Exception {
+        Path missingDir = tmp.getRoot().toPath().resolve("jar")
+                .resolve(".session").resolve("tmp").resolve("s1");
+        assertTrue(PathsGuard.inside(missingDir.toString(), missingDir.resolve("report.md")));
+    }
+
+    /** dir 不存在时词法不在其下的路径仍判不在（不得因兜底整目录放宽） */
+    @Test
+    public void inside_dirMissing_pathElsewhere_returnsFalse() throws Exception {
+        Path missingDir = tmp.getRoot().toPath().resolve("jar")
+                .resolve(".session").resolve("tmp").resolve("s1");
+        assertFalse(PathsGuard.inside(missingDir.toString(),
+                tmp.getRoot().toPath().resolve("other.txt")));
+    }
+
+    /** 只读放行目录（会话存储目录）：其下路径放行；其外仍拒绝 */
+    @Test
+    public void errorIfOutsideRead_extraReadDir_allows() throws Exception {
+        Path work = tmp.newFolder("w-read").toPath();
+        Path sessionDir = tmp.newFolder("session-read", "wsA").toPath();
+        Path f = Files.write(sessionDir.resolve("s1.json"), "{}".getBytes(StandardCharsets.UTF_8));
+        Workspace ws = new Workspace(work.toString());
+        ws.setExtraReadDirs(java.util.Collections.singletonList(sessionDir.toString()));
+        assertNull(PathsGuard.errorIfOutsideRead(ws, null, null, f));
+        Path outside = Files.write(tmp.newFolder("other-read").toPath().resolve("x.txt"),
+                "x".getBytes(StandardCharsets.UTF_8));
+        assertNotNull("只读放行目录之外仍应拒绝", PathsGuard.errorIfOutsideRead(ws, null, null, outside));
+    }
+
+    /** 只读放行目录不作用于写守卫（errorIfOutside 口径不变），且读放行目录不存在时其下路径也放行 */
+    @Test
+    public void extraReadDir_notAppliedToWriteGuard_missingDirAllowedForRead() throws Exception {
+        Path work = tmp.newFolder("w-read2").toPath();
+        Path sessionDir = tmp.newFolder("session-read2").toPath();
+        Path f = Files.write(sessionDir.resolve("s1.json"), "{}".getBytes(StandardCharsets.UTF_8));
+        Workspace ws = new Workspace(work.toString());
+        ws.setExtraReadDirs(java.util.Collections.singletonList(sessionDir.toString()));
+        assertNotNull("写守卫（errorIfOutside）不含只读放行目录", PathsGuard.errorIfOutside(ws, null, null, f));
+
+        Path missingDir = tmp.getRoot().toPath().resolve("session-missing");
+        Workspace ws2 = new Workspace(work.toString());
+        ws2.setExtraReadDirs(java.util.Collections.singletonList(missingDir.toString())); // 放行目录本身未创建
+        assertTrue("会话目录未创建时其下路径读放行",
+                PathsGuard.insideReadExtra(ws2, missingDir.resolve("s9.json")));
+        assertFalse("放行目录之外的路径仍不放行",
+                PathsGuard.insideReadExtra(ws2, tmp.getRoot().toPath().resolve("other.json")));
+    }
+
     private static void deleteRecursively(Path p) throws Exception {
         if (!Files.exists(p)) return;
         if (Files.isDirectory(p)) {

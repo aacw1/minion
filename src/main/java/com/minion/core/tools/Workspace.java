@@ -17,6 +17,9 @@ public class Workspace {
     /** 额外放行目录（项目级技能目录等）：替换语义，随工作空间配置热更新；volatile 供会话线程读 */
     private volatile java.util.List<String> extraAllowedDirs = new java.util.ArrayList<String>();
 
+    /** 只读放行目录（会话存储目录等）：读工具放行、写工具不放行；替换语义，随工作空间配置热更新 */
+    private volatile java.util.List<String> extraReadDirs = new java.util.ArrayList<String>();
+
     public Workspace(String workDir) {
         this.workDir = workDir;
         this.cwd = Paths.get(workDir).toAbsolutePath().normalize();
@@ -42,6 +45,15 @@ public class Workspace {
     /** 替换额外放行目录（null/空 = 清空）；与 setWorkDir 同为热更新，不保留旧目录 */
     public synchronized void setExtraAllowedDirs(java.util.List<String> dirs) {
         this.extraAllowedDirs = dirs == null
+                ? new java.util.ArrayList<String>() : new java.util.ArrayList<String>(dirs);
+    }
+
+    /** 当前只读放行目录快照（永不返回 null） */
+    public java.util.List<String> extraReadDirs() { return extraReadDirs; }
+
+    /** 替换只读放行目录（null/空 = 清空）；会话存储目录等「只放行读、不放行写」的目录 */
+    public synchronized void setExtraReadDirs(java.util.List<String> dirs) {
+        this.extraReadDirs = dirs == null
                 ? new java.util.ArrayList<String>() : new java.util.ArrayList<String>(dirs);
     }
 
