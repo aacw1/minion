@@ -108,7 +108,7 @@ com.minion
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析；`scanTree(root, maxDepth, maxCount)` 递归扫描任意目录树（跳过 .git/node_modules/target 等噪声目录，深度/数量触顶截断并回告警，不抛异常），产出带 `[项目]` 来源标注的技能
 - `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（SkillSet 自身无缓存；调用方 `SessionManager` 按空间缓存扫描结果、配置变更时失效），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
-- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，保留区按 token 预算 0.13×max（比例 0.2×触发阈值）从最新往前保留、保底最新 1 组，其余早期组整体并入摘要；`compressibleTokens`（可压量）/ `worthCompressing`（5%×max 收益门槛、85%×max 危险区豁免）；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由调用方按重试策略处理，耗尽中止本轮）；压缩指令可定制（默认主代理版，子代理传 `SUB_AGENT_COMPRESS_SYSTEM` 定制版）
+- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，保留区按 token 预算 0.13×max（比例 0.2×触发阈值）从最新往前保留、常态保底最近 4 组（危险区降 1 组），其余早期组整体并入摘要；`compressibleTokens`（可压量）/ `worthCompressing`（5%×max 收益门槛、85%×max 危险区豁免）；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由调用方按重试策略处理，耗尽中止本轮）；压缩指令可定制（默认主代理版，子代理传 `SUB_AGENT_COMPRESS_SYSTEM` 定制版）
 - `ContextCompressor`：压缩执行器（单次 `compress` + 瞬时错误长重试——分类间隔/墙钟 12 分钟/100ms 中断轮询；主代理自动压缩、/compact 与子代理压缩共用，成功/无可压缩/失败/中断由 `Result` 返回，文案由调用方决定）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `SessionTempCleaner`：启动孤儿兜底清理——`.session/tmp` 下无对应 `session/*/*.json` 且 mtime 超 1 小时的会话目录递归删除（正常删除由 SessionManager 删会话/工作空间时递归清理；生命周期=会话生命周期，取代旧 3 天过期）
@@ -200,6 +200,6 @@ com.minion
 | 工具结果入历史闸门 MAX_CHARS（读取类只截断不落盘） | 30000 | ToolOutputGate |
 | Read 单次输出上限 / 单行上限 | 30000 / 2000 | ReadTool |
 | DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
-| 压缩保留区预算（=max×0.65×0.2）/ 保底组数 / 收益门槛 / 危险区 | 0.13×max（配比 0.2）/ 1 组 / 5%×max / 85%×max | ContextManager |
+| 压缩保留区预算（=max×0.65×0.2）/ 保底组数 / 收益门槛 / 危险区 | 0.13×max（配比 0.2）/ 常态 4 组（危险区 1 组）/ 5%×max / 85%×max | ContextManager |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。
