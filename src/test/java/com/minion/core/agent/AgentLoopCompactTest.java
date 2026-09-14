@@ -14,8 +14,10 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -194,6 +196,8 @@ public class AgentLoopCompactTest {
         for (int i = 0; i < 6; i++) loop.messages().add(Message.user(ascii(100000)));
         assertTrue("场景前提：超阈值未进危险区",
                 cm.shouldCompress(loop.messages()) && cm.estimate(loop.messages()) < 170000);
+        assertEquals("场景前提：保留区保底最新 1 组（预算 26000），本次压掉 5 组 × 25004",
+                125020L, cm.compressibleTokens(loop.messages()));
         llm.addTurn("完成");
         loop.runUserTurn("继续");
         assertEquals("事故场景只需一次压缩", 1, llm.completeChatRequests.size());
@@ -237,6 +241,69 @@ public class AgentLoopCompactTest {
                 ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
         assertEquals("压缩后本轮请求正常继续", "压缩后回复",
                 loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** v2 核心防回归：压缩后仍超阈值（保底组自身超预算）之后，任务推进（新工具轮）使被保底保留的
+     *  大组滑出保留区、可压量恢复 → 同一回合**能再次压缩**，且「仍占」提示走同一分支但已被去重
+     *  （不阻塞压缩、不卡死本轮）。
+     *
+     *  构造（max=50：阈值 32.5、保留预算 6.5、门槛 2.5、危险区 42.5）：
+     *  - seedHistory：8 组 48 token；
+     *  - 本轮 user 240 字符 = 64 token ＞ 保留预算 → 首压只能压掉 seed（48），保底保留本轮 user
+     *    → 压后 17（摘要）+ 64 = 81 ≥ 阈值 → 首次「仍占」并置去重标记；
+     *  - 脚本 1 轮工具（example 回显 60 字符 ≈ 45 token 的原子组）：工具组成为新保底组，
+     *    上一轮的大 user 组滑出保留区 → 第二次压缩把 64 token 的大组压掉（压后 17 + 45 = 62
+     *    仍 ≥ 阈值）→ 命中同一「仍占」分支但已去重，提示仍只有 1 条；
+     *  - 收尾「完成」：本轮未被卡死。
+     *  说明：本用例只放 1 轮工具、且工具组偏大——循环顶每次请求前都判压缩，若用 2 轮小工具
+     *  （组 14 token），第 3 次压缩的保留组不足以撑过阈值（17 + 14 = 31 < 32.5），
+     *  「仍占」去重分支不会被真正走到（会走「降低至」），用例会失去鉴别力。 */
+    @Test
+    public void autoCompress_afterStillOver_nextToolRoundCompressesAgain() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】被压缩的历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop);
+        // 场景前提（自证）：seed + 本轮 user 240 字符 = 48 + 64 = 112
+        List<Message> probe = new ArrayList<Message>(loop.messages());
+        probe.add(Message.user(ascii(240)));
+        assertTrue("场景前提：超阈值", cm.shouldCompress(probe));
+        assertEquals("场景前提：首压可压量 = seed 8 组 48 token", 48L, cm.compressibleTokens(probe));
+        assertTrue("场景前提：保底组（本轮 user 64 token）自身即超保留预算与阈值 32.5",
+                cm.estimate(Collections.singletonList(probe.get(probe.size() - 1))) > 32.5);
+        // 新工具轮：工具组 ≈ 45 token（arguments 71 字符 + 回显 66 字符），成新保底组
+        ToolCall tc = new ToolCall();
+        tc.id = "g1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"" + ascii(60) + "\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("完成");
+
+        loop.runUserTurn(ascii(240));
+
+        assertEquals("第一次压缩（保底组超预算）+ 任务推进后可压量恢复的第二次压缩",
+                2, llm.completeChatRequests.size());
+        assertFalse("首次压缩不得压掉被保底保留的大 user 组（否则「仍占」不成立）",
+                llm.completeChatRequests.get(0).contains(ascii(240)));
+        assertTrue("第二次压缩应立即压掉上一轮保底保留的大 user 组",
+                llm.completeChatRequests.get(1).contains(ascii(240)));
+        assertEquals("「仍占」提示每回合只一次（第二次走同一分支已去重，且不阻塞压缩）: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩后上下文仍占")).count());
+        assertEquals("两次压缩都压后仍超阈值，不得谎报「降低至」: " + ui.warnings,
+                0, ui.warnings.stream().filter(w -> w.contains("降低至")).count());
+        assertEquals("本轮未被卡死", "完成", loop.messages().get(loop.messages().size() - 1).content);
     }
 
     /** ascii 辅助（Task 内新增，供多轮/跳过用例共用） */

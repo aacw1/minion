@@ -115,6 +115,63 @@ public class SubAgentLoopTest {
                 1, ui.subNotices.stream().filter(n -> n.contains("自动压缩暂缓")).count());
     }
 
+    /** v2 核心防回归（与主代理同构）：子代理压缩后仍超阈值（保底组自身超预算）之后，任务推进
+     *  （新工具轮）使被保底保留的大组滑出保留区、可压量恢复 → 全程**能再次压缩**，且
+     *  「压缩后上下文仍占」提示走同一分支但已被去重（子代理全程一次，不阻塞压缩）。
+     *
+     *  构造（max=50：阈值 32.5、保留预算 6.5、门槛 2.5、危险区 42.5）：
+     *  - 8 组历史消息（48 token）+ 预置大 user 消息 240 字符 = 64 token（最新组，首压保底保留）；
+     *  - 首压只能压掉 8 组历史（48）→ 压后 ≈ 33(sys) + 8(task) + 17(摘要) + 64 = 122 ≥ 阈值
+     *    → 首次「仍占」并置去重标记；
+     *  - 脚本 1 轮工具（example 回显 60 字符 ≈ 45 token 组）：工具组成新保底组，大 user 组滑出保留区
+     *    → 第二次压缩压掉该 64 token 大组（压后 ≈ 103 仍 ≥ 阈值）→ 同一「仍占」分支已去重；
+     *  - 收尾「子任务完成」：run() 正常返回，未被卡死。
+     *  说明：只放 1 轮工具、且工具组偏大（同主代理用例）——否则第 3 次压缩的保留组撑不过阈值，
+     *  「仍占」去重分支不会真正被走到。 */
+    @Test
+    public void compressAfterStillOver_nextToolRoundCompressesAgain() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】子代理历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        ContextManager cm = new ContextManager(50, llm, 0);
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.contextManager = cm;
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
+        for (int i = 0; i < 4; i++) { // 8 组历史 = 48 token
+            sub.messages().add(Message.user("历史" + i));
+            sub.messages().add(Message.assistant("回复" + i));
+        }
+        sub.messages().add(Message.user(ascii(240))); // 大 user 消息（64 token，最新组 → 保底保留）
+        assertTrue("场景前提：超阈值且已进危险区", cm.shouldCompress(sub.messages()));
+        assertEquals("场景前提：首压可压量 = 8 组历史 48 token（大 user 组保底保留）",
+                48L, cm.compressibleTokens(sub.messages()));
+        ToolCall tc = new ToolCall();
+        tc.id = "g1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"" + ascii(60) + "\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("子任务完成");
+
+        assertEquals("子任务完成", sub.run());
+
+        assertEquals("第一次压缩 + 任务推进后可压量恢复的第二次压缩",
+                2, llm.completeChatRequests.size());
+        assertFalse("首次压缩不得压掉被保底保留的大 user 组（否则「仍占」不成立）",
+                llm.completeChatRequests.get(0).contains(ascii(240)));
+        assertTrue("第二次压缩应立即压掉上一轮保底保留的大 user 组",
+                llm.completeChatRequests.get(1).contains(ascii(240)));
+        assertEquals("「仍占」提示全程只一次（第二次走同一分支已去重，且不阻塞压缩）: " + ui.subNotices,
+                1, ui.subNotices.stream().filter(n -> n.contains("压缩后上下文仍占")).count());
+        assertEquals("两次压缩都压后仍超阈值，不得谎报「降低至」: " + ui.subNotices,
+                0, ui.subNotices.stream().filter(n -> n.contains("降低至")).count());
+        assertTrue("主通道零调用", ui.warnings.isEmpty() && ui.errors.isEmpty());
+    }
+
     /** ascii 辅助 */
     private static String ascii(int n) {
         StringBuilder sb = new StringBuilder(n);
@@ -853,11 +910,12 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
                 llm, registry, confirm, ui, null, 1);
-        // 子代理压缩器：同参数 + 子代理定制指令。max=200（阈值 130、压缩预算 104）：
-        // 12 轮小消息共 144 + 提示词 ≈ 182 触发压缩；保留区（最近 6 组 72）压后 88 < 130 → 真能降到阈值下
+        // 子代理压缩器：同参数 + 子代理定制指令。max=200（阈值 130、保留区预算 0.13×max = 26）：
+        // 12 轮小消息共 144 + 提示词 ≈ 182 触发压缩；保留区（预算 26 token → 最近 4 组 24）压后 ≈ 82 < 130
+        // → 真能降到阈值下
         sub.contextManager = new com.minion.core.context.ContextManager(
                 200, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 12; i++) { // 12 组历史（≥7 组才可能压缩）
+        for (int i = 0; i < 12; i++) { // 12 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }
@@ -927,7 +985,7 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数快速耗尽（防真等）
         sub.contextManager = new com.minion.core.context.ContextManager(
                 50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+        for (int i = 0; i < 4; i++) { // 8 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }
@@ -971,7 +1029,7 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数：等待切片 10ms（中断检查立即可达）
         sub.contextManager = new com.minion.core.context.ContextManager(
                 50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+        for (int i = 0; i < 4; i++) { // 8 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }

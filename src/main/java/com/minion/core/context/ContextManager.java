@@ -155,6 +155,7 @@ public class ContextManager {
     /** 保留的原子组数：从最新组往前累加 token，累计 ≤ 预算的最大组数（下限 KEEP_MIN_GROUPS=1，无上限）。
      *  组内是协议不可拆单位（assistant(tool_calls)+tool 配对），只能整组保留/整组压缩。 */
     private int keepCount(List<List<Message>> groups) {
+        if (groups.isEmpty()) return 0; // 空组：keep=0（take=0，compress 同引用返回），不留 take=-1 的隐晦中间值
         long budget = (long) (maxContextTokens * THRESHOLD * KEEP_BUDGET_RATIO);
         long acc = 0;
         int keep = 0;
