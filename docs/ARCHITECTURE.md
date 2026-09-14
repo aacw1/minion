@@ -59,7 +59,7 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行（结果过 `ToolOutputGate` 入历史）→ 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；**压缩收益门槛**（超阈值且 `ContextManager.worthCompressing`：可压量 ≥5%×max 或已进危险区 ≥85%×max 才压；「暂缓/仍占」提示由 `ineffectiveWarnedThisTurn` 每回合去重，**不阻塞压缩**——可压量增长即自动重试；手动 /compact 不受限）；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
+| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行（结果过 `ToolOutputGate` 入历史）→ 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；**压缩收益门槛**（超阈值且 `ContextManager.worthCompressing`：可压量 ≥5%×max 或已进危险区 ≥85%×max 才压；「暂缓/仍占」提示由 `ineffectiveWarnedThisTurn` 每回合去重，**不阻塞压缩**——可压量增长即自动重试；手动 /compact 不受限）；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射）；压缩判定每轮至多 3 次估算（O(上下文文本)），量级 ms 可接受；后续可合并为单一决策 API |
 | SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；工具结果过 `ToolOutputGate`（落盘目录=报告目录）入历史；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）+ 压缩收益门槛（与主代理同一判定；「暂缓/仍占」提示由 `ineffectiveWarned` 全程一次，不阻塞压缩）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
@@ -201,10 +201,5 @@ com.minion
 | Read 单次输出上限 / 单行上限 | 30000 / 2000 | ReadTool |
 | DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
 | 压缩保留区预算（=max×0.65×0.2）/ 保底组数 / 收益门槛 / 危险区 | 0.13×max（配比 0.2）/ 1 组 / 5%×max / 85%×max | ContextManager |
-
-> 改动以上常量须在设计阶段说明理由，不随手改。
-
-| HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
-| CdpClient 连接超时 | 10000ms | Main.java |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。
