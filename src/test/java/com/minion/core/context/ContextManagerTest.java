@@ -27,7 +27,7 @@ public class ContextManagerTest {
         return m;
     }
 
-    /** 每链 2 个原子组（user 组 6 token + assistant 组 12 token，共 18 token），供 take 计算断言 */
+    /** 每链 2 个原子组（user 组 6 token + assistant 组 11 token，共 17 token），供保留预算/可压量计算断言 */
     private static List<Message> chains(int chainCount, String prefix) {
         List<Message> msgs = new ArrayList<Message>();
         String base = "一二三四五六七八九十";
@@ -49,7 +49,7 @@ public class ContextManagerTest {
         return msgs;
     }
 
-    /** 输入末尾 n 条消息（用于"最近 6 组原样保留"断言） */
+    /** 输入末尾 n 条消息（用于"保留区 = 原消息连续后缀（组边界切割）"断言） */
     private static List<Message> lastN(List<Message> msgs, int n) {
         return new ArrayList<Message>(msgs.subList(msgs.size() - n, msgs.size()));
     }
@@ -93,9 +93,12 @@ public class ContextManagerTest {
         ContextManager cm = new ContextManager(100, new FakeLlmClient(), 0);
         assertEquals(0.65, cm.threshold(), 1e-9);
         assertEquals(5000, ContextManager.SUMMARY_MAX_CHARS);
-        assertEquals("至少保留最近 6 组（写死）", 6, ContextManager.KEEP_RECENT_GROUPS);
-        assertTrue(cm.shouldCompress(chains(5, "问题")));   // 5 链（90 token）> 100×0.65
-        assertFalse(cm.shouldCompress(chains(2, "问题")));  // 2 链（36 token）< 65
+        assertEquals("保留区预算比例（0.13×max）", 0.2, ContextManager.KEEP_BUDGET_RATIO, 1e-9);
+        assertEquals("保底保留最新 1 组", 1, ContextManager.KEEP_MIN_GROUPS);
+        assertEquals("事前收益门槛", 0.05, ContextManager.MIN_COMPRESSIBLE_RATIO, 1e-9);
+        assertEquals("危险区豁免", 0.85, ContextManager.FORCE_COMPRESS_RATIO, 1e-9);
+        assertTrue(cm.shouldCompress(chains(5, "问题")));   // 5 链（85 token）> 100×0.65
+        assertFalse(cm.shouldCompress(chains(2, "问题")));  // 2 链（34 token）< 65
     }
 
     /** systemTokens 计入 estimate（差值断言，不依赖具体 token 精度） */
@@ -106,53 +109,115 @@ public class ContextManagerTest {
         assertEquals(50, cm50.estimate(chains(2, "问题")) - cm0.estimate(chains(2, "问题")));
     }
 
-    /** take 累加：预算 = 100×0.65×0.8 = 52；从最早组累加首次 ≥ 52 即停（12 链 24 组，组 token 6/12 交替，
-     *  组 0..5 累计 54 → 压缩前 6 组），且至少保留最近 6 组（组 18..23 为硬下限） */
+    /** 保留区 = 预算内的最近 K 组：max=100（阈值 65、预算 13），chains(12) 24 组 204 token；
+     *  最新组（终答 11 token）≤ 13，再往前加一组（user 6）就超预算 → keep=1 */
     @Test
-    public void compress_takesEarliestGroupsUntilCompressBudget() throws Exception {
+    public void compress_keepsRecentGroupsWithinBudget() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
         llm.compressResult = "【摘要】要点";
         ContextManager cm = new ContextManager(100, llm, 0);
-        List<Message> input = chains(12, "问题"); // 24 组
-        List<List<Message>> groups = ContextManager.chunkGroups(input);
-        assertEquals(24, groups.size());
-        long total = TokenCounter.estimateMessages(input);
+        List<Message> input = chains(12, "问题"); // 24 组 204 token
         List<Message> result = cm.compress(input);
         assertTrue(result.get(0).summary);
-        long kept = TokenCounter.estimateMessages(result.subList(1, result.size()));
-        assertTrue("被压部分 token ≥ 预算 52", total - kept >= 52);
-        String batch = llm.completeChatRequests.get(0);
-        assertTrue("最早组已压缩", batch.contains("[USER] 问题0"));
-        assertTrue("预算内最后一组已压缩", batch.contains("[USER] 问题2"));
-        assertFalse("预算外的下一组保留", batch.contains("[USER] 问题3"));
-        assertSameSequence(lastN(input, 6), lastN(result, 6)); // 最近 6 条（=组 18..23）原样保留
+        List<Message> kept = result.subList(1, result.size());
+        assertTrue("保留区不得超预算 13", TokenCounter.estimateMessages(kept) <= 13);
+        assertSameSequence(lastN(input, kept.size()), kept); // 原消息连续后缀（组边界切割）
+        assertTrue("早期组已压缩", llm.completeChatRequests.get(0).contains("[USER] 问题0"));
     }
 
-    /** 全部组合计仍不足预算 → 最多压到"组数−6"，不得再压（保留最近 6 组是硬下限） */
+    /** 预算能装下最近多组时尽量多留（K>1）：max=1000（阈值 650、预算 130），chains(40) 80 组 680 token */
     @Test
-    public void compress_keepsRecent6GroupsWhenBudgetNotReached() throws Exception {
+    public void compress_keepsMultipleGroupsWithinBudget() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
         llm.compressResult = "【摘要】要点";
-        ContextManager cm = new ContextManager(10000, llm, 0); // 预算 5200 >> 全部组 216 token
-        List<Message> input = chains(12, "问题");
+        ContextManager cm = new ContextManager(1000, llm, 0);
+        List<Message> input = chains(40, "问题");
+        assertTrue(cm.shouldCompress(input));
         List<Message> result = cm.compress(input);
-        assertEquals("摘要 + 最近 6 组（6 条）", 7, result.size());
-        assertTrue(result.get(0).summary);
-        String batch = llm.completeChatRequests.get(0);
-        assertTrue("早期组已压缩", batch.contains("[USER] 问题8"));
-        assertFalse("保留区首组（组 18）未参与压缩", batch.contains("[USER] 问题9"));
-        assertSameSequence(lastN(input, 6), lastN(result, 6));
+        List<Message> kept = result.subList(1, result.size());
+        assertTrue("保留区不得超预算 130", TokenCounter.estimateMessages(kept) <= 130);
+        assertTrue("应保留多组（不是保底 1 组）: " + kept.size(), kept.size() >= 2);
+        assertSameSequence(lastN(input, kept.size()), kept);
     }
 
-    /** 原子组数 ≤ 6：无从压缩（不能再压就会破坏"至少保留 6 组"）→ 返回同一引用且不调 LLM */
+    /** 全部组都在保留预算内 → 无可压缩：返回同一引用、不调 LLM */
     @Test
-    public void compress_tooFewGroups_returnsSameInstanceWithoutLlmCall() throws Exception {
+    public void compress_allGroupsWithinBudget_returnsSameInstance() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
-        ContextManager cm = new ContextManager(60, llm, 0); // 阈值 39：6 组 51 token 已超触发
-        List<Message> input = chains(3, "问题"); // 6 组
-        assertTrue("场景前提：已超触发阈值", cm.shouldCompress(input));
+        ContextManager cm = new ContextManager(10000, llm, 0); // 预算 1300 >> 全部组 204 token
+        List<Message> input = chains(12, "问题");
         assertSame(input, cm.compress(input));
-        assertTrue("不应发起压缩请求", llm.completeChatRequests.isEmpty());
+        assertTrue(llm.completeChatRequests.isEmpty());
+    }
+
+    /** 最新组自身超保留预算 → 保底保留它（keep = KEEP_MIN_GROUPS = 1） */
+    @Test
+    public void compress_keepsNewestGroupEvenIfOverBudget() throws Exception {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ContextManager cm = new ContextManager(60, llm, 0); // 预算 7：最新组 11 token 已超
+        List<Message> input = chains(3, "问题"); // 6 组 51 token ≥ 阈值 39
+        assertTrue(cm.shouldCompress(input));
+        List<Message> result = cm.compress(input);
+        assertEquals("摘要 + 最新 1 组", 2, result.size());
+        assertSame(input.get(input.size() - 1), result.get(1));
+        assertEquals(1, llm.completeChatRequests.size());
+    }
+
+    /** 可压量 = take 组合计 = 压缩前总量 − 保留区总量 */
+    @Test
+    public void compressibleTokens_matchesCompressedVolume() throws Exception {
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ContextManager cm = new ContextManager(100, llm, 0); // 预算 13
+        List<Message> input = chains(12, "问题");
+        int total = TokenCounter.estimateMessages(input);
+        long compressible = cm.compressibleTokens(input);
+        assertTrue("可压量 > 0", compressible > 0);
+        List<Message> result = cm.compress(input);
+        int kept = TokenCounter.estimateMessages(result.subList(1, result.size()));
+        assertEquals("可压量 = 压缩前总量 − 保留区总量", total - kept, compressible);
+    }
+
+    /** 全部组在保留预算内 → 可压量 0 */
+    @Test
+    public void compressibleTokens_zeroWhenAllGroupsWithinBudget() {
+        ContextManager cm = new ContextManager(10000, new FakeLlmClient(), 0);
+        assertEquals(0L, cm.compressibleTokens(chains(12, "问题")));
+    }
+
+    /** worthCompressing：可压量达门槛（5%×max）→ true */
+    @Test
+    public void worthCompressing_trueWhenYieldReachesThreshold() {
+        ContextManager cm = new ContextManager(100, new FakeLlmClient(), 0); // 门槛 5
+        long yield = cm.compressibleTokens(chains(12, "问题"));
+        assertTrue("可压量应远超门槛 5: " + yield, yield > 5);
+        assertTrue(cm.worthCompressing(chains(12, "问题")));
+    }
+
+    /** worthCompressing：可压量不足门槛且未进危险区 → false；进入危险区（≥85%×max）→ true */
+    @Test
+    public void worthCompressing_dangerZoneForcesEvenIfYieldIsLow() {
+        // pinned 3200 字符 = 800 token（+4 overhead = 804）；30 组 = 9×5 + 21×6 = 171 token → 总量 975；
+        // max=1200：阈值 780、门槛 60、危险区 1020、保留预算 156 → 可压量仅 15（未进危险区）
+        List<Message> input = new ArrayList<Message>();
+        input.add(pinned(3200));
+        for (int i = 0; i < 30; i++) input.add(Message.user(i < 9 ? "x" : "问题" + i));
+        ContextManager low = new ContextManager(1200, new FakeLlmClient(), 0);
+        assertTrue("场景前提：超阈值", low.shouldCompress(input));
+        assertEquals("场景前提：可压量仅 15", 15L, low.compressibleTokens(input));
+        assertFalse("危险区外不压", low.worthCompressing(input));
+        ContextManager high = new ContextManager(1000, new FakeLlmClient(), 0); // 危险区 850
+        assertTrue("危险区（≥85%）强制压", high.worthCompressing(input));
+    }
+
+    /** 测试辅助：pinned 大消息（ASCII 字符 n 个 ≈ n×0.25 token） */
+    private static Message pinned(int chars) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < chars; i++) sb.append('x');
+        Message m = Message.user(sb.toString());
+        m.pinned = true;
+        return m;
     }
 
     /** system/pinned 原样保留在摘要后，且不进压缩批次 */
@@ -213,30 +278,29 @@ public class ContextManagerTest {
         assertTrue("第二条旧摘要并入输入（不丢信息）", sent.contains("【旧摘要乙】"));
     }
 
-    /** 切割边界只落在原子组边界：保留区为原消息的连续后缀，且 assistant(tool_calls) 的 tool 结果紧随其后。
-     *  8 链（每链 3 组：user 12 token / 工具组[assistant 6 + tool 12] 18 token / 终答 12 token），
-     *  预算 104：组 0..7 累计 114 ≥ 104 → 压 8 组、保留组 8..23。 */
+    /** 切割边界只落在原子组边界：保留区是原消息的连续后缀，且 assistant(tool_calls) 的工具结果紧随其后。
+     *  8 链（每链 3 组：user 11 token / 工具组[assistant 6 + tool 11] 17 token / 终答 11 token）共 24 组 312 token，
+     *  max=400（阈值 260、保留预算 52、门槛 20）：从最新往前累计 50 ≤ 52 → keep=4（组 20..23）、take=20 */
     @Test
     public void compress_boundaryFallsOnGroupBoundary_keepsToolPairing() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
         llm.compressResult = "【摘要】要点";
-        ContextManager cm = new ContextManager(200, llm, 0); // 触发 130、预算 104
+        ContextManager cm = new ContextManager(400, llm, 0);
         List<Message> msgs = new ArrayList<Message>();
         for (int i = 0; i < 8; i++) {
-            msgs.add(Message.user("一二三四五六七八九十"));                            // 11 token
-            msgs.add(assistantWithTools("Read"));                                    // 6 token
-            msgs.add(Message.toolResult("c_Read", "Read", "一二三四五六七八九十"));     // 11 token
-            msgs.add(Message.assistant("一二三四五六七八九十"));                       // 11 token
+            msgs.add(Message.user("一二三四五六七八九十"));                        // 11 token
+            msgs.add(assistantWithTools("Read"));                                // 6 token
+            msgs.add(Message.toolResult("c_Read", "Read", "一二三四五六七八九十")); // 11 token
+            msgs.add(Message.assistant("一二三四五六七八九十"));                   // 11 token
         }
-        List<List<Message>> groups = ContextManager.chunkGroups(msgs);
-        assertEquals("每链 3 组（user / 工具组 / 终答），共 24 组", 24, groups.size());
+        assertEquals("每链 3 组（user / 工具组 / 终答），共 24 组",
+                24, ContextManager.chunkGroups(msgs).size());
+        assertTrue(cm.shouldCompress(msgs));
         List<Message> result = cm.compress(msgs);
         assertTrue(result.get(0).summary);
         List<Message> kept = result.subList(1, result.size());
         assertNotEquals("保留区首条必须是组首，不能是孤立 TOOL", Message.Role.TOOL, kept.get(0).role);
-        List<Message> expected = new ArrayList<Message>();
-        for (int i = 8; i < groups.size(); i++) expected.addAll(groups.get(i)); // 组 0..7 被压
-        assertSameSequence(expected, kept);
+        assertSameSequence(lastN(msgs, kept.size()), kept); // 保留区 = 原消息连续后缀（组边界切割）
         for (int i = 0; i < kept.size(); i++) {
             Message m = kept.get(i);
             if (m.role == Message.Role.ASSISTANT && m.toolCalls != null && !m.toolCalls.isEmpty()) {

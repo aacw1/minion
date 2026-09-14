@@ -8,8 +8,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** 上下文管理：token 估算、阈值判断、单次压缩（最早原子组 → 摘要置前）。
- *  阈值 0.65 / 压缩比例 0.8 / 摘要上限 5000 字 / 至少保留最近 6 个原子组为硬编码常量（不进模型配置，只保留 maxContextTokens）。
+/** 上下文管理：token 估算、阈值判断、单次压缩（保留区外的早期原子组 → 摘要置前）。
+ *  阈值 0.65 / 保留区预算 0.13×max（＝阈值 × KEEP_BUDGET_RATIO）/ 保底保留最新 1 组 / 摘要上限 5000 字
+ *  为硬编码常量（不进模型配置，只保留 maxContextTokens）。
  *  压缩失败不再降级：直接抛 LlmException，由 AgentLoop 按重试策略处理。
  *  压缩指令可定制（默认主代理版；子代理用 SUB_AGENT_COMPRESS_SYSTEM 强调任务目标/进度/落盘路径）。 */
 public class ContextManager {
@@ -18,10 +19,16 @@ public class ContextManager {
     static final int SUMMARY_MAX_CHARS = 5000;
     /** 触发阈值（estimate >= maxContextTokens × THRESHOLD） */
     static final double THRESHOLD = 0.65;
-    /** 触发量中要压缩的比例（其余为保留区） */
-    static final double COMPRESS_RATIO = 0.8;
-    /** 至少保留的最近原子组数：压缩可在当前任务内部滚动进行，不把进行中的上下文压光 */
-    static final int KEEP_RECENT_GROUPS = 6;
+    /** 保留区预算比例：保留区 token 预算 = maxContextTokens × THRESHOLD × 本值 = 0.13×max
+     *  （触发量的 20% 留给保留区，其余 80% 为压缩目标） */
+    static final double KEEP_BUDGET_RATIO = 0.2;
+    /** 保底保留的最近原子组数：最新 1 组无条件保留（哪怕自身超预算）——当前任务上下文不可丢 */
+    static final int KEEP_MIN_GROUPS = 1;
+    /** 事前收益门槛：可压量 ≥ maxContextTokens × 本值 才值得压缩
+     *  （摘要输出本身 ~2-3.5k token，压少了净收益为负） */
+    static final double MIN_COMPRESSIBLE_RATIO = 0.05;
+    /** 危险区豁免：estimate ≥ maxContextTokens × 本值（贴近窗口）时无视门槛强制压缩保命 */
+    static final double FORCE_COMPRESS_RATIO = 0.85;
 
     private static final String COMPRESS_SYSTEM =
             "你是 minion 的上下文压缩器。把用户提供的对话历史压缩成一段中文摘要，保留："
@@ -123,12 +130,12 @@ public class ContextManager {
     }
 
     /** 压缩：单次 LLM 调用，无递归、无降级。
-     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无原子组，或组数 ≤ KEEP_RECENT_GROUPS 不足以保证保留最近 6 组）；
-     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩原子组」；
+     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无原子组，或全部组都在保留区预算 0.13×max 内）；
+     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩原子组」——保留区 = 预算内最近 K 组、保底最新 1 组；
      *  - 失败（请求异常/空摘要）：抛 LlmException，由调用方按重试策略处理。 */
     public List<Message> compress(List<Message> messages) throws LlmException {
         List<List<Message>> groups = chunkGroups(messages);
-        int take = takeCount(groups);
+        int take = groups.size() - keepCount(groups);
         if (take <= 0) return messages; // 暂无可压缩：不调 LLM、不改变历史
         String summary = callLlm(existingSummaryText(messages), buildBatch(groups, 0, take));
         List<Message> result = new ArrayList<Message>();
@@ -145,21 +152,36 @@ public class ContextManager {
         return result;
     }
 
-    /** 要压缩的原子组数：maxTake = 组数 − KEEP_RECENT_GROUPS（硬性至少保留最近 6 组）；
-     *  从最早组逐组累加 token，累计首次 ≥ compressTokens 时截断（含该组，保证压缩量 ≥ COMPRESS_RATIO），
-     *  且受 maxTake 封顶；maxTake ≤ 0 时返回 0（无可压缩）。 */
-    private int takeCount(List<List<Message>> groups) {
-        int maxTake = groups.size() - KEEP_RECENT_GROUPS;
-        if (maxTake <= 0) return 0;
-        long compressTokens = (long) (maxContextTokens * THRESHOLD * COMPRESS_RATIO);
+    /** 保留的原子组数：从最新组往前累加 token，累计 ≤ 预算的最大组数（下限 KEEP_MIN_GROUPS=1，无上限）。
+     *  组内是协议不可拆单位（assistant(tool_calls)+tool 配对），只能整组保留/整组压缩。 */
+    private int keepCount(List<List<Message>> groups) {
+        long budget = (long) (maxContextTokens * THRESHOLD * KEEP_BUDGET_RATIO);
         long acc = 0;
-        int take = 0;
-        for (int i = 0; i < maxTake; i++) {
-            acc += TokenCounter.estimateMessages(groups.get(i));
-            take = i + 1;
-            if (acc >= compressTokens) break;
+        int keep = 0;
+        for (int i = groups.size() - 1; i >= 0; i--) {
+            long t = TokenCounter.estimateMessages(groups.get(i));
+            if (keep >= KEEP_MIN_GROUPS && acc + t > budget) break;
+            acc += t;
+            keep++;
         }
-        return take;
+        return Math.max(keep, KEEP_MIN_GROUPS);
+    }
+
+    /** 本次压缩能压掉的 token 量（＝将被并入摘要的组合计；take = 0 时为 0）：事前收益门槛的输入 */
+    public long compressibleTokens(List<Message> messages) {
+        List<List<Message>> groups = chunkGroups(messages);
+        int take = groups.size() - keepCount(groups);
+        long acc = 0;
+        for (int i = 0; i < take; i++) acc += TokenCounter.estimateMessages(groups.get(i));
+        return acc;
+    }
+
+    /** 本次是否值得压缩（调用方须先确认 shouldCompress 为 true）：
+     *  危险区（estimate ≥ 85%×max）无条件压；否则须可压量 ≥ 5%×max（防零收益空转、防压出净增）。
+     *  只跳过"本次"——任务推进后旧组滑出保留区、可压量增长，随时可再次压缩。 */
+    public boolean worthCompressing(List<Message> messages) {
+        if (estimate(messages) >= maxContextTokens * FORCE_COMPRESS_RATIO) return true;
+        return compressibleTokens(messages) >= maxContextTokens * MIN_COMPRESSIBLE_RATIO;
     }
 
     /** 既有摘要文本（二次压缩并入输入，避免旧摘要内容丢失）：拼接全部 summary 消息
