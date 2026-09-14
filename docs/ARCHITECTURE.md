@@ -59,8 +59,8 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行 → 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
-| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
+| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行（结果过 `ToolOutputGate` 入历史）→ 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；**压缩无效防抖** `compressIneffectiveThisTurn`（压缩后仍超阈值 → 本回合不再自动压缩 + 如实提示，runUserTurn 开头重置；手动 /compact 不受限）；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
+| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；工具结果过 `ToolOutputGate`（落盘目录=报告目录）入历史；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）+ 压缩无效防抖 `compressIneffective`（全程不再重复压缩，提示一次）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
 | SystemPromptBuilder | system prompt 组装：内置提示词 → 项目主说明文件（未配置则整段不注入）→ 技能列表 → 已加载技能 |
@@ -85,7 +85,8 @@ com.minion
 - `PathsGuard`：文件工具路径限制。读工具走 `errorIfOutsideRead`（工作路径 + 额外放行目录 + 只读放行目录 + 技能目录 + 会话临时目录），写工具走 `errorIfOutside`（不含只读放行目录）；技能目录可配置为工作路径外的绝对路径。`Workspace.extraAllowedDirs()`（volatile 替换语义）放行项目级技能目录、`extraReadDirs()` 只读放行会话存储目录（`<jarDir>/session/<空间名>`，写仍拒绝）——`SessionManager.buildCtx` 按当前空间配置热更新（renameWorkspace 换目录同步替换），文件工具据此可读项目技能源文件（Read 按绝对路径读）与会话落盘文件；`inside(dir, p)` 在 dir 尚未创建时退化为规范化路径词法前缀比较（惰性创建的放行目录不误报越界，路径已存在仍走 toRealPath 真实校验）
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件
 - `OutputDump`：工具输出超限 / 子代理报告落盘公共类——写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级）、`tail` 供截断显示读取；**清理不做**：文件生命周期=会话生命周期（SessionManager 删会话递归删除；启动孤儿兜底 `SessionTempCleaner.cleanOrphans(sessionRoot, tmpRoot, 1h)`）
-- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
+- `ToolOutputGate`：**入历史闸门**（AgentLoop/SubAgentLoop 工具结果写历史前唯一入口）——单条上限 MAX_CHARS=30000（与 Bash/Grep/DB 同口径），未超原样返回；读取类白名单 {Read, Grep, Glob} 只截断 + 「请用 offset/limit 分页继续读取」**不落盘**（防"读→落盘→再读"套娃）；其余截断 + `OutputDump.write` 落盘 + 路径提示（落盘失败降级文案）；代理对边界安全（高代理回退一位）。GUI 展示不受影响（闸门只改入历史副本）
+- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**自限**：单次输出上限 MAX_OUTPUT_CHARS=30000（超出提示「已显示第 A-B 行（共 N 行），请用 offset=B 继续读取」）、单行上限 MAX_LINE_CHARS=2000（超长行截断并标注总长），default limit=2000 行。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `core/tools/db/` 子包：**只读数据库**（mysql/postgresql/oracle）。`SqlGuard` SQL 白名单（去前导注释、拒多语句/INTO OUTFILE/FOR UPDATE/LOCK IN SHARE MODE）；`DbExecutor`（新建连接即用即关、setReadOnly(true)、maxRows=100 探测截断、queryTimeout=300s、Oracle 表清单限定 getUserName()）；`DbTool` 三个工具实例（动态 description 带当前数据源与按类型的 action 能力提示）；`DataSourceConfig`/`DataSourceValidator`（标识名唯一、URL 须 `jdbc:` 前缀）；`DbType` 枚举（MySQL 8.0.33 / PostgreSQL 42.7.4 / Oracle 21 OJDBC 驱动，双保险显式 Class.forName）
@@ -196,6 +197,8 @@ com.minion
 | 数据库查询超时 QUERY_TIMEOUT_SECONDS | 300s | DbExecutor |
 | 数据库结果行数上限 MAX_ROWS（探测截断 101） | 100 行 | DbExecutor |
 | 数据库结果字符预算 DB_CHARS_BUDGET / 单格截断 CELL_MAX | 30000 / 120 | DbExecutor |
+| 工具结果入历史闸门 MAX_CHARS（读取类只截断不落盘） | 30000 | ToolOutputGate |
+| Read 单次输出上限 / 单行上限 | 30000 / 2000 | ReadTool |
 | DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。

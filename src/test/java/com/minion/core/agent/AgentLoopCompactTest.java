@@ -57,6 +57,38 @@ public class AgentLoopCompactTest {
         assertTrue(loop.messages().get(0).summary);
     }
 
+    /** 压缩后仍超阈值（保留区被大输出占满）→ 防抖：本回合只压一次并如实提示，不再每轮空转。
+     *  回归场景：KEEP_RECENT_GROUPS=6 硬下限不看大小，压完仍 76% → 每轮请求前重复压缩（每次白付一次 LLM 调用） */
+    @Test
+    public void autoCompress_ineffective_blocksRepeatAndWarns() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】被压缩的历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop);          // 8 组 48 token
+        llm.addTurn("压缩后回复");
+        loop.runUserTurn("触发压缩"); // 9 组 55 token：压 3 组后仍 ~53 ≥ 32.5 阈值
+        assertEquals("压缩只发生一次（防抖后本回合不再重复）",
+                1, llm.completeChatRequests.size());
+        assertTrue("应如实提示压不动: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("无法继续压缩")));
+        assertFalse("不再谎报已降低: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
+        assertEquals("压缩后本轮请求正常继续",
+                "压缩后回复", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
     @Test
     public void compactNow_compressesImmediately() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());

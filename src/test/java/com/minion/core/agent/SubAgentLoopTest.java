@@ -3,6 +3,7 @@ package com.minion.core.agent;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.minion.core.config.Config;
+import com.minion.core.context.ContextManager;
 import com.minion.core.llm.FakeLlmClient;
 import com.minion.core.llm.LlmException;
 import com.minion.core.llm.Message;
@@ -80,6 +81,36 @@ public class SubAgentLoopTest {
         assertEquals("子agent思考", round2.get(2).reasoningContent);
         assertTrue(round2.get(2).toApiJson().has("reasoning_content"));
         assertEquals("子agent思考", round2.get(2).toApiJson().get("reasoning_content").getAsString());
+    }
+
+    /** 压缩后仍超阈值（保留区被大输出占满）→ 子代理不再重复压缩（防每轮空转），任务继续完成 */
+    @Test
+    public void compressIneffective_blocksRepeat() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        StringBuilder big = new StringBuilder();
+        for (int i = 0; i < 200; i++) big.append('a');
+        for (int i = 0; i < 8; i++) { // 8 轮工具 = 8 个原子组（组数 > 6 才可能真正压缩）
+            ToolCall tc = new ToolCall();
+            tc.id = "t" + i;
+            tc.name = "example";
+            tc.arguments = "{\"text\":\"" + big + "\"}";
+            llm.addTurnWithTools(Collections.singletonList(tc), null);
+        }
+        llm.addTurn("子任务完成");
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.contextManager = new ContextManager(50, llm, 0);
+        assertEquals("子任务完成", sub.run());
+        assertEquals("压缩只发生一次（防抖后不再重复）", 1, llm.completeChatRequests.size());
+        assertTrue("应提示后续不再重复压缩: " + ui.subNotices,
+                ui.subNotices.stream().anyMatch(n -> n.contains("后续不再重复压缩")));
+        assertFalse("不再谎报已降低: " + ui.subNotices,
+                ui.subNotices.stream().anyMatch(n -> n.contains("已压缩上下文")));
     }
 
     /** I4-① 构造 AgentLoop 后 task 工具自动注册 */
@@ -777,10 +808,11 @@ public class SubAgentLoopTest {
 
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
                 llm, registry, confirm, ui, null, 1);
-        // 子代理压缩器：同参数（50×0.65 触发）+ 子代理定制指令
+        // 子代理压缩器：同参数 + 子代理定制指令。max=200（阈值 130、压缩预算 104）：
+        // 12 轮小消息共 144 + 提示词 ≈ 182 触发压缩；保留区（最近 6 组 72）压后 88 < 130 → 真能降到阈值下
         sub.contextManager = new com.minion.core.context.ContextManager(
-                50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 4; i++) { // 8 组历史（≥7 组才可能压缩）
+                200, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
+        for (int i = 0; i < 12; i++) { // 12 组历史（≥7 组才可能压缩）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }
