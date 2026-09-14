@@ -139,13 +139,15 @@ public class SubAgentLoopTest {
         Message pin = Message.user(ascii(4000)); // 1000 token
         pin.pinned = true;
         sub.messages().add(pin);
-        // 每条历史消息 6 token（= brief 的「问N」多一个 ASCII 字符）：保留区预算 156 装不下全部
-        // 30 组 → 可压量 15 token（> 0 且 < 门槛 60），危险区强制压缩才真正有内容可压。
-        // brief 原数字（每组 5 token，共 150 ≤ 156）下可压量恰为 0——ContextManager 视为
+        // TokenCounter 口径（每消息 +4）：9 条「x」= 5 token、21 条「问N?」= 6 token，合计 171；
+        // 保留区预算 156 装不下全部 30 组 → 可压量 15 token（恰为最旧 3 个 5-token 组），
+        // 既 > 0 又 < 门槛 60，危险区强制压缩才真正有内容可压。
+        // brief 原数字（未加「?」，每组 5 token 共 150 ≤ 156）下可压量恰为 0——ContextManager 视为
         // 「暂无可压缩」不调 LLM，「强制压缩一次 = 1 次压缩请求」无法成立（已实证）。
         for (int i = 0; i < 30; i++) sub.messages().add(Message.user(i < 9 ? "x" : "问" + (i % 10) + "?"));
         assertTrue("场景前提：可压量不足但进危险区",
-                cm.worthCompressing(sub.messages()) && cm.compressibleTokens(sub.messages()) < 60);
+                cm.worthCompressing(sub.messages()) && cm.compressibleTokens(sub.messages()) < 60
+                        && cm.compressibleTokens(sub.messages()) > 0);
         llm.addTurn("子任务完成");
         assertEquals("子任务完成", sub.run());
         assertEquals("危险区强制压缩一次", 1, llm.completeChatRequests.size());
