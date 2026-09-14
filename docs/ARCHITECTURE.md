@@ -59,8 +59,8 @@ com.minion
 
 | 类 | 职责 |
 |---|---|
-| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行（结果过 `ToolOutputGate` 入历史）→ 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；**压缩无效防抖** `compressIneffectiveThisTurn`（压缩后仍超阈值 → 本回合不再自动压缩 + 如实提示，runUserTurn 开头重置；手动 /compact 不受限）；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
-| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；工具结果过 `ToolOutputGate`（落盘目录=报告目录）入历史；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）+ 压缩无效防抖 `compressIneffective`（全程不再重复压缩，提示一次）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
+| AgentLoop | 主循环：追加消息 → 估算/压缩 → 流式请求 → 工具执行（结果过 `ToolOutputGate` 入历史）→ 落盘；轮数上限 DEFAULT_ROUND_LIMIT=1000；TaskTool 在此注册；**压缩收益门槛**（超阈值且 `ContextManager.worthCompressing`：可压量 ≥5%×max 或已进危险区 ≥85%×max 才压；「暂缓/仍占」提示由 `ineffectiveWarnedThisTurn` 每回合去重，**不阻塞压缩**——可压量增长即自动重试；手动 /compact 不受限）；每轮结束经 ui.onStatsLine 发射统计行（StatsLine 格式化，正常/错误/中断路径均发射） |
+| SubAgentLoop | 子 agent：独立 system prompt + 消息数组 + 完整工具集（其中 task/Skill/AskUserQuestion 不提供给子代理——schema 剔除 + 调用防御，防无限递归与上下文污染）；START 事件仅由 AgentLoop 派发时发一次；无轮数/输出上限；报告一律先落盘（`subagent-report-<编号>-*.txt`）返回摘要+路径；工具结果过 `ToolOutputGate`（落盘目录=报告目录）入历史；按主代理策略压缩（任务提示词 pinned 豁免、子代理定制压缩指令）+ 压缩收益门槛（与主代理同一判定；「暂缓/仍占」提示由 `ineffectiveWarned` 全程一次，不阻塞压缩）；事件经 `AgentUi.onSubAgent*(int no, …)` 与主代理分道（编号会话内递增） |
 | Session | 会话状态：消息列表、统计（pendingSupplements 运行中补充队列 + pendingSupplementImages 补充图片队列，随会话落盘） |
 | TodoList | 任务清单（TodoWrite 工具的后端） |
 | SystemPromptBuilder | system prompt 组装：内置提示词 → 项目主说明文件（未配置则整段不注入）→ 技能列表 → 已加载技能 |
@@ -108,7 +108,7 @@ com.minion
 
 - `SkillManager`：扫描 `skills/<名>/SKILL.md`（superpowers 格式）或 `skills/<名>.skill.md`，YAML frontmatter 解析；`scanTree(root, maxDepth, maxCount)` 递归扫描任意目录树（跳过 .git/node_modules/target 等噪声目录，深度/数量触顶截断并回告警，不抛异常），产出带 `[项目]` 来源标注的技能
 - `SkillSet`：内置技能 + 项目级技能合并器——`resolve(projectDir)` 每次实扫（SkillSet 自身无缓存；调用方 `SessionManager` 按空间缓存扫描结果、配置变更时失效），同名（忽略大小写）项目级覆盖内置，产出**不可变快照**；`[项目]` 技能排在内置之前
-- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，从最早组按 token 累加到 0.65×0.8 后整体压缩，且至少保留最近 6 组；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由调用方按重试策略处理，耗尽中止本轮）；压缩指令可定制（默认主代理版，子代理传 `SUB_AGENT_COMPRESS_SYSTEM` 定制版）
+- `ContextManager` / `TokenCounter`：上下文压缩（达 maxContextTokens×0.65 触发；按**原子组**切割——有工具调用的 assistant 与其后 tool 结果捆一组、普通 user/assistant 各自一组，保留区按 token 预算 0.13×max（比例 0.2×触发阈值）从最新往前保留、保底最新 1 组，其余早期组整体并入摘要；`compressibleTokens`（可压量）/ `worthCompressing`（5%×max 收益门槛、85%×max 危险区豁免）；摘要置前、上限 5000 字，全部旧摘要并入输入；单次调用不递归，失败抛 LlmException 由调用方按重试策略处理，耗尽中止本轮）；压缩指令可定制（默认主代理版，子代理传 `SUB_AGENT_COMPRESS_SYSTEM` 定制版）
 - `ContextCompressor`：压缩执行器（单次 `compress` + 瞬时错误长重试——分类间隔/墙钟 12 分钟/100ms 中断轮询；主代理自动压缩、/compact 与子代理压缩共用，成功/无可压缩/失败/中断由 `Result` 返回，文案由调用方决定）
 - `SessionStore`：会话 JSON 落盘（原子写；每次 API 请求完成后写盘），目录 `session/<workSpaceName>/`
 - `SessionTempCleaner`：启动孤儿兜底清理——`.session/tmp` 下无对应 `session/*/*.json` 且 mtime 超 1 小时的会话目录递归删除（正常删除由 SessionManager 删会话/工作空间时递归清理；生命周期=会话生命周期，取代旧 3 天过期）
@@ -200,6 +200,7 @@ com.minion
 | 工具结果入历史闸门 MAX_CHARS（读取类只截断不落盘） | 30000 | ToolOutputGate |
 | Read 单次输出上限 / 单行上限 | 30000 / 2000 | ReadTool |
 | DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
+| 压缩保留区预算（=max×0.65×0.2）/ 保底组数 / 收益门槛 / 危险区 | 0.13×max（配比 0.2）/ 1 组 / 5%×max / 85%×max | ContextManager |
 
 > 改动以上常量须在设计阶段说明理由，不随手改。
 
