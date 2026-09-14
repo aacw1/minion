@@ -27,7 +27,8 @@ public class AgentLoopCompactTest {
     /** 预置 4 轮普通历史 = 8 个原子组（48 token；每条「历史N」/「回复N」= 2 中文 + 1 数字 ≈ 1.65 → 2 token，
      *  加每消息 4 开销 = 6）：max=50 时 48+本轮 user 7 = 55 ≥ 阈值 32.5，
      *  且已进危险区（≥50×0.85=42.5）→ 强制压缩；max=100 时 48+6 = 54 < 阈值 65 → 不自动压缩，
-     *  仅手动 /compact 时按保留区预算（13 token）保留最近 2 组、可压 7 组 */
+     *  仅手动 /compact 时按保留区预算（13 token）保留最近 2 组；此时消息含本轮 user/回复共 10 组×6 token，
+     *  可压 8 组 = 48 token（若仅 seed 8 组则可压 6 组） */
     private static void seedHistory(AgentLoop loop) {
         for (int i = 0; i < 4; i++) {
             loop.messages().add(Message.user("历史" + i));
@@ -204,7 +205,7 @@ public class AgentLoopCompactTest {
     }
 
     /** 保底组自身超预算（设计 §3.2-2）：本轮 user 64 token ＞ 保留预算 6.5 →
-     *  压后仍超阈值：提示「自动压缩后上下文仍占」一次、不谎报「降低至」、不阻塞本轮请求 */
+     *  压后仍超阈值：提示「自动压缩后上下文仍占」恰好 1 次、不谎报「降低至」、不阻塞本轮请求 */
     @Test
     public void autoCompress_newestGroupOverBudget_warnsStillOverAfterCompress() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -222,12 +223,16 @@ public class AgentLoopCompactTest {
                 Session.create(tmp.getRoot().getPath(), "test-model"));
         loop.retryPolicy = new RetryPolicy(10, 10, 60000);
         loop.roundLimit = 10;
-        seedHistory(loop);              // 8 组 48 token（可压量 48 ≥ 门槛 2.5）
+        seedHistory(loop);              // 8 组 48 token（可压量 42 ≥ 门槛 2.5）
+        // 场景前提：保底组（本轮 user 64 > 预算 6.5）超预算且已进危险区；seed 48 ≥ 危险区 42.5
+        assertTrue("场景前提：保底组超预算且已进危险区",
+                cm.shouldCompress(loop.messages()) && cm.estimate(loop.messages()) >= 42.5
+                        && cm.compressibleTokens(loop.messages()) >= 2.5);
         llm.addTurn("压缩后回复");
         loop.runUserTurn(ascii(240));   // 本轮 user 64 token > 保留预算 → 保底保留后仍超阈值
         assertEquals("压后仍超阈值不重复压缩：只压一次", 1, llm.completeChatRequests.size());
-        assertTrue("应提示仍超阈值: " + ui.warnings,
-                ui.warnings.stream().anyMatch(w -> w.contains("自动压缩后上下文仍占")));
+        assertEquals("「仍占」提示恰好一次: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩后上下文仍占")).count());
         assertFalse("不得谎报降低至: " + ui.warnings,
                 ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
         assertEquals("压缩后本轮请求正常继续", "压缩后回复",
