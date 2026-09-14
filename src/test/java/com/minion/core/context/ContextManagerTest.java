@@ -130,8 +130,8 @@ public class ContextManagerTest {
         assertTrue(result.get(0).summary);
         List<Message> kept = result.subList(1, result.size());
         assertEquals("常态保底：最近 4 组（4 条消息）", 4, kept.size());
-        assertTrue("保底组自身超预算 33.8（36 token）也不压",
-                TokenCounter.estimateMessages(kept) > 33.8);
+        assertTrue("保底组自身超预算 33（截断前 33.8；36 token）也不压",
+                TokenCounter.estimateMessages(kept) > 33);
         assertSameSequence(lastN(input, kept.size()), kept); // 原消息连续后缀（组边界切割）
         assertTrue("早期组已压缩", llm.completeChatRequests.get(0).contains("[USER] 问题0"));
     }

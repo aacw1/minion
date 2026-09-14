@@ -331,7 +331,7 @@ public class AgentLoopCompactTest {
         ToolCall tc = new ToolCall();
         tc.id = "d1";
         tc.name = "example";
-        tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈57.5k（200k 字符被 ToolOutputGate 截断至 30k）→ 推进后 ≈207.5k ≥ 危险区 170k
+        tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈57.5k（assistant 参数 200k 字符不截断；工具结果回显 200k 字符被 ToolOutputGate 截断至 30k）→ 推进后 ≈207.5k ≥ 危险区 170k
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("完成");
         for (Message m : loop.messages()) { // 标记唯一性自证：既有 D 组内容不含本轮标记
