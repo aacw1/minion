@@ -79,6 +79,52 @@ public class FileToolsTest {
     }
 
     /** GBK 编码文件（如记事本 ANSI 保存）：UTF-8 解码失败后自动降级 GBK，内容正确并标注转码 */
+    // ---- Read 单次输出上限（大输出闸门配套：分页续读，不落盘） ----
+
+    /** 超字符上限：截断 + offset 续读提示；按提示续读可覆盖全文（分页永不卡死） */
+    @Test
+    public void read_charLimit_truncatesAndHintsNextOffset() throws Exception {
+        StringBuilder src = new StringBuilder();
+        for (int i = 0; i < 1000; i++) {
+            src.append("行").append(i);
+            for (int j = 0; j < 36; j++) src.append('a');
+            src.append('\n');
+        }
+        Files.write(p("big.txt"), src.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"big.txt\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("单次输出受字符上限约束", r.output.length() <= ReadTool.MAX_OUTPUT_CHARS + 200);
+        assertTrue("截断提示续读位置", r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
+        int next = Integer.parseInt(r.output.replaceAll("(?s).*请用 offset=(\\d+).*", "$1"));
+        assertTrue("续读位置有效: " + next, next > 0 && next < 1000);
+        ToolResult r2 = read.execute(args("{\"path\":\"big.txt\",\"offset\":" + next + "}"));
+        assertTrue(r2.output, r2.ok);
+        assertFalse("末页不再截断", r2.output.contains("单次输出上限"));
+        assertEquals("分页拼接覆盖全文", src.toString(), stripHints(r.output) + stripHints(r2.output));
+    }
+
+    /** 单行超长：截断并标注原始长度（防 minified 单行撑爆上下文） */
+    @Test
+    public void read_singleLineOverLimit_clipped() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 5000; i++) line.append('x');
+        Files.write(p("oneline.json"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"oneline.json\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("单行截断标注", r.output.contains("本行超长，共 5000 字符已截断"));
+        assertTrue("本行截断后长度受控", r.output.length() <= ReadTool.MAX_LINE_CHARS + 200);
+    }
+
+    /** 工具提示行剥离（测试辅助）：提示统一以 "... " 开头 */
+    private static String stripHints(String out) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : out.split("\n", -1)) {
+            if (line.startsWith("... ") || line.isEmpty()) continue;
+            sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
     @Test
     public void read_gbkFile_autoDecoded() throws Exception {
         // 「阿诗丹顿」的 GBK 字节序列（8 字节 4 汉字）

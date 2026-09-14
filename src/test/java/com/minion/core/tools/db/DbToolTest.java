@@ -56,6 +56,17 @@ public class DbToolTest {
         assertTrue(d, d.contains("仅允许 SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN"));
     }
 
+    /** description 引导拆分查询（大结果闸门配套：避免整表拉大字段） */
+    @Test
+    public void descriptionAdvisesSplittingLargeResults() {
+        DbConfig c = new DbConfig();
+        c.dataSources.add(new DataSourceConfig("prod", "jdbc:mysql://h:3306/shop", "u", "p"));
+        c.current = "prod";
+        String d = new DbTool(DbType.MYSQL, c, (java.nio.file.Path) null).description();
+        assertTrue(d, d.contains("结果超过 30000 字符会落盘并提示拆分"));
+        assertTrue(d, d.contains("按需 WHERE/LIMIT 拆分查询"));
+    }
+
     @Test
     public void descriptionWhenNoDataSourceSelected() {
         String d = new DbTool(DbType.ORACLE, emptyConfig(), (java.nio.file.Path) null).description();

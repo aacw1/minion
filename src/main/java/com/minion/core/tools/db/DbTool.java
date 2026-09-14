@@ -64,7 +64,10 @@ public class DbTool implements Tool {
         sb.append("。大字段(CLOB/TEXT/LONGTEXT/JSON 等)默认截断 120 字符并标注完整长度；")
           .append("解析大字段全文请加 full=true，并将 SQL 限定到单行/少行（配合 WHERE/LIMIT），")
           .append("单个字段最多 inline ").append(DbExecutor.FULL_CELL_MAX)
-          .append(" 字符，超出自动落盘并附文件路径");
+          .append(" 字符，超出自动落盘并附文件路径；")
+          .append("结果超过 ").append(MarkdownTable.CHAR_BUDGET)
+          .append(" 字符会落盘并提示拆分——请避免一次拉取大量大字段（如整表 JSON 列），")
+          .append("按需 WHERE/LIMIT 拆分查询");
         if (type.supports("schema")) {
             sb.append("；action=schema 列出表与视图；action=describe 查看表字段");
         } else {

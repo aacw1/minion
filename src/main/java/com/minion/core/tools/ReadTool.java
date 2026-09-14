@@ -8,10 +8,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** 读文件。参数: path(必), offset(行偏移), limit(默认2000), lineNumbers(是否带行号) */
+/** 读文件。参数: path(必), offset(行偏移), limit(默认2000), lineNumbers(是否带行号)。
+ *  单次输出受字符上限约束（MAX_OUTPUT_CHARS）：超限截断并提示 offset 续读位置；
+ *  单行超长（minified JSON/超长日志行）截断并标注原始长度——防单行撑爆上下文。 */
 public class ReadTool implements Tool {
 
     private static final int DEFAULT_LIMIT = 2000;
+    /** 单次读取输出字符上限（与 Bash/Grep/Db 同口径）：超限截断 + offset 续读提示（不落盘，防套娃） */
+    public static final int MAX_OUTPUT_CHARS = 30000;
+    /** 单行截断上限（一行可达数百 KB，防一行撑爆上下文） */
+    public static final int MAX_LINE_CHARS = 2000;
 
     private final Workspace workspace;
     private final String skillsDir;
@@ -37,7 +43,10 @@ public class ReadTool implements Tool {
     public String name() { return "Read"; }
 
     @Override
-    public String description() { return "读取文件内容，支持行号、偏移与行数限制"; }
+    public String description() {
+        return "读取文件内容，支持行号、偏移与行数限制；单次输出上限 " + MAX_OUTPUT_CHARS
+                + " 字符，超出请用 offset 分页续读";
+    }
 
     @Override
     public JsonObject schema() {
@@ -100,14 +109,35 @@ public class ReadTool implements Tool {
         StringBuilder sb = new StringBuilder();
         if (r.gbk) sb.append("[GBK 编码文件，已自动转码显示]\n");
         int to = Math.min(lines.size(), offset + limit);
+        int shown = 0;            // 实际输出的行数（受单次字符上限约束）
+        boolean charLimited = false;
         for (int i = offset; i < to; i++) {
-            if (lineNumbers) sb.append(i + 1).append(": ");
-            sb.append(lines.get(i)).append('\n');
+            String chunk = (lineNumbers ? (i + 1) + ": " : "") + clipLine(lines.get(i)) + '\n';
+            if (sb.length() + chunk.length() > MAX_OUTPUT_CHARS) {
+                charLimited = true; // 本行及之后未显示：提示 offset 续读（不丢行、可无限分页推进）
+                break;
+            }
+            sb.append(chunk);
+            shown++;
         }
-        if (to < lines.size()) {
+        int lastLine = offset + shown; // 已显示区间的末行（1-based 行号）
+        if (charLimited) {
+            sb.append("... 单次输出上限 ").append(MAX_OUTPUT_CHARS).append(" 字符，已显示第 ")
+              .append(offset + 1).append('-').append(lastLine).append(" 行（共 ")
+              .append(lines.size()).append(" 行）；请用 offset=").append(lastLine)
+              .append(" 继续读取\n");
+        } else if (lastLine < lines.size()) {
             sb.append("... 共 ").append(lines.size()).append(" 行，已显示 ")
-              .append(to - offset).append(" 行（可用 offset/limit 翻页）\n");
+              .append(shown).append(" 行（可用 offset/limit 翻页）\n");
         }
         return ToolResult.success(sb.toString());
+    }
+
+    /** 单行截断：超长行截断并标注原始长度；截断点落在代理对中间时回退一位（对齐 TruncatedOutput 口径） */
+    private static String clipLine(String line) {
+        if (line.length() <= MAX_LINE_CHARS) return line;
+        int cut = MAX_LINE_CHARS;
+        if (Character.isHighSurrogate(line.charAt(cut - 1))) cut--;
+        return line.substring(0, cut) + "…[本行超长，共 " + line.length() + " 字符已截断]";
     }
 }

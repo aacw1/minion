@@ -115,7 +115,8 @@ public class MarkdownTableTest {
         for (int i = 0; i < 31000; i++) sb.append('y');
         String out = MarkdownTable.fit(sb.toString(), null);
         assertTrue(out.startsWith("yyyy"));
-        assertTrue(out.contains("…（结果过长已截断，共 31000 字符）"));
+        assertTrue(out.contains("…（结果过大：共 31000 字符，完整内容未能落盘。请拆分查询"));
+        assertTrue(out.contains("加 WHERE/LIMIT"));
         assertTrue(out.length() < 31000);
     }
 
@@ -125,10 +126,11 @@ public class MarkdownTableTest {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 31000; i++) sb.append('z');
         String out = MarkdownTable.fit(sb.toString(), tmp);
-        assertTrue(out.contains("完整结果 31000 字符已落盘："));
-        assertTrue(out.contains("可用 Read 查看"));
+        assertTrue(out.contains("结果过大：共 31000 字符，完整内容已落盘："));
+        assertTrue("引导拆分查询", out.contains("请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询"));
+        assertTrue("全文可 Read 分页查看", out.contains("需要全文可用 Read 分页查看"));
         // 落盘文件确实存在且是全量
-        String path = out.substring(out.indexOf("落盘：") + 3, out.indexOf("，可用 Read"));
+        String path = out.substring(out.indexOf("已落盘：") + 4, out.indexOf("。请拆分查询"));
         assertEquals(31000, new String(Files.readAllBytes(new java.io.File(path).toPath()),
                 "UTF-8").length());
     }
