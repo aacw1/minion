@@ -292,11 +292,19 @@ public class AgentLoopCompactTest {
         assertEquals("本轮未被卡死", "完成", loop.messages().get(loop.messages().size() - 1).content);
     }
 
+    /** 危险区降级用例的唯一标记：既有历史（D 组 = "D0/D1/D2" + 18 万 'x'、工具参数/回显 20 万 'x'）
+     *  均不含该串，故「批次含本标记」⇔「本轮 user 组进了压缩批次」——'x' 海量填充无法伪造。 */
+    private static final String DANGER_MARK = "ROUND9";
+
     /** 危险区降级：4 组自身超阈值但未到 85% → 暂缓；推进使占用涨过 85% →
      *  保底降为 1 组、压缩成功回到阈值下（max=200000：危险区 170k）。
      *  实测口径：seed 每组 45005 token（同上一用例），3 组 + 本轮 user 15004 = 150019 → 暂缓；
      *  工具组 = assistant（arguments ceil(200011×0.25)+6 = 50009）+ tool 结果（原 200006 字符经
-     *  ToolOutputGate 30000 字符上限截断 ≈7500 token）≈ 57500 → 推进后 ≈207.5k ≥ 危险区 170k。 */
+     *  ToolOutputGate 30000 字符上限截断 ≈7500 token）≈ 57500 → 推进后 ≈207.5k ≥ 危险区 170k。
+     *  鉴别力（唯一标记 DANGER_MARK）：危险区 keep=1 时只有最新组（工具组 ≈57.5k &gt; 保留预算 26k）
+     *  被留、本轮 user 组（第 2 新，≈15k）必进批次；常态保底 4 组则 keep=4（工具组/user 组/D2/D1）
+     *  → 批次仅剩 D0、不含标记。变异实验：KEEP_CRITICAL_GROUPS 改 2 或 4 时本断言自身 RED
+     *  （KEEP_CRITICAL_GROUPS=4 → 批次 = D0 一个组）。 */
     @Test
     public void autoCompress_dangerZoneDowngrade_compressesAfterCrossing85() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -316,7 +324,7 @@ public class AgentLoopCompactTest {
         loop.roundLimit = 10;
         for (int i = 0; i < 3; i++) loop.messages().add(Message.user("D" + i + ascii(180000))); // 每组 ≈45k
         List<Message> probe = new ArrayList<Message>(loop.messages());
-        probe.add(Message.user(ascii(60000))); // +15k → 4 组 ≈150k ∈ [130k,170k)
+        probe.add(Message.user(DANGER_MARK + ascii(60000))); // +15k → 4 组 ≈150k ∈ [130k,170k)
         assertTrue("场景前提：超阈值未进危险区",
                 cm.shouldCompress(probe) && cm.estimate(probe) < 170000);
         assertFalse("场景前提：保底 4 组占满可压量 → 暂缓", cm.worthCompressing(probe));
@@ -326,12 +334,17 @@ public class AgentLoopCompactTest {
         tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈57.5k（200k 字符被 ToolOutputGate 截断至 30k）→ 推进后 ≈207.5k ≥ 危险区 170k
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("完成");
+        for (Message m : loop.messages()) { // 标记唯一性自证：既有 D 组内容不含本轮标记
+            assertFalse("标记唯一性：既有历史不得含 " + DANGER_MARK,
+                    m.content != null && m.content.contains(DANGER_MARK));
+        }
 
-        loop.runUserTurn(ascii(60000));
+        loop.runUserTurn(DANGER_MARK + ascii(60000));
 
         assertEquals("危险区降级后恰好一次压缩", 1, llm.completeChatRequests.size());
         assertTrue("降级后应把最早大组压掉", llm.completeChatRequests.get(0).contains("D0"));
-        assertTrue("降级为 1 组：本轮 user 组应进入压缩批次", llm.completeChatRequests.get(0).contains(ascii(60000)));
+        assertTrue("降级为 1 组：本轮 user 组（唯一标记 " + DANGER_MARK + "）应进入压缩批次",
+                llm.completeChatRequests.get(0).contains(DANGER_MARK));
         assertEquals("「暂缓」提示一次: " + ui.warnings,
                 1, ui.warnings.stream().filter(w -> w.contains("自动压缩暂缓")).count());
         assertTrue("压后回到阈值下：应提示降低至: " + ui.warnings,
