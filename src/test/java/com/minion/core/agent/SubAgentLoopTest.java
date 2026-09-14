@@ -965,6 +965,7 @@ public class SubAgentLoopTest {
         assertTrue("场景前提：超阈值未进危险区",
                 cm.shouldCompress(sub.messages()) && cm.estimate(sub.messages()) < 170000);
         assertFalse("场景前提：保底 4 组占满可压量 → 暂缓", cm.worthCompressing(sub.messages()));
+        assertEquals("保底 4 组占满可压量", 0L, cm.compressibleTokens(sub.messages()));
         ToolCall tc = new ToolCall();
         tc.id = "h1";
         tc.name = "example";
@@ -1026,7 +1027,7 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数快速耗尽（防真等）
         sub.contextManager = new com.minion.core.context.ContextManager(
                 50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 4; i++) { // 8 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
+        for (int i = 0; i < 4; i++) { // 8 组历史（危险区保底 1 组）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }
@@ -1070,7 +1071,7 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 50); // 小参数：等待切片 10ms（中断检查立即可达）
         sub.contextManager = new com.minion.core.context.ContextManager(
                 50, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 4; i++) { // 8 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
+        for (int i = 0; i < 4; i++) { // 8 组历史（危险区保底 1 组）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }

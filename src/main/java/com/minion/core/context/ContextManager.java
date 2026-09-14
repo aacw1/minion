@@ -164,7 +164,7 @@ public class ContextManager {
 
     /** 保留的原子组数：从最新组往前累加 token，累计 ≤ 预算的最大组数；
      *  下限 minKeep（常态 4 组保底 / 危险区 1 组），无上限（预算内尽量多留）；
-     *  组数 < minKeep 时返回组数本身（take = 0 → 不压缩）。
+     *  组数 ≤ minKeep 时返回组数本身（take = 0 → 不压缩）。
      *  组内是协议不可拆单位（assistant(tool_calls)+tool 配对），只能整组保留/整组压缩。 */
     private int keepCount(List<List<Message>> groups, int minKeep) {
         if (groups.isEmpty()) return 0; // 空组：keep=0（take=0，compress 同引用返回）

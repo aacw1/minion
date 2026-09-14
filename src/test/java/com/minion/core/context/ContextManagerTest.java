@@ -100,8 +100,8 @@ public class ContextManagerTest {
         assertEquals("危险区保底降为最新 1 组", 1, ContextManager.KEEP_CRITICAL_GROUPS);
         assertEquals("事前收益门槛", 0.05, ContextManager.MIN_COMPRESSIBLE_RATIO, 1e-9);
         assertEquals("危险区豁免", 0.85, ContextManager.FORCE_COMPRESS_RATIO, 1e-9);
-        assertTrue(cm.shouldCompress(chains(5, "问题")));   // 5 链（85 token）> 100×0.65
-        assertFalse(cm.shouldCompress(chains(2, "问题")));  // 2 链（34 token）< 65
+        assertTrue(cm.shouldCompress(chains(5, "问题")));   // 5 链（90 token）> 100×0.65
+        assertFalse(cm.shouldCompress(chains(2, "问题")));  // 2 链（36 token）< 65
     }
 
     /** systemTokens 计入 estimate（差值断言，不依赖具体 token 精度） */
@@ -112,8 +112,8 @@ public class ContextManagerTest {
         assertEquals(50, cm50.estimate(chains(2, "问题")) - cm0.estimate(chains(2, "问题")));
     }
 
-    /** 常态保底最近 4 组（超预算仍保）：max=260（阈值 169、预算 33.8、危险区 221），
-     *  chains(12) 24 组 216 token ∈ [169, 221) → 常态；从最新往前累加（12/6 交替）到 36 > 预算 33.8 仍继续，
+    /** 常态保底最近 4 组（超预算仍保）：max=260（阈值 169、保留预算 33＝33.8 截断、危险区 221），
+     *  chains(12) 24 组 216 token ∈ [169, 221) → 常态；从最新往前累加（12/6 交替）到 36 > 预算 33 仍继续，
      *  保底满 4 组才允许 break → keep=4（4 条消息，超预算也保留）、take=20。
      *  偏离说明（brief 原稿 max=100、8 条消息、超预算 13）：原稿下 204/216 token ≥ 危险区 85/221，
      *  「未进危险区」前提不成立（实测保底会降为 1 组）；且 chains 每组仅 1 条消息（4 组 = 4 条消息，非 8 条）——
@@ -136,7 +136,7 @@ public class ContextManagerTest {
         assertTrue("早期组已压缩", llm.completeChatRequests.get(0).contains("[USER] 问题0"));
     }
 
-    /** 预算能装下最近多组时尽量多留（K>1）：max=1000（阈值 650、预算 130），chains(40) 80 组 680 token */
+    /** 预算能装下最近多组时尽量多留（K>1）：max=1000（阈值 650、预算 130），chains(40) 80 组 720 token */
     @Test
     public void compress_keepsMultipleGroupsWithinBudget() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
@@ -155,13 +155,13 @@ public class ContextManagerTest {
     @Test
     public void compress_allGroupsWithinBudget_returnsSameInstance() throws Exception {
         FakeLlmClient llm = new FakeLlmClient();
-        ContextManager cm = new ContextManager(10000, llm, 0); // 预算 1300 >> 全部组 204 token
+        ContextManager cm = new ContextManager(10000, llm, 0); // 预算 1300 >> 全部组 216 token
         List<Message> input = chains(12, "问题");
         assertSame(input, cm.compress(input));
         assertTrue(llm.completeChatRequests.isEmpty());
     }
 
-    /** 常态（未进危险区）：最新组自身超预算也保底 4 组：max=70（阈值 45.5、预算 9.1、危险区 59.5），
+    /** 常态（未进危险区）：最新组自身超预算也保底 4 组：max=70（阈值 45.5、保留预算 9＝9.1 截断、危险区 59.5），
      *  chains(3) = 6 组 54 token ∈ [45.5, 59.5) → keep=4（后 4 条消息），take=2、可压量 = 前 2 组 18 */
     @Test
     public void compress_keepsNewestFourGroupsWhenNewestOverBudget() throws Exception {
@@ -189,6 +189,7 @@ public class ContextManagerTest {
         FakeLlmClient dangerLlm = new FakeLlmClient();
         dangerLlm.compressResult = "【摘要】要点";
         ContextManager danger = new ContextManager(60, dangerLlm, 0); // 阈值 39、危险区 51：72 ≥ 51
+        assertTrue("场景前提：危险区（72 ≥ 51）", danger.estimate(input) >= 51);
         List<Message> result = danger.compress(input);
         assertEquals("危险区：降为保底最新 1 组", 2, result.size());
         assertSame(input.get(input.size() - 1), result.get(1));

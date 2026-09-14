@@ -323,7 +323,7 @@ public class AgentLoopCompactTest {
         ToolCall tc = new ToolCall();
         tc.id = "d1";
         tc.name = "example";
-        tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈100k → 推进后 ≥ 危险区 170k
+        tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈57.5k（200k 字符被 ToolOutputGate 截断至 30k）→ 推进后 ≈207.5k ≥ 危险区 170k
         llm.addTurnWithTools(Collections.singletonList(tc), null);
         llm.addTurn("完成");
 
@@ -331,6 +331,7 @@ public class AgentLoopCompactTest {
 
         assertEquals("危险区降级后恰好一次压缩", 1, llm.completeChatRequests.size());
         assertTrue("降级后应把最早大组压掉", llm.completeChatRequests.get(0).contains("D0"));
+        assertTrue("降级为 1 组：本轮 user 组应进入压缩批次", llm.completeChatRequests.get(0).contains(ascii(60000)));
         assertEquals("「暂缓」提示一次: " + ui.warnings,
                 1, ui.warnings.stream().filter(w -> w.contains("自动压缩暂缓")).count());
         assertTrue("压后回到阈值下：应提示降低至: " + ui.warnings,
