@@ -5,6 +5,8 @@ import com.minion.core.llm.ImagePart;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
+import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -22,10 +24,12 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.FileChooser;
 import javafx.stage.FileChooser.ExtensionFilter;
+import javafx.util.Duration;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -39,9 +43,10 @@ import java.util.concurrent.Executors;
 
 /** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  @文件确认后内联进输入框（@路径 文本，所见即所得；扫描异步后台线程，不卡输入）；/命令、/技能、粘贴、图片为块。
- *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（Esc 不再终止运行，用方块按钮）；
+ *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（**终止仅鼠标点击方块按钮**，
+ *  任何键盘键位都不终止——键盘在空输入时改为 3 秒提示「输入内容为空」）；
  *  背景按状态取色（btn-send-empty #f48771 / btn-send-full #ff947c）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
- *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止。 */
+ *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止（仅鼠标）。 */
 public class InputView extends VBox {
 
     /** 按钮模式：图标/透明度/背景类/动作的判定依据（ANSWER_DIM=提问挂起且空输入，变淡箭头等待输入回答） */
@@ -61,6 +66,11 @@ public class InputView extends VBox {
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
     private final Button uploadButton = new Button();
+    /** 键盘空输入提示浮层：悬浮输入框上方居中，3 秒自动淡出（不占布局、鼠标穿透） */
+    private final Label inputToast = new Label();
+    private final FadeTransition toastIn = new FadeTransition(Duration.millis(150), inputToast);
+    private final PauseTransition toastHold = new PauseTransition(Duration.millis(3000));
+    private final FadeTransition toastOut = new FadeTransition(Duration.millis(250), inputToast);
     private final ContextRing contextRing = new ContextRing();
     private final SVGPath arrowIcon = IconFactory.send();
     private final SVGPath stopIcon = IconFactory.stop();
@@ -133,8 +143,28 @@ public class InputView extends VBox {
 
         sendButton.setMinSize(36, 36);
         sendButton.setPrefSize(36, 36);
-        sendButton.setOnAction(e -> onAction());
+        sendButton.setOnAction(e -> onAction(true)); // 鼠标点击：唯一可触发 STOP 的路径
+        // 方块按钮鼠标专用：按钮聚焦时 Space/Enter 的键盘激活在 STOP 模式一律拦截（其他模式保持 JavaFX 默认行为）
+        sendButton.addEventFilter(KeyEvent.ANY, e -> {
+            if (blockButtonKeyActivation(e.getCode(), buttonMode(running, askPending, hasContent()))) e.consume();
+        });
         updateButton();
+
+        // 提示浮层：淡入 150ms → 保持 3000ms → 淡出 250ms → 隐藏（重复触发重置计时）
+        toastIn.setFromValue(0);
+        toastIn.setToValue(1);
+        toastIn.setOnFinished(e -> toastHold.play());
+        toastHold.setOnFinished(e -> toastOut.play());
+        toastOut.setFromValue(1);
+        toastOut.setToValue(0);
+        toastOut.setOnFinished(e -> inputToast.setVisible(false));
+        inputToast.getStyleClass().add("input-toast");
+        inputToast.setVisible(false);
+        // managed 保持 true：StackPane 负责给 Label 定尺寸（不参与布局的节点尺寸会停在 0）；
+        // toast 单行尺寸远小于大框，StackPane 的 pref 尺寸仍由大框决定 → 输入框布局不变
+        inputToast.setMouseTransparent(true); // 不挡鼠标（不吞按钮/输入框点击）
+        inputToast.setMaxWidth(Region.USE_PREF_SIZE);
+        inputToast.setMaxHeight(Region.USE_PREF_SIZE);
 
         // 鼠标点击弹层条目：直接插入（弹层侧回调文本，本类执行替换；根因修复：旧接线点击后无插入）
         popup.setOnConfirm(insert -> confirmInsert(insert));
@@ -149,7 +179,7 @@ public class InputView extends VBox {
             // Enter 发送模式弹层打开时不发送，Enter/Ctrl+Enter 均走弹层确认
             if (isSendKey(e.getCode(), ctrl, shift, alt, meta, enterSends) && !(enterSends && popup.isShowing())) {
                 e.consume();
-                onAction();
+                onAction(false); // 键盘路径：永不终止（空输入走提示）
                 return;
             }
             // Enter 发送模式：弹层关闭时 Ctrl+Enter 显式插入换行（JavaFX TextArea 对 Ctrl+Enter 无默认换行绑定，须 replaceSelection）
@@ -221,6 +251,11 @@ public class InputView extends VBox {
             }
         });
 
+        // 提示浮层锚点：StackPane 包住大框，toast 借 translateY 负值上移到输入框上沿之上 8px 悬浮
+        StackPane frameHost = new StackPane(frame, inputToast);
+        StackPane.setAlignment(inputToast, Pos.TOP_CENTER);
+        inputToast.translateYProperty().bind(inputToast.heightProperty().negate().subtract(8));
+
         // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
         GridPane root = new GridPane();
         ColumnConstraints left = new ColumnConstraints();
@@ -230,7 +265,7 @@ public class InputView extends VBox {
         ColumnConstraints right = new ColumnConstraints();
         right.setPercentWidth(19.1);
         root.getColumnConstraints().addAll(left, center, right);
-        root.add(frame, 1, 0);
+        root.add(frameHost, 1, 0);
         getChildren().add(root);
         updatePrompt(); // askPending 默认 false，显示正常发送键提示
     }
@@ -668,7 +703,7 @@ public class InputView extends VBox {
             case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (" + sendKey + ")"); break;
             case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (" + sendKey + ")"); break;
             case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (" + sendKey + ")"); break;
-            case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行"); break;
+            case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行（点击方块按钮）"); break;
         }
     }
 
@@ -680,9 +715,47 @@ public class InputView extends VBox {
         sendButton.setTooltip(new Tooltip(tip));
     }
 
-    /** Ctrl+Enter / 按钮点击统一入口：按当前模式分发（发送类动作记时刻，供 STOP 防抖判定） */
-    private void onAction() {
+    /**
+     * 纯函数（供单测）：键盘触发的空输入（SEND_DIM/ANSWER_DIM/STOP）只提示不动手。
+     * 运行中 + 空输入的 STOP 是重点：键盘绝不能终止运行（终止按钮鼠标专用）。
+     */
+    static boolean isKeyboardEmptyTrigger(BtnMode mode, boolean byMouse) {
+        if (byMouse) return false;
+        return mode == BtnMode.SEND_DIM || mode == BtnMode.ANSWER_DIM || mode == BtnMode.STOP;
+    }
+
+    /**
+     * 纯函数（供单测）：方块按钮上的键盘激活是否拦截。
+     * 仅 STOP 模式拦截 Space/Enter（按钮聚焦时不得终止）；其他模式保持 JavaFX 默认键盘行为。
+     */
+    static boolean blockButtonKeyActivation(KeyCode code, BtnMode mode) {
+        return mode == BtnMode.STOP && (code == KeyCode.SPACE || code == KeyCode.ENTER);
+    }
+
+    /** 键盘空输入提示：显示 3 秒后自动淡出；重复触发重置计时（已在显示则直接续 3 秒，不闪） */
+    private void showInputToast() {
+        inputToast.setText("输入内容为空");
+        toastIn.stop();
+        toastHold.stop();
+        toastOut.stop();
+        if (inputToast.isVisible()) {
+            inputToast.setOpacity(1);
+            toastHold.playFromStart();
+        } else {
+            inputToast.setVisible(true);
+            inputToast.setOpacity(0);
+            toastIn.play();
+        }
+    }
+
+    /** 发送键 / 按钮点击统一入口：按当前模式分发（发送类动作记时刻，供 STOP 防抖判定）。
+     *  byMouse=false（键盘）永不进入终止分支：空输入统一走提示（见 isKeyboardEmptyTrigger） */
+    private void onAction(boolean byMouse) {
         BtnMode mode = buttonMode(running, askPending, hasContent());
+        if (isKeyboardEmptyTrigger(mode, byMouse)) {
+            showInputToast(); // 键盘 + 空输入：终止请用鼠标点方块按钮，此处只提示
+            return;
+        }
         long now = System.currentTimeMillis();
         if (shouldIgnoreTrigger(mode, now, lastSendActionAt, STOP_GUARD_MS)) return; // 防连按误终止
         switch (mode) {
@@ -714,11 +787,12 @@ public class InputView extends VBox {
                 break;
             }
             case STOP:
+                // 仅鼠标点击方块按钮可达（键盘空输入已在 isKeyboardEmptyTrigger 改走提示）
                 if (current != null) manager.stop(current);
                 break;
             case SEND_DIM:
             case ANSWER_DIM:
-                break;
+                break; // 鼠标点击变淡按钮：维持静默（键盘路径已走提示）
         }
     }
 

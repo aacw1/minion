@@ -1,5 +1,6 @@
 package com.minion.gui.input;
 
+import javafx.scene.input.KeyCode;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -97,5 +98,60 @@ public class InputViewButtonTest {
         assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.SEND, 1000, 999, 500));
         assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.ANSWER, 1000, 999, 500));
         assertFalse(InputView.shouldIgnoreTrigger(InputView.BtnMode.SUPPLEMENT, 1000, 999, 500));
+    }
+
+    // ===== 终止仅鼠标触发：键盘空输入 → 提示而非动作（触发来源维度） =====
+
+    @Test
+    public void keyboardStop_isKeyboardEmptyTrigger() {
+        // 运行中 + 空输入 + 键盘：不得终止，改为提示（根因修复：终止按钮鼠标专用）
+        assertTrue(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.STOP, false));
+    }
+
+    @Test
+    public void mouseStop_isNotKeyboardEmptyTrigger() {
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.STOP, true));
+    }
+
+    @Test
+    public void keyboardDimModes_areKeyboardEmptyTriggers() {
+        assertTrue(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.SEND_DIM, false));
+        assertTrue(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.ANSWER_DIM, false));
+    }
+
+    @Test
+    public void mouseDimModes_areNotKeyboardEmptyTriggers() {
+        // 鼠标点击变淡按钮维持现状（静默），行为不变
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.SEND_DIM, true));
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.ANSWER_DIM, true));
+    }
+
+    @Test
+    public void keyboardSendModes_areNotKeyboardEmptyTriggers() {
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.SEND, false));
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.SUPPLEMENT, false));
+        assertFalse(InputView.isKeyboardEmptyTrigger(InputView.BtnMode.ANSWER, false));
+    }
+
+    // ===== 方块按钮键盘激活拦截（聚焦按钮后 Space/Enter 不得终止，仅 STOP 模式拦截） =====
+
+    @Test
+    public void stopMode_blocksSpaceEnterActivation() {
+        assertTrue(InputView.blockButtonKeyActivation(KeyCode.SPACE, InputView.BtnMode.STOP));
+        assertTrue(InputView.blockButtonKeyActivation(KeyCode.ENTER, InputView.BtnMode.STOP));
+    }
+
+    @Test
+    public void stopMode_otherKeysPass() {
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.TAB, InputView.BtnMode.STOP));
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.ESCAPE, InputView.BtnMode.STOP));
+    }
+
+    @Test
+    public void nonStopModes_keepButtonKeyboardActivation() {
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.SPACE, InputView.BtnMode.SEND));
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.SPACE, InputView.BtnMode.SUPPLEMENT));
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.SPACE, InputView.BtnMode.ANSWER));
+        assertFalse(InputView.blockButtonKeyActivation(KeyCode.ENTER, InputView.BtnMode.SEND_DIM));
     }
 }

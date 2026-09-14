@@ -121,6 +121,17 @@
 .input-frame-focused { -fx-border-color: #f48771; }
 .input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
 
+/* 键盘空输入提示（InputView toast）：悬浮输入框上方居中，3 秒自动淡出，不占布局不挡鼠标 */
+.input-toast {
+    -fx-background-color: #232733;
+    -fx-border-color: #3a4050;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 5 12 5 12;
+    -fx-font-size: 12px;
+    -fx-text-fill: #a8b0bb;
+}
+
 /* 上传按钮（输入框底部操作行左）：回形针图标（Material 线性填充，同 icon-settings 色系） */
 .btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
 .icon-upload { -fx-fill: #a8b0bb; }
