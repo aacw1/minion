@@ -911,11 +911,11 @@ public class SubAgentLoopTest {
         SubAgentLoop sub = new SubAgentLoop("主系统提示", "调研一下", tmp.getRoot().getPath(),
                 llm, registry, confirm, ui, null, 1);
         // 子代理压缩器：同参数 + 子代理定制指令。max=200（阈值 130、保留区预算 0.13×max = 26）：
-        // 12 轮小消息共 144 + 提示词 ≈ 182 触发压缩；保留区（预算 26 token → 最近 4 组 24）压后 ≈ 82 < 130
-        // → 真能降到阈值下
+        // 12 轮小消息共 144 + 提示词 ≈ 182 触发压缩；保留区常态保底 4 组（危险区降 1 组）
+        // （预算 26 token → 最近 4 组 24）压后 ≈ 82 < 130 → 真能降到阈值下
         sub.contextManager = new com.minion.core.context.ContextManager(
                 200, llm, 0, com.minion.core.context.ContextManager.SUB_AGENT_COMPRESS_SYSTEM);
-        for (int i = 0; i < 12; i++) { // 12 组历史（v2 保留区保底最新 1 组，2 组即可压缩）
+        for (int i = 0; i < 12; i++) { // 12 组历史（保底 4 组：12 组中至少 8 组可压）
             sub.messages().add(Message.user("步骤" + i));
             sub.messages().add(Message.assistant("结论" + i));
         }
@@ -938,6 +938,47 @@ public class SubAgentLoopTest {
         assertTrue("成功提示应为「已压缩上下文（降低至 x%）」: " + ui.subNotices,
                 ui.subNotices.stream().anyMatch(n -> n.matches("已压缩上下文（降低至 \\d+%）")));
         assertTrue(ui.retryProgress.isEmpty());
+    }
+
+    /** 保底 4 组滑出后可压（与主代理同构）：暂缓一次后推进 → 最早大组滑出保底 → 自动压缩
+     *  （max=200000：阈值 130k、门槛 10k、预算 26k、危险区 170k）。
+     *  实测口径：seed 每组 = ceil((2+180000)×0.25)+4 = 45005 token，3 组 + 本轮 user 15004
+     *  + system(33) + 任务提示词(8) = 150060 ∈ [130k,170k) → keep=4 恰好占满（可压 0）；
+     *  小工具组 = assistant 10 + 回显 6 = 16 token，推进后 5 组：保底 4 组（工具组+user+H1+H2），
+     *  H0 滑出 → 可压 45005 ≥ 门槛 10k → 压缩。 */
+    @Test
+    public void compress_slidesOutOfFourKeep_thenCompresses() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】子代理历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        RecordingUi ui = new RecordingUi();
+        ContextManager cm = new ContextManager(200000, llm, 0);
+        SubAgentLoop sub = new SubAgentLoop("主系统提示", "任务", tmp.getRoot().getPath(),
+                llm, registry, confirm, ui, null, 1);
+        sub.contextManager = cm;
+        sub.retryPolicy = new RetryPolicy(10, 10, 60000);
+        for (int i = 0; i < 3; i++) sub.messages().add(Message.user("H" + i + ascii(180000))); // 每组 ≈45k
+        sub.messages().add(Message.user(ascii(60000))); // 本轮大 user 15k（最新组）
+        assertTrue("场景前提：超阈值未进危险区",
+                cm.shouldCompress(sub.messages()) && cm.estimate(sub.messages()) < 170000);
+        assertFalse("场景前提：保底 4 组占满可压量 → 暂缓", cm.worthCompressing(sub.messages()));
+        ToolCall tc = new ToolCall();
+        tc.id = "h1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"hi\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("子任务完成");
+
+        assertEquals("子任务完成", sub.run());
+
+        assertEquals("推进后恰好一次压缩", 1, llm.completeChatRequests.size());
+        assertTrue("应压掉滑出保底的最早大组 H0", llm.completeChatRequests.get(0).contains("H0"));
+        assertEquals("「暂缓」提示全程一次: " + ui.subNotices,
+                1, ui.subNotices.stream().filter(n -> n.contains("自动压缩暂缓")).count());
+        assertTrue("主通道零调用", ui.warnings.isEmpty() && ui.errors.isEmpty());
     }
 
     /** 压缩失败（不可重试）：中止子代理并返回失败文本；未发送请求；主通道零调用 */
