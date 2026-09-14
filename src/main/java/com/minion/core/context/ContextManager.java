@@ -9,7 +9,8 @@ import java.util.Collections;
 import java.util.List;
 
 /** 上下文管理：token 估算、阈值判断、单次压缩（保留区外的早期原子组 → 摘要置前）。
- *  阈值 0.65 / 保留区预算 0.13×max（＝阈值 × KEEP_BUDGET_RATIO）/ 保底保留最新 1 组 / 摘要上限 5000 字
+ *  阈值 0.65 / 保留区预算 0.13×max（＝阈值 × KEEP_BUDGET_RATIO）/ 保留区常态保底最近 4 组
+ *  （危险区 estimate ≥ 85%×max 时降为 1 组）/ 摘要上限 5000 字
  *  为硬编码常量（不进模型配置，只保留 maxContextTokens）。
  *  压缩失败不再降级：直接抛 LlmException，由 AgentLoop 按重试策略处理。
  *  压缩指令可定制（默认主代理版；子代理用 SUB_AGENT_COMPRESS_SYSTEM 强调任务目标/进度/落盘路径）。 */
@@ -22,8 +23,10 @@ public class ContextManager {
     /** 保留区预算比例：保留区 token 预算 = maxContextTokens × THRESHOLD × 本值 = 0.13×max
      *  （触发量的 20% 留给保留区，其余 80% 为压缩目标） */
     static final double KEEP_BUDGET_RATIO = 0.2;
-    /** 保底保留的最近原子组数：最新 1 组无条件保留（哪怕自身超预算）——当前任务上下文不可丢 */
-    static final int KEEP_MIN_GROUPS = 1;
+    /** 常态保底保留的最近原子组数：最近 4 组无条件保留（哪怕合计超保留区预算）——正在进行的任务链不可丢 */
+    static final int KEEP_MIN_GROUPS = 4;
+    /** 危险区保底：estimate ≥ 85%×max 时降为最新 1 组（保命压缩优先于保真） */
+    static final int KEEP_CRITICAL_GROUPS = 1;
     /** 事前收益门槛：可压量 ≥ maxContextTokens × 本值 才值得压缩
      *  （摘要输出本身 ~2-3.5k token，压少了净收益为负） */
     static final double MIN_COMPRESSIBLE_RATIO = 0.05;
@@ -130,12 +133,13 @@ public class ContextManager {
     }
 
     /** 压缩：单次 LLM 调用，无递归、无降级。
-     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无原子组，或全部组都在保留区预算 0.13×max 内）；
-     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩原子组」——保留区 = 预算内最近 K 组、保底最新 1 组；
+     *  - 返回入参同一实例（引用相等）＝ 暂无可压缩（无原子组、组数 ≤ 保底组数，或全部组都在保留区预算 0.13×max 内）；
+     *  - 成功：返回「system 原样 + 新摘要置前 + pinned 原样 + 未压缩原子组」——保留区 = 预算内最近 K 组、
+     *    常态保底最近 4 组（危险区 estimate ≥ 85%×max 降 1 组）；
      *  - 失败（请求异常/空摘要）：抛 LlmException，由调用方按重试策略处理。 */
     public List<Message> compress(List<Message> messages) throws LlmException {
         List<List<Message>> groups = chunkGroups(messages);
-        int take = groups.size() - keepCount(groups);
+        int take = groups.size() - keepCount(groups, minKeepGroups(messages));
         if (take <= 0) return messages; // 暂无可压缩：不调 LLM、不改变历史
         String summary = callLlm(existingSummaryText(messages), buildBatch(groups, 0, take));
         List<Message> result = new ArrayList<Message>();
@@ -152,26 +156,34 @@ public class ContextManager {
         return result;
     }
 
-    /** 保留的原子组数：从最新组往前累加 token，累计 ≤ 预算的最大组数（下限 KEEP_MIN_GROUPS=1，无上限）。
+    /** 本次压缩的保底保留组数：危险区（estimate ≥ 85%×max）降为最新 1 组，常态保底最近 4 组 */
+    private int minKeepGroups(List<Message> messages) {
+        return estimate(messages) >= maxContextTokens * FORCE_COMPRESS_RATIO
+                ? KEEP_CRITICAL_GROUPS : KEEP_MIN_GROUPS;
+    }
+
+    /** 保留的原子组数：从最新组往前累加 token，累计 ≤ 预算的最大组数；
+     *  下限 minKeep（常态 4 组保底 / 危险区 1 组），无上限（预算内尽量多留）；
+     *  组数 < minKeep 时返回组数本身（take = 0 → 不压缩）。
      *  组内是协议不可拆单位（assistant(tool_calls)+tool 配对），只能整组保留/整组压缩。 */
-    private int keepCount(List<List<Message>> groups) {
-        if (groups.isEmpty()) return 0; // 空组：keep=0（take=0，compress 同引用返回），不留 take=-1 的隐晦中间值
+    private int keepCount(List<List<Message>> groups, int minKeep) {
+        if (groups.isEmpty()) return 0; // 空组：keep=0（take=0，compress 同引用返回）
         long budget = (long) (maxContextTokens * THRESHOLD * KEEP_BUDGET_RATIO);
         long acc = 0;
         int keep = 0;
         for (int i = groups.size() - 1; i >= 0; i--) {
             long t = TokenCounter.estimateMessages(groups.get(i));
-            if (keep >= KEEP_MIN_GROUPS && acc + t > budget) break;
+            if (keep >= minKeep && acc + t > budget) break;
             acc += t;
             keep++;
         }
-        return Math.max(keep, KEEP_MIN_GROUPS);
+        return keep; // 循环语义已保证：不 break 直到 keep ≥ minKeep 或组耗尽（返回值 ≤ 组数、take ≥ 0）
     }
 
     /** 本次压缩能压掉的 token 量（＝将被并入摘要的组合计；take = 0 时为 0）：事前收益门槛的输入 */
     public long compressibleTokens(List<Message> messages) {
         List<List<Message>> groups = chunkGroups(messages);
-        int take = groups.size() - keepCount(groups);
+        int take = groups.size() - keepCount(groups, minKeepGroups(messages));
         long acc = 0;
         for (int i = 0; i < take; i++) acc += TokenCounter.estimateMessages(groups.get(i));
         return acc;
