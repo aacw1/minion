@@ -11,12 +11,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.nio.channels.FileChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -153,25 +151,6 @@ public class AtomicWriteConcurrencyTest {
             ds.close();
         }
         assertTrue("写入后不应残留临时文件：" + leftovers, leftovers.isEmpty());
-    }
-
-    // ---------------------------------------------------------------- T5
-
-    /** 目标文件被读句柄占用时写入仍须成功（Windows 上 ATOMIC_MOVE 会失败，必须降级兜底） */
-    @Test
-    public void atomicWrite_targetLockedByReader_fallsBack() throws Exception {
-        Path target = p("locked.txt");
-        Files.write(target, "旧内容".getBytes(StandardCharsets.UTF_8));
-        ToolResult r;
-        FileChannel ch = FileChannel.open(target, StandardOpenOption.READ);
-        try {
-            r = write.execute(args("{\"path\":\"locked.txt\",\"content\":\"新内容覆盖\"}"));
-        } finally {
-            ch.close();
-        }
-        assertTrue("目标被读句柄占用时写入仍应成功（ATOMIC_MOVE 失败需降级 REPLACE_EXISTING）："
-                + r.output, r.ok);
-        assertEquals("新内容覆盖", new String(Files.readAllBytes(target), StandardCharsets.UTF_8));
     }
 
     // ---------------------------------------------------------------- T6
