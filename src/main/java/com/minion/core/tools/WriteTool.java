@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /** 写文件。覆盖已存在文件为高危操作（需确认）。 */
 public class WriteTool implements Tool {
@@ -63,7 +65,23 @@ public class WriteTool implements Tool {
         }
         if (p.getParent() != null) Files.createDirectories(p.getParent());
         String content = args.get("content").getAsString();
-        Files.write(p, content.getBytes(StandardCharsets.UTF_8));
+        byte[] data = content.getBytes(StandardCharsets.UTF_8);
+        // 原子写 + 进程内路径锁：同一条消息里的多个 tool_call 会并行执行（AgentLoop:661-665），
+        // 覆盖写同一文件时直接 Files.write 会交错写同一 inode，产生丢更新与残留尾部
+        ReentrantLock lock = PathLocks.forPath(p);
+        try {
+            if (!lock.tryLock(PathLocks.WAIT_SECONDS, TimeUnit.SECONDS)) {
+                return ToolResult.error("文件正被其他操作占用，稍后重试: " + p);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ToolResult.error("写入被取消（等待文件锁时线程中断）: " + p);
+        }
+        try {
+            AtomicFiles.writeBytes(p, data);
+        } finally {
+            lock.unlock();
+        }
         return ToolResult.success("已写入 " + p + " (" + content.length() + " 字符)");
     }
 
