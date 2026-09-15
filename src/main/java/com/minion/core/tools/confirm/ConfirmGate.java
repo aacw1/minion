@@ -46,6 +46,12 @@ public class ConfirmGate {
         return checkOutside(tool, args, path, "越界读取");
     }
 
+    /** 越界读是否已全局放行（开关开或本会话已放行）：与 checkReadOutside 的放行口径一致，
+     *  供「不存在的文件」提示判定使用（已放行则不再提示"访问将被拒绝"，直接报文件不存在） */
+    public synchronized boolean readOutsideAllowed() {
+        return config.readAllowOutside() || sessionBypass;
+    }
+
     /** 越界写审批（截图等输出类工具）：与越界读同语义，仅弹窗文案区分，避免"越界读取"误导 */
     public synchronized boolean checkWriteOutside(Tool tool, JsonObject args, String path) {
         return checkOutside(tool, args, path, "越界写入");

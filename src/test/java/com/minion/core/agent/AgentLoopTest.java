@@ -125,6 +125,90 @@ public class AgentLoopTest {
         assertEquals(Message.Role.TOOL, loop.messages().get(loop.messages().size() - 1).role);
     }
 
+    /** 入历史闸门：大工具结果（>30000 字符）入历史被截断 + 落盘 + 提示；落盘文件为全量 */
+    @Test
+    public void toolOutputGate_truncatesAndDumpsBigResult() throws Exception {
+        registry.register(new BigOutputTool());
+        ToolCall tc = new ToolCall();
+        tc.id = "b1";
+        tc.name = "big";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("大输出处理完成");
+        AgentLoop loop = newLoop();
+        Path sessionTmp = tmp.newFolder("session-tmp").toPath();
+        loop.setSessionTmpDir(sessionTmp.toString());
+        loop.runUserTurn("拉一把大输出");
+        // 0:user 1:assistant(tool_calls) 2:tool(已闸门处理) 3:assistant(final)
+        Message toolMsg = loop.messages().get(2);
+        assertEquals(Message.Role.TOOL, toolMsg.role);
+        assertTrue("历史中的工具结果应被截断: " + toolMsg.content.length(),
+                toolMsg.content.length() < BigOutputTool.SIZE);
+        assertTrue("应提示落盘: " + toolMsg.content, toolMsg.content.contains("完整内容已落盘"));
+        assertTrue("应含落盘目录: " + toolMsg.content,
+                toolMsg.content.contains(sessionTmp.toAbsolutePath().toString()));
+        // 落盘文件为全量
+        java.util.List<Path> files = new ArrayList<Path>();
+        try (java.util.stream.Stream<Path> s = Files.list(sessionTmp)) {
+            s.forEach(files::add);
+        }
+        assertEquals("应落盘一个文件", 1, files.size());
+        assertEquals(BigOutputTool.SIZE,
+                new String(Files.readAllBytes(files.get(0)), StandardCharsets.UTF_8).length());
+        // GUI 侧仍收到原始结果（截断只作用于入历史）
+        assertEquals(1, ui.toolResults.size());
+        assertEquals("大输出处理完成", loop.messages().get(3).content);
+    }
+
+    /** 闸门白名单：Read 类工具超限只截断+分页提示，不落盘（防"读→落盘→再读"套娃） */
+    @Test
+    public void toolOutputGate_readLikeTool_notDumped() throws Exception {
+        registry.register(new BigOutputReadTool());
+        ToolCall tc = new ToolCall();
+        tc.id = "r1";
+        tc.name = "Read";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("读完");
+        AgentLoop loop = newLoop();
+        Path sessionTmp = tmp.newFolder("session-tmp-read").toPath();
+        loop.setSessionTmpDir(sessionTmp.toString());
+        loop.runUserTurn("读大文件");
+        Message toolMsg = loop.messages().get(2);
+        assertTrue(toolMsg.content.length() < BigOutputReadTool.SIZE);
+        assertFalse("读取类不落盘: " + toolMsg.content, toolMsg.content.contains("已落盘"));
+        assertFalse("不应产生落盘文件", Files.exists(sessionTmp)
+                && sessionTmp.toFile().list() != null && sessionTmp.toFile().list().length > 0);
+    }
+
+    /** 大输出测试工具（非白名单：落盘路径） */
+    static final class BigOutputTool implements Tool {
+        static final int SIZE = 40000;
+
+        @Override public String name() { return "big"; }
+        @Override public String description() { return "大输出（测试用）"; }
+        @Override public JsonObject schema() { return new JsonObject(); }
+        @Override public ToolResult execute(JsonObject args) {
+            StringBuilder sb = new StringBuilder(SIZE);
+            for (int i = 0; i < SIZE; i++) sb.append('x');
+            return ToolResult.success(sb.toString());
+        }
+    }
+
+    /** 大输出测试工具（读取类白名单：只截断不落盘） */
+    static final class BigOutputReadTool implements Tool {
+        static final int SIZE = 40000;
+
+        @Override public String name() { return "Read"; }
+        @Override public String description() { return "读取类工具（测试用，名字命中闸门白名单）"; }
+        @Override public JsonObject schema() { return new JsonObject(); }
+        @Override public ToolResult execute(JsonObject args) {
+            StringBuilder sb = new StringBuilder(SIZE);
+            for (int i = 0; i < SIZE; i++) sb.append('y');
+            return ToolResult.success(sb.toString());
+        }
+    }
+
     @Test
     public void parallelTools_bothExecuted() {
         ToolCall tc1 = new ToolCall();

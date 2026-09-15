@@ -15,6 +15,7 @@ import com.minion.core.llm.UsageTracker;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.Tool;
+import com.minion.core.tools.ToolOutputGate;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.Workspace;
@@ -59,6 +60,10 @@ public class AgentLoop {
             new java.util.concurrent.atomic.AtomicInteger();
     /** 会话临时目录（jarDir/.session/tmp/<会话id>；子代理报告落盘位置；null=测试/未接线不落盘） */
     private volatile String sessionTmpDir;
+    /** 压不动提示去重（回合内一次）：仅控制提示频率，**不阻塞压缩**——
+     *  v2 语义下压缩是否发生由 ContextManager.worthCompressing 判定，任务推进后可压量增长即自动重试
+     *  （仅会话工作线程读写（runUserTurn 单线程），无并发） */
+    private boolean ineffectiveWarnedThisTurn = false;
 
     public int roundLimit = DEFAULT_ROUND_LIMIT;
     /** 瞬时错误长重试策略（429/超时/网络 5s、500 类 30s；墙钟总时长 12 分钟；测试可覆写小参数） */
@@ -233,6 +238,12 @@ public class AgentLoop {
     /** 当前会话临时目录（诊断/测试断言用；startNewSession 后应指向新会话 id 目录） */
     String sessionTmpDir() { return sessionTmpDir; }
 
+    /** 会话临时目录 Path（入历史闸门的大输出落盘位置；null=测试/未接线不落盘，闸门降级纯截断） */
+    private java.nio.file.Path sessionTmpDirPath() {
+        String d = sessionTmpDir;
+        return d == null ? null : java.nio.file.Paths.get(d);
+    }
+
     /** 回答 AskUserQuestion（SessionManager.sendAnswer 转发）；无挂起时忽略 */
     public boolean answerAskUser(String answer) {
         return askUserTool.complete(answer);
@@ -332,6 +343,13 @@ public class AgentLoop {
             default:
                 return CompressOutcome.FAILED; // INTERRUPTED：静默（原实现用户中断同样不提示）
         }
+    }
+
+    /** 压不动/暂缓提示去重：同一回合只提示一次（不阻塞压缩，可压量增长后仍会自动重试） */
+    private void warnCompressIneffectiveOnce(String msg) {
+        if (ineffectiveWarnedThisTurn) return;
+        ineffectiveWarnedThisTurn = true;
+        ui.onWarning(msg);
     }
 
     public void compactNow() {
@@ -451,6 +469,7 @@ public class AgentLoop {
 
     public void runUserTurn(String input, List<ImagePart> images) {
         interrupted = false;
+        ineffectiveWarnedThisTurn = false; // 新回合重置提示去重（不阻塞压缩）
         long start = System.currentTimeMillis(); // 统计行：轮次耗时
         // 上次回合遗留的挂起补充先入历史（模型提问自然收尾/中断遗留），与本次输入拼接发送
         drainSupplements();
@@ -467,22 +486,36 @@ public class AgentLoop {
                     break;
                 }
                 if (contextManager != null && contextManager.shouldCompress(session.messages)) {
-                    ui.onCompressingChanged(true);
-                    CompressOutcome outcome;
-                    try {
-                        outcome = compressWithRetry(false); // 自动压缩：失败文案带"自动"与"本轮已停止"
-                    } finally {
-                        ui.onCompressingChanged(false);
-                    }
-                    if (outcome == CompressOutcome.OK) {
+                    if (contextManager.worthCompressing(session.messages)) {
+                        ui.onCompressingChanged(true);
+                        CompressOutcome outcome;
+                        try {
+                            outcome = compressWithRetry(false); // 自动压缩：失败文案带"自动"与"本轮已停止"
+                        } finally {
+                            ui.onCompressingChanged(false);
+                        }
+                        if (outcome == CompressOutcome.OK) {
+                            int pct = (int) (contextManager.estimate(session.messages) * 100
+                                    / contextManager.maxTokens());
+                            if (contextManager.shouldCompress(session.messages)) {
+                                // 压后仍超阈值：保留区保底组自身超预算（如最新一轮大输出）或常驻内容过大
+                                warnCompressIneffectiveOnce("自动压缩后上下文仍占" + pct
+                                        + "%（大输出占满保留区）；有新内容可压时自动重试");
+                            } else {
+                                ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
+                            }
+                            pushContextStats(); // 压缩完成：进度圈回落
+                        } else if (outcome == CompressOutcome.FAILED) {
+                            break; // 压缩失败/用户中断：中止本轮，不发送请求（失败已 onError 提示）
+                        }
+                        // NOTHING：极端竞态下无可压缩，继续本轮请求（超窗由服务端报错兜底）
+                    } else {
+                        // 事前收益门槛不足（可压量 < 5%×max）：本次跳过，不调 LLM；只提示一次，不阻塞后续
                         int pct = (int) (contextManager.estimate(session.messages) * 100
                                 / contextManager.maxTokens());
-                        ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
-                        pushContextStats(); // 压缩完成：进度圈回落
-                    } else if (outcome == CompressOutcome.FAILED) {
-                        break; // 压缩失败/用户中断：中止本轮，不发送请求（失败已 onError 提示）
+                        warnCompressIneffectiveOnce("自动压缩暂缓：可压内容不足（最近内容与常驻提示词已占"
+                                + pct + "%）；有新内容可压时自动重试");
                     }
-                    // NOTHING（组数 ≤ 6 或无可压缩组）：继续本轮请求（超窗由服务端报错兜底）
                 }
                 String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
@@ -653,7 +686,9 @@ public class AgentLoop {
                         }
                         session.messages.add(Message.toolResult(
                                 calls.get(i).id, calls.get(i).name,
-                                ToolResult.outputForApi(result.output, emptyOutputPlaceholder)));
+                                ToolOutputGate.apply(calls.get(i).name,
+                                        ToolResult.outputForApi(result.output, emptyOutputPlaceholder),
+                                        sessionTmpDirPath())));
                         ui.onToolResult(calls.get(i).name, result);
                     }
                 } finally {

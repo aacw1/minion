@@ -94,3 +94,14 @@ action=schema 列出表与视图；action=describe 查看表字段。
 - 新增测试：`schemaDeclaresFullParameter`（boolean + 描述关键词）、`schemaDeclaresActionEnumByDbType`、
   `descriptionStatesFullRuleForAllDbTypes`；`fullOfParsesTolerantly` 保留（字符串容错不回归）。
 - 回归：`mvn test` 1047 全绿。
+
+## 8. 与远端合并（2026-09-15）
+
+与远端「大输出入历史闸门 ToolOutputGate + ReadTool 自限 + SQL 超限拆分引导」(`e41f7c4`) 合并，冲突两处均按「互为补充、全部保留」解决：
+
+- `DbTool.description()`：全文硬规则文案（本文档 §4）保留，尾部追加远端落盘拆分引导
+  （`结果超过 CHAR_BUDGET 字符会落盘并提示拆分——请避免一次拉取大量大字段（如整表 JSON 列），按需 WHERE/LIMIT 拆分查询`）；
+  合并后文案同时满足双方新增测试（「必须重发同一查询并设 full=true」与「结果超过 30000 字符会落盘并提示拆分」）。
+- `README.md`：保留远端更完整的「结果上限 / 落盘拆分引导」一行，另起一行保留本文档引入的
+  「大字段全文 / full=true」说明，并补注 schema 已将 `full` 显式声明为布尔参数。
+- 回归：`mvn test` 1167 全绿（含双方新增用例）；`mvn package` 通过。

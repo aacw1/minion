@@ -12,6 +12,7 @@ import com.minion.core.llm.Usage;
 import com.minion.core.tools.confirm.ConfirmGate;
 import com.minion.core.tools.OutputDump;
 import com.minion.core.tools.Tool;
+import com.minion.core.tools.ToolOutputGate;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
 
@@ -42,6 +43,9 @@ public class SubAgentLoop {
     /** 上下文压缩器（AgentLoop 派发时注入：与主代理同参数同策略；null=不压缩。
      *  systemTokens=0——子代理 system 提示词在 messages 内，由 TokenCounter 统一估算） */
     public ContextManager contextManager;
+    /** 压不动/暂缓提示去重（子代理全程一次）：仅控制提示频率，**不阻塞压缩**——
+     *  压缩是否发生由 ContextManager.worthCompressing 判定，任务推进后可压量增长即自动重试 */
+    private boolean ineffectiveWarned = false;
     private final List<Message> messages = new ArrayList<Message>();
 
     /** 旧签名（不落盘，供不关心落盘的测试/调用方）：委托新构造 */
@@ -68,6 +72,12 @@ public class SubAgentLoop {
     /** 消息数组（压缩判断/测试断言用） */
     public List<Message> messages() { return messages; }
 
+    /** 报告落盘目录 Path（入历史闸门的大输出落盘位置；null=未接线不落盘，闸门降级纯截断） */
+    private java.nio.file.Path reportDirPath() {
+        String d = reportDir;
+        return d == null ? null : java.nio.file.Paths.get(d);
+    }
+
     public String run() {
         // START 事件只由 AgentLoop 派发时发送一次（Fix Round 1：此处曾重复发「任务: <desc>」，
         // 与派发点的 desc 叠成两行开始行；直构本类的测试/调用方不再收到 START）
@@ -79,17 +89,26 @@ public class SubAgentLoop {
                     ui.onSubAgentNotice(no, "已中断");
                     return "子 agent 已中断";
                 }
-                // 上下文压缩检查点（与主代理同策略）：超阈值 → 压缩；失败中止并返回失败文本
+                // 上下文压缩检查点（与主代理同策略）：超阈值且值得压 → 压缩（失败中止并返回失败文本）；
+                // 可压量不足门槛 → 暂缓（不调 LLM），提示一次后静默跳过（有新内容可压时自动重试）
                 if (contextManager != null && contextManager.shouldCompress(messages)) {
-                    String fail = compressSubContext();
-                    if (fail != null) {
-                        if (Thread.currentThread().isInterrupted()) {
-                            // 压缩等待期间被停止：与其他中断路径同文案（spec 4.2「中断 → 子代理已中断」）
-                            ui.onSubAgentNotice(no, "已中断");
-                            return "子 agent 已中断";
+                    if (contextManager.worthCompressing(messages)) {
+                        String fail = compressSubContext();
+                        if (fail != null) {
+                            if (Thread.currentThread().isInterrupted()) {
+                                // 压缩等待期间被停止：与其他中断路径同文案（spec 4.2「中断 → 子代理已中断」）
+                                ui.onSubAgentNotice(no, "已中断");
+                                return "子 agent 已中断";
+                            }
+                            ui.onSubAgentNotice(no, "上下文压缩失败：" + fail);
+                            return "子代理失败: 上下文压缩失败（" + fail + "）";
                         }
-                        ui.onSubAgentNotice(no, "上下文压缩失败：" + fail);
-                        return "子代理失败: 上下文压缩失败（" + fail + "）";
+                    } else if (!ineffectiveWarned) {
+                        ineffectiveWarned = true;
+                        int pct = (int) (contextManager.estimate(messages) * 100
+                                / contextManager.maxTokens());
+                        ui.onSubAgentNotice(no, "自动压缩暂缓：可压内容不足（最近内容与常驻提示词已占 "
+                                + pct + "%）；有新内容可压时自动重试");
                     }
                 }
                 final List<ToolCall>[] toolCalls = new List[1];
@@ -209,7 +228,9 @@ public class SubAgentLoop {
                 for (ToolCall call : toolCalls[0]) {
                     ToolResult result = runOneTool(call);
                     messages.add(Message.toolResult(call.id, call.name,
-                            ToolResult.outputForApi(result.output, emptyOutputPlaceholder)));
+                            ToolOutputGate.apply(call.name,
+                                    ToolResult.outputForApi(result.output, emptyOutputPlaceholder),
+                                    reportDirPath())));
                     ui.onSubAgentToolResult(no, call.name, result);
                 }
             }
@@ -276,9 +297,19 @@ public class SubAgentLoop {
         if (r.outcome == ContextCompressor.Outcome.OK) {
             messages.clear();
             messages.addAll(r.messages); // 摘要置前 + pinned 任务提示词常驻（压缩结果由 ContextManager 保证）
-            // spec 4.2：成功提示带压缩后百分比（算法与主代理自动压缩一致）
             int pct = (int) (contextManager.estimate(messages) * 100 / contextManager.maxTokens());
-            ui.onSubAgentNotice(no, "已压缩上下文（降低至 " + pct + "%）");
+            if (contextManager.shouldCompress(messages)) {
+                // 压后仍超阈值：保留区保底组自身超预算（如最新一轮大输出）或常驻内容过大——
+                // 只提示一次，不阻塞后续（可压量增长后自动重试）
+                if (!ineffectiveWarned) {
+                    ineffectiveWarned = true;
+                    ui.onSubAgentNotice(no, "压缩后上下文仍占 " + pct
+                            + "%（大输出占满保留区）；有新内容可压时自动重试");
+                }
+            } else {
+                // spec 4.2：成功提示带压缩后百分比（算法与主代理自动压缩一致）
+                ui.onSubAgentNotice(no, "已压缩上下文（降低至 " + pct + "%）");
+            }
             return null;
         }
         if (r.outcome == ContextCompressor.Outcome.NOTHING) return null; // 阈值触发但暂无可压缩：继续

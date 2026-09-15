@@ -28,7 +28,9 @@ public class ContextCompressorTest {
         }
     }
 
-    /** 8 组普通历史（48 token > 50×0.65 阈值；≥7 组才可能压缩——至少保留最近 6 组） */
+    /** 8 组普通历史（实测 64 token = 8×ceil(5×0.7+4)，> 50×0.65 阈值；保留区预算 0.13×max = 6.5 token；本场景 64 ≥ 危险区
+     *  85%×max = 42.5，危险区降级保底最新 1 组，
+     *  故 8 组中 7 组可压——v2 语义，旧的「≥7 组才可能压缩」不再成立） */
     private static List<Message> history() {
         List<Message> msgs = new ArrayList<Message>();
         for (int i = 0; i < 4; i++) {

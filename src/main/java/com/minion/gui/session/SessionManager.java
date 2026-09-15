@@ -275,6 +275,9 @@ public class SessionManager {
         String projSkills = WorkspacePaths.projectSkillsDir(w);
         workspace.setExtraAllowedDirs(projSkills == null
                 ? new ArrayList<String>() : java.util.Collections.singletonList(projSkills));
+        // 会话存储目录只读放行：模型可 Read/Grep/Glob 会话落盘文件；写入仍受守卫拒绝（只读语义）
+        workspace.setExtraReadDirs(java.util.Collections.singletonList(
+                WorkspaceManager.sessionDirFor(jarDir, w.workSpaceName).toString()));
         ConfirmGate gate = new ConfirmGate(config, confirmUi);
         return new WorkspaceCtx(w.workSpaceName, workspace,
                 new SessionStore(WorkspaceManager.sessionDirFor(jarDir, w.workSpaceName)),
@@ -588,7 +591,7 @@ public class SessionManager {
     /**
      * 重命名：配置迁移 + 会话目录迁移（WorkspaceManager.rename 内部完成）+ ctx 换键 + 当前名同步
      * + 全部会话 workspaceName 同步（否则 activateSession 守卫「非当前空间不激活」拒绝页签切换、
-     * send/persist 按旧名查 ctx 落空）+ store 重建指向新目录。false=新名非法/重名
+     * send/persist 按旧名查 ctx 落空）+ store 与只读放行目录重建指向新目录。false=新名非法/重名
      */
     public boolean renameWorkspace(String oldName, String newName) {
         if (!workspaces.rename(oldName, newName)) return false;
@@ -596,7 +599,10 @@ public class SessionManager {
         WorkspaceCtx ctx = ctxByName.remove(oldName);
         ctx.name = newName;
         ctxByName.put(newName, ctx);
-        ctx.store = new SessionStore(WorkspaceManager.sessionDirFor(jarDir, newName)); // 目录已迁移，store 跟随
+        Path newSessionDir = WorkspaceManager.sessionDirFor(jarDir, newName);
+        ctx.store = new SessionStore(newSessionDir); // 目录已迁移，store 跟随
+        ctx.workspace.setExtraReadDirs(              // 只读放行目录同步新路径（防旧目录复活）
+                java.util.Collections.singletonList(newSessionDir.toString()));
         for (SessionHandle h : ctx.sessions) h.workspaceName = newName;
         if (currentWorkspaceName.equals(oldName)) currentWorkspaceName = newName;
         notifyWorkspaceChanged();

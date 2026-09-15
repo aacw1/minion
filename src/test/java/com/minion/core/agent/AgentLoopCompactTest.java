@@ -4,6 +4,7 @@ import com.minion.core.config.Config;
 import com.minion.core.context.ContextManager;
 import com.minion.core.llm.FakeLlmClient;
 import com.minion.core.llm.Message;
+import com.minion.core.llm.ToolCall;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.Workspace;
 import com.minion.core.tools.confirm.ConfirmGate;
@@ -13,7 +14,10 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -22,8 +26,11 @@ public class AgentLoopCompactTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
-    /** 预置 4 轮普通历史 = 8 个原子组（48 token，超过 50×0.65=32.5 阈值）：
-     *  压缩至少保留最近 6 组，故必须 ≥7 组（本方法 8 组 + 本轮 user 1 组 = 9 组）才可能真正压缩 */
+    /** 预置 4 轮普通历史 = 8 个原子组（48 token；每条「历史N」/「回复N」= 2 中文 + 1 数字 ≈ 1.65 → 2 token，
+     *  加每消息 4 开销 = 6）：max=50 时 48+本轮 user 7 = 55 ≥ 阈值 32.5，
+     *  且已进危险区（≥50×0.85=42.5）→ 强制压缩；max=100 时 48+6 = 54 < 阈值 65 → 不自动压缩，
+     *  仅手动 /compact 时按保留区预算（13 token）保留、保底最近 4 组（新语义）：此时消息含本轮
+     *  user/回复共 10 组×6 token，keep=4 → 可压 6 组 = 36 token（若仅 seed 8 组则可压 4 组） */
     private static void seedHistory(AgentLoop loop) {
         for (int i = 0; i < 4; i++) {
             loop.messages().add(Message.user("历史" + i));
@@ -40,7 +47,7 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        // 小上下文上限，快速触发压缩（50×0.65=32.5；seed 后 9 组 55 token 必然超阈值）
+        // 小上下文上限，快速触发压缩（50×0.65=32.5；seed 8 组 48 + 本轮 user「触发压缩」7 = 55 ≥ 危险区 42.5 → 强制压缩）
         ContextManager cm = new ContextManager(50, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
@@ -57,6 +64,399 @@ public class AgentLoopCompactTest {
         assertTrue(loop.messages().get(0).summary);
     }
 
+    /** v2：可压量不足 → 事前跳过（不调压缩 LLM）+ 提示只出现一次（每回合一次，不阻塞后续压缩） */
+    @Test
+    public void autoCompress_lowYield_skipsWithoutLlmAndWarnsOnce() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】被压缩的历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0); // 阈值 130k、门槛 10k、预算 26k、危险区 170k
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 20;
+        // pinned 120k token（480000 字符）+ 4 组各 3k（12000 字符）：可压量 ≈ 3k < 门槛 10k，estimate ≈ 132k ∈ [130k,170k)
+        // 说明：brief 原给的 pin 420000 字符实测仅 105004 token，pin+4 组 = 117020 < 阈值 130000，
+        // 场景前提不成立（大窗口 + 小历史本就无任何可压量），故按实际 token 口径改为 480000 字符。
+        Message pin = Message.user(ascii(480000));
+        pin.pinned = true;
+        loop.messages().add(pin);
+        for (int i = 0; i < 4; i++) loop.messages().add(Message.user(ascii(12000)));
+        assertTrue("场景前提：超阈值", cm.shouldCompress(loop.messages()));
+        assertFalse("场景前提：可压量不足门槛", cm.worthCompressing(loop.messages()));
+        // 3 轮小工具（可压量增长但始终 < 门槛 10k）+ 1 轮收尾：每次请求前都走「暂缓」分支
+        for (int r = 0; r < 3; r++) {
+            ToolCall tc = new ToolCall();
+            tc.id = "s" + r;
+            tc.name = "example";
+            tc.arguments = "{\"text\":\"hi\"}";
+            llm.addTurnWithTools(Collections.singletonList(tc), null);
+        }
+        llm.addTurn("完成"); // 暂缓不阻塞本轮请求
+        loop.runUserTurn(ascii(60000)); // 本轮 user 15k token
+        assertTrue("可压内容不足 → 不调压缩 LLM: " + llm.completeChatRequests,
+                llm.completeChatRequests.isEmpty());
+        assertEquals("「暂缓」提示每回合只一次: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩暂缓")).count());
+        assertEquals("暂缓不阻塞本轮请求", "完成", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** 长任务回合：任务推进使可压量增长 → 压缩可发生多次（回归"回合内只能用一次"） */
+    @Test
+    public void autoCompress_longTurn_compressesMultipleTimes() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0); // 阈值 130k、门槛 10k、预算 26k、危险区 170k
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 25;
+        // 每轮 1 个 example 工具，text 30000 字符 → 组 ≈ 15k token（arguments 7.5k + tool 结果 7.5k）；
+        // 保底 4 组（≈60k）：第 9 轮后 135k 触发首压 → 之后每 5 轮再涨 ≈75k 可再压 → 20 轮共 ≥2 次
+        for (int r = 0; r < 20; r++) {
+            ToolCall tc = new ToolCall();
+            tc.id = "m" + r;
+            tc.name = "example";
+            tc.arguments = "{\"text\":\"" + ascii(30000) + "\"}";
+            llm.addTurnWithTools(Collections.singletonList(tc), null);
+        }
+        llm.addTurn("完成");
+        loop.runUserTurn("跑长任务");
+        int n = llm.completeChatRequests.size();
+        assertTrue("长任务回合内应能多次压缩（至少 2 次），实际 " + n, n >= 2);
+        assertTrue("压缩有效提示出现: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至") || w.contains("仍占")));
+        assertEquals("完成", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** 危险区（≥85%×max）：可压量不足门槛也强制压缩一次（保命） */
+    @Test
+    public void autoCompress_dangerZone_compressesDespiteLowYield() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(1200, llm, 0); // 阈值 780、门槛 60、预算 156、危险区 1020
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 20;
+        Message pin = Message.user(ascii(4000)); // 1000 token → estimate ≥ 危险区
+        pin.pinned = true;
+        loop.messages().add(pin);
+        for (int i = 0; i < 30; i++) loop.messages().add(Message.user(i < 9 ? "x" : "问" + (i % 10)));
+        assertTrue("场景前提：超阈值", cm.shouldCompress(loop.messages()));
+        assertTrue("场景前提：进危险区", cm.estimate(loop.messages()) >= 1020);
+        assertTrue("场景前提：强制压", cm.worthCompressing(loop.messages()));
+        assertTrue("场景前提：可压量不足门槛", cm.compressibleTokens(loop.messages()) < 60);
+        llm.addTurn("压缩后回复");
+        loop.runUserTurn("触发压缩");
+        assertEquals("危险区强制压缩一次", 1, llm.completeChatRequests.size());
+    }
+
+    /** 事故回归（设计 §3.2-1）：max=200000（阈值 130k、保留预算 26k、门槛 10k、危险区 170k），
+     *  6 组各 25004 token（总 150024 ∈ [130k,170k)）→ 一次压缩后 estimate < 阈值，提示「降低至」且不含「仍占」 */
+    @Test
+    public void autoCompress_regressionScenario_compressesBelowThreshold() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        for (int i = 0; i < 6; i++) loop.messages().add(Message.user(ascii(100000)));
+        assertTrue("场景前提：超阈值未进危险区",
+                cm.shouldCompress(loop.messages()) && cm.estimate(loop.messages()) < 170000);
+        assertEquals("场景前提：常态保底 4 组（预算 26000 只容 1 组，保底 4 组 × 25004 = 100016），本次压掉前 2 组",
+                50008L, cm.compressibleTokens(loop.messages()));
+        llm.addTurn("完成");
+        loop.runUserTurn("继续");
+        assertEquals("事故场景只需一次压缩", 1, llm.completeChatRequests.size());
+        assertFalse("压缩后应低于阈值", cm.shouldCompress(loop.messages()));
+        assertTrue("应提示降低至: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
+        assertFalse("不应出现「仍占」: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("仍占")));
+    }
+
+    /** 常态保底 4 组：最近 4 组不进入压缩批次（max=200000：阈值 130k、门槛 10k、预算 26k、危险区 170k）；
+     *  seed 6 组各 25k token（内容带标记 G0..G5）+ 本轮 user 共 7 组 → 保底 G3/G4/G5+本轮 user，批次只含 G0..G2。
+     *  实测口径：每组 = ceil((2+100000)×0.25)+4 = 25005 token，seed+本轮 user = 150036 ∈ [130k,170k)，
+     *  非危险区（保底 4 组）；可压 G0..G2 = 75015 ≥ 门槛 10k。 */
+    @Test
+    public void autoCompress_keepsNewestFourGroupsOutOfBatch() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        for (int i = 0; i < 6; i++) loop.messages().add(Message.user("G" + i + ascii(100000))); // 每组 ≈25k
+        llm.addTurn("完成");
+        loop.runUserTurn("继续");
+        assertEquals("常态保底 4 组：恰好一次压缩", 1, llm.completeChatRequests.size());
+        String batch = llm.completeChatRequests.get(0);
+        assertTrue("批次应含 G0", batch.contains("G0"));
+        assertTrue("批次应含 G1", batch.contains("G1"));
+        assertTrue("批次应含 G2", batch.contains("G2"));
+        assertFalse("最近 4 组保底：G3 不得进入批次", batch.contains("G3"));
+        assertFalse("最近 4 组保底：G4 不得进入批次", batch.contains("G4"));
+        assertFalse("最近 4 组保底：G5 不得进入批次", batch.contains("G5"));
+        assertTrue("压缩有效: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
+    }
+
+    /** 保底 4 组占满可压量 → 暂缓（不调 LLM）；任务推进使最早大组滑出保底 →
+     *  可压量恢复，同一回合自动压缩（max=200000：阈值 130k、门槛 10k、预算 26k、危险区 170k）。
+     *  实测口径：seed 每组 = ceil((2+180000)×0.25)+4 = 45005 token，3 组 + 本轮 user 15004 = 150019
+     *  ∈ [130k,170k) → keep=4 恰好占满（可压 0）；小工具组 = assistant 10 + 回显 6 = 16 token，
+     *  推进后 5 组：保底 4 组（工具组+user+H1+H2），H0 滑出 → 可压 45005。 */
+    @Test
+    public void autoCompress_slidesOutOfFourKeep_thenCompresses() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        for (int i = 0; i < 3; i++) loop.messages().add(Message.user("H" + i + ascii(180000))); // 每组 ≈45k
+        // 场景前提（自证）：+ 本轮 user 15k = 4 组 ≈150k ∈ [130k,170k)，保底 4 组占满 → 可压量 0
+        List<Message> probe = new ArrayList<Message>(loop.messages());
+        probe.add(Message.user(ascii(60000)));
+        assertTrue("场景前提：超阈值未进危险区",
+                cm.shouldCompress(probe) && cm.estimate(probe) < 170000);
+        assertFalse("场景前提：保底 4 组占满可压量 → 暂缓", cm.worthCompressing(probe));
+        ToolCall tc = new ToolCall();
+        tc.id = "h1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"hi\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("完成");
+
+        loop.runUserTurn(ascii(60000)); // 本轮 user 15k
+
+        assertEquals("推进后（5 组，最早大组滑出保底）恰好一次压缩",
+                1, llm.completeChatRequests.size());
+        assertTrue("压缩批次应含滑出保底的最早大组 H0",
+                llm.completeChatRequests.get(0).contains("H0"));
+        assertEquals("「暂缓」提示一次: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩暂缓")).count());
+        assertEquals("本轮未被卡死", "完成", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** 危险区降级用例的唯一标记：既有历史（D 组 = "D0/D1/D2" + 18 万 'x'、工具参数/回显 20 万 'x'）
+     *  均不含该串，故「批次含本标记」⇔「本轮 user 组进了压缩批次」——'x' 海量填充无法伪造。 */
+    private static final String DANGER_MARK = "ROUND9";
+
+    /** 危险区降级：4 组自身超阈值但未到 85% → 暂缓；推进使占用涨过 85% →
+     *  保底降为 1 组、压缩成功回到阈值下（max=200000：危险区 170k）。
+     *  实测口径：seed 每组 45005 token（同上一用例），3 组 + 本轮 user 15004 = 150019 → 暂缓；
+     *  工具组 = assistant（arguments ceil(200011×0.25)+6 = 50009）+ tool 结果（原 200006 字符经
+     *  ToolOutputGate 30000 字符上限截断 ≈7500 token）≈ 57500 → 推进后 ≈207.5k ≥ 危险区 170k。
+     *  鉴别力（唯一标记 DANGER_MARK）：危险区 keep=1 时只有最新组（工具组 ≈57.5k &gt; 保留预算 26k）
+     *  被留、本轮 user 组（第 2 新，≈15k）必进批次；常态保底 4 组则 keep=4（工具组/user 组/D2/D1）
+     *  → 批次仅剩 D0、不含标记。变异实验：KEEP_CRITICAL_GROUPS 改 2 或 4 时本断言自身 RED
+     *  （KEEP_CRITICAL_GROUPS=4 → 批次 = D0 一个组）。 */
+    @Test
+    public void autoCompress_dangerZoneDowngrade_compressesAfterCrossing85() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】要点";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(200000, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        for (int i = 0; i < 3; i++) loop.messages().add(Message.user("D" + i + ascii(180000))); // 每组 ≈45k
+        List<Message> probe = new ArrayList<Message>(loop.messages());
+        probe.add(Message.user(DANGER_MARK + ascii(60000))); // +15k → 4 组 ≈150k ∈ [130k,170k)
+        assertTrue("场景前提：超阈值未进危险区",
+                cm.shouldCompress(probe) && cm.estimate(probe) < 170000);
+        assertFalse("场景前提：保底 4 组占满可压量 → 暂缓", cm.worthCompressing(probe));
+        ToolCall tc = new ToolCall();
+        tc.id = "d1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"" + ascii(200000) + "\"}"; // 工具组 ≈57.5k（assistant 参数 200k 字符不截断；工具结果回显 200k 字符被 ToolOutputGate 截断至 30k）→ 推进后 ≈207.5k ≥ 危险区 170k
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("完成");
+        for (Message m : loop.messages()) { // 标记唯一性自证：既有 D 组内容不含本轮标记
+            assertFalse("标记唯一性：既有历史不得含 " + DANGER_MARK,
+                    m.content != null && m.content.contains(DANGER_MARK));
+        }
+
+        loop.runUserTurn(DANGER_MARK + ascii(60000));
+
+        assertEquals("危险区降级后恰好一次压缩", 1, llm.completeChatRequests.size());
+        assertTrue("降级后应把最早大组压掉", llm.completeChatRequests.get(0).contains("D0"));
+        assertTrue("降级为 1 组：本轮 user 组（唯一标记 " + DANGER_MARK + "）应进入压缩批次",
+                llm.completeChatRequests.get(0).contains(DANGER_MARK));
+        assertEquals("「暂缓」提示一次: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩暂缓")).count());
+        assertTrue("压后回到阈值下：应提示降低至: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
+        assertEquals("本轮未被卡死", "完成", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** 保底组自身超预算（设计 §3.2-2）：本轮 user 64 token ＞ 保留预算 6.5 →
+     *  压后仍超阈值：提示「自动压缩后上下文仍占」恰好 1 次、不谎报「降低至」、不阻塞本轮请求 */
+    @Test
+    public void autoCompress_newestGroupOverBudget_warnsStillOverAfterCompress() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】被压缩的历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0); // 阈值 32.5、保留预算 6.5、门槛 2.5、危险区 42.5
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop);              // 8 组 48 token（可压量 42 ≥ 门槛 2.5）
+        // 场景前提：保底组（本轮 user 64 > 预算 6.5）超预算且已进危险区；seed 48 ≥ 危险区 42.5
+        assertTrue("场景前提：保底组超预算且已进危险区",
+                cm.shouldCompress(loop.messages()) && cm.estimate(loop.messages()) >= 42.5
+                        && cm.compressibleTokens(loop.messages()) >= 2.5);
+        llm.addTurn("压缩后回复");
+        loop.runUserTurn(ascii(240));   // 本轮 user 64 token > 保留预算 → 保底保留后仍超阈值
+        assertEquals("压后仍超阈值不重复压缩：只压一次", 1, llm.completeChatRequests.size());
+        assertEquals("「仍占」提示恰好一次: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩后上下文仍占")).count());
+        assertFalse("不得谎报降低至: " + ui.warnings,
+                ui.warnings.stream().anyMatch(w -> w.contains("降低至")));
+        assertEquals("压缩后本轮请求正常继续", "压缩后回复",
+                loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** v2 核心防回归：压缩后仍超阈值（保底组自身超预算）之后，任务推进（新工具轮）使被保底保留的
+     *  大组滑出保留区、可压量恢复 → 同一回合**能再次压缩**，且「仍占」提示走同一分支但已被去重
+     *  （不阻塞压缩、不卡死本轮）。
+     *
+     *  构造（max=50：阈值 32.5、保留预算 6.5、门槛 2.5、危险区 42.5）：
+     *  - seedHistory：8 组 48 token；
+     *  - 本轮 user 240 字符 = 64 token ＞ 保留预算 → 首压只能压掉 seed（48），保底保留本轮 user
+     *    → 压后 17（摘要）+ 64 = 81 ≥ 阈值 → 首次「仍占」并置去重标记；
+     *  - 脚本 1 轮工具（example 回显 60 字符 ≈ 45 token 的原子组）：工具组成为新保底组，
+     *    上一轮的大 user 组滑出保留区 → 第二次压缩把 64 token 的大组压掉（压后 17 + 45 = 62
+     *    仍 ≥ 阈值）→ 命中同一「仍占」分支但已去重，提示仍只有 1 条；
+     *  - 收尾「完成」：本轮未被卡死。
+     *  说明：本用例只放 1 轮工具、且工具组偏大——循环顶每次请求前都判压缩，若用 2 轮小工具
+     *  （组 14 token），第 3 次压缩的保留组不足以撑过阈值（17 + 14 = 31 < 32.5），
+     *  「仍占」去重分支不会被真正走到（会走「降低至」），用例会失去鉴别力。 */
+    @Test
+    public void autoCompress_afterStillOver_nextToolRoundCompressesAgain() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.compressResult = "【摘要】被压缩的历史";
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(50, llm, 0);
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 10;
+        seedHistory(loop);
+        // 场景前提（自证）：seed + 本轮 user 240 字符 = 48 + 64 = 112
+        List<Message> probe = new ArrayList<Message>(loop.messages());
+        probe.add(Message.user(ascii(240)));
+        assertTrue("场景前提：超阈值", cm.shouldCompress(probe));
+        assertEquals("场景前提：首压可压量 = seed 8 组 48 token", 48L, cm.compressibleTokens(probe));
+        assertTrue("场景前提：保底组（本轮 user 64 token）自身即超保留预算与阈值 32.5",
+                cm.estimate(Collections.singletonList(probe.get(probe.size() - 1))) > 32.5);
+        // 新工具轮：工具组 ≈ 45 token（arguments 71 字符 + 回显 66 字符），成新保底组
+        ToolCall tc = new ToolCall();
+        tc.id = "g1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"" + ascii(60) + "\"}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        llm.addTurn("完成");
+
+        loop.runUserTurn(ascii(240));
+
+        assertEquals("第一次压缩（保底组超预算）+ 任务推进后可压量恢复的第二次压缩",
+                2, llm.completeChatRequests.size());
+        assertFalse("首次压缩不得压掉被保底保留的大 user 组（否则「仍占」不成立）",
+                llm.completeChatRequests.get(0).contains(ascii(240)));
+        assertTrue("第二次压缩应立即压掉上一轮保底保留的大 user 组",
+                llm.completeChatRequests.get(1).contains(ascii(240)));
+        assertEquals("「仍占」提示每回合只一次（第二次走同一分支已去重，且不阻塞压缩）: " + ui.warnings,
+                1, ui.warnings.stream().filter(w -> w.contains("自动压缩后上下文仍占")).count());
+        assertEquals("两次压缩都压后仍超阈值，不得谎报「降低至」: " + ui.warnings,
+                0, ui.warnings.stream().filter(w -> w.contains("降低至")).count());
+        assertEquals("本轮未被卡死", "完成", loop.messages().get(loop.messages().size() - 1).content);
+    }
+
+    /** ascii 辅助（Task 内新增，供多轮/跳过用例共用） */
+    private static String ascii(int n) {
+        StringBuilder sb = new StringBuilder(n);
+        for (int i = 0; i < n; i++) sb.append('x');
+        return sb.toString();
+    }
+
     @Test
     public void compactNow_compressesImmediately() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -66,7 +466,9 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(100000, llm, 0);
+        // max=100（阈值 65、保留预算 13）：seed 8 组 48 + 本轮 user「问题」6 = 54 < 65 不自动压缩；
+        // 新语义下大窗口 + 小历史无可压量（保留预算 13000 ≫ 54），手动压缩会返回「暂无可压缩」，故改小上限
+        ContextManager cm = new ContextManager(100, llm, 0);
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,
@@ -275,7 +677,9 @@ public class AgentLoopCompactTest {
         registry.register(new com.minion.core.tools.example.ExampleTool());
         RecordingUi ui = new RecordingUi();
         ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
-        ContextManager cm = new ContextManager(100000, llm, 0); // 大阈值：手动触发
+        // max=100：同 compactNow_compressesImmediately——大窗口下小历史无任何可压量，
+        // 手动压缩会直接返回「暂无可压缩」而不进失败路径，故用能压出内容的窗口上限
+        ContextManager cm = new ContextManager(100, llm, 0); // 54 < 阈值 65：不自动压缩，只走手动路径
         AgentLoop loop = new AgentLoop(llm, registry,
                 new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
                 confirm, ui, cm,

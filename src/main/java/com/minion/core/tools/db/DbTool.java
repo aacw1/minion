@@ -66,7 +66,10 @@ public class DbTool implements Tool {
           .append("当结果里出现该标注、或你已知该字段很长而需要其完整内容时，")
           .append("必须重发同一查询并设 full=true，并用 WHERE/LIMIT 把 SQL 限定到需要的行：")
           .append("full=true 时单元格上限 ").append(DbExecutor.FULL_CELL_MAX)
-          .append(" 字符，单值查询可 inline 全文，超出自动落盘并附文件路径");
+          .append(" 字符，单值查询可 inline 全文，超出自动落盘并附文件路径；")
+          .append("结果超过 ").append(MarkdownTable.CHAR_BUDGET)
+          .append(" 字符会落盘并提示拆分——请避免一次拉取大量大字段（如整表 JSON 列），")
+          .append("按需 WHERE/LIMIT 拆分查询");
         if (type.supports("schema")) {
             sb.append("；action=schema 列出表与视图；action=describe 查看表字段");
         } else {

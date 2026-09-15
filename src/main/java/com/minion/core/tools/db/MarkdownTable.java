@@ -70,9 +70,10 @@ public final class MarkdownTable {
     }
 
     /**
-     * 字符预算处理：≤30000 原样返回；超出则全量落盘（前缀 db）并返回头部 + 路径提示。
+     * 字符预算处理：≤30000 原样返回；超出则全量落盘（前缀 db）并返回头部 + 路径与拆分查询提示。
      * 表格式数据头部比尾部有用（首行是表头），故不用 OutputDump.tail。
      * tmpDir 为 null 或落盘失败 → 降级为纯内存截断。
+     * 提示明确引导"拆分查询"（加 WHERE/LIMIT、分页/分列），避免模型为拿全文反复拉取大结果。
      */
     public static String fit(String full, Path tmpDir) {
         if (full == null) return "";
@@ -80,9 +81,11 @@ public final class MarkdownTable {
         String head = full.substring(0, CHAR_BUDGET);
         Path dumped = OutputDump.write(tmpDir, "db", full);
         if (dumped == null) {
-            return head + "\n\n…（结果过长已截断，共 " + full.length() + " 字符）";
+            return head + "\n\n…（结果过大：共 " + full.length()
+                    + " 字符，完整内容未能落盘。请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询）";
         }
-        return head + "\n\n…（完整结果 " + full.length() + " 字符已落盘："
-                + dumped.toAbsolutePath() + "，可用 Read 查看）";
+        return head + "\n\n…（结果过大：共 " + full.length() + " 字符，完整内容已落盘："
+                + dumped.toAbsolutePath()
+                + "。请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询；需要全文可用 Read 分页查看）";
     }
 }

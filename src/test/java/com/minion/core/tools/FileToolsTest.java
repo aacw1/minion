@@ -79,6 +79,52 @@ public class FileToolsTest {
     }
 
     /** GBK 编码文件（如记事本 ANSI 保存）：UTF-8 解码失败后自动降级 GBK，内容正确并标注转码 */
+    // ---- Read 单次输出上限（大输出闸门配套：分页续读，不落盘） ----
+
+    /** 超字符上限：截断 + offset 续读提示；按提示续读可覆盖全文（分页永不卡死） */
+    @Test
+    public void read_charLimit_truncatesAndHintsNextOffset() throws Exception {
+        StringBuilder src = new StringBuilder();
+        for (int i = 0; i < 1000; i++) {
+            src.append("行").append(i);
+            for (int j = 0; j < 36; j++) src.append('a');
+            src.append('\n');
+        }
+        Files.write(p("big.txt"), src.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"big.txt\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("单次输出受字符上限约束", r.output.length() <= ReadTool.MAX_OUTPUT_CHARS + 200);
+        assertTrue("截断提示续读位置", r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
+        int next = Integer.parseInt(r.output.replaceAll("(?s).*请用 offset=(\\d+).*", "$1"));
+        assertTrue("续读位置有效: " + next, next > 0 && next < 1000);
+        ToolResult r2 = read.execute(args("{\"path\":\"big.txt\",\"offset\":" + next + "}"));
+        assertTrue(r2.output, r2.ok);
+        assertFalse("末页不再截断", r2.output.contains("单次输出上限"));
+        assertEquals("分页拼接覆盖全文", src.toString(), stripHints(r.output) + stripHints(r2.output));
+    }
+
+    /** 单行超长：截断并标注原始长度（防 minified 单行撑爆上下文） */
+    @Test
+    public void read_singleLineOverLimit_clipped() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 5000; i++) line.append('x');
+        Files.write(p("oneline.json"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"oneline.json\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("单行截断标注", r.output.contains("本行超长，共 5000 字符已截断"));
+        assertTrue("本行截断后长度受控", r.output.length() <= ReadTool.MAX_LINE_CHARS + 200);
+    }
+
+    /** 工具提示行剥离（测试辅助）：提示统一以 "... " 开头 */
+    private static String stripHints(String out) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : out.split("\n", -1)) {
+            if (line.startsWith("... ") || line.isEmpty()) continue;
+            sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
     @Test
     public void read_gbkFile_autoDecoded() throws Exception {
         // 「阿诗丹顿」的 GBK 字节序列（8 字节 4 汉字）
@@ -363,6 +409,143 @@ public class FileToolsTest {
         ToolResult r = glob.execute(args("{\"pattern\":\"*.java\",\"path\":\"./nope-dir\"}"));
         assertFalse(r.ok);
         assertTrue(r.output.contains("路径不存在"));
+    }
+
+    // ---- 「有权限路径」文件不存在：不加越界拒绝提示（放行目录未创建 / 开关开 / 会话放行） ----
+
+    /** 会话临时目录尚未创建时，读其下不存在文件应报纯「文件不存在」，不得误报越界拒绝 */
+    @Test
+    public void read_missingFileUnderMissingTmpDir_plainMissing() throws Exception {
+        Path work2 = tmp.newFolder("work-mt").toPath();
+        Path missingTmp = tmp.getRoot().toPath().resolve("jarM").resolve(".session")
+                .resolve("tmp").resolve("s9"); // 不创建：惰性创建目录的读场景
+        ReadTool r = new ReadTool(new Workspace(work2.toString()), null, missingTmp.toString(), null);
+        ToolResult res = r.execute(args("{\"path\":\""
+                + missingTmp.resolve("report.md").toString().replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.ok);
+        assertTrue(res.output.contains("文件不存在"));
+        assertFalse("不应误报越界: " + res.output, res.output.contains("访问将被拒绝"));
+    }
+
+    /** 技能目录尚未创建时，读其下不存在文件同样报纯「文件不存在」 */
+    @Test
+    public void read_missingFileUnderMissingSkillsDir_plainMissing() throws Exception {
+        Path work2 = tmp.newFolder("work-ms").toPath();
+        Path missingSkills = tmp.getRoot().toPath().resolve("skillsM"); // 不创建
+        ReadTool r = new ReadTool(new Workspace(work2.toString()), missingSkills.toString(), null, null);
+        ToolResult res = r.execute(args("{\"path\":\""
+                + missingSkills.resolve("SKILL.md").toString().replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.ok);
+        assertTrue(res.output.contains("文件不存在"));
+        assertFalse("不应误报越界: " + res.output, res.output.contains("访问将被拒绝"));
+    }
+
+    /** 越界读开关开启：不存在的越界文件直接报「文件不存在」，不再提示越界拒绝（开关=全盘可读） */
+    @Test
+    public void read_missingOutside_switchOn_plainMissing() throws Exception {
+        String missing = new File(System.getProperty("java.io.tmpdir"),
+                "minion-missing-switchon-" + System.nanoTime() + ".txt").getAbsolutePath();
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(true), new com.minion.core.tools.confirm.FakeConfirmUi()));
+        ToolResult res = r.execute(args("{\"path\":\"" + missing.replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.ok);
+        assertTrue(res.output.contains("文件不存在"));
+        assertFalse("开关开不应再提示越界: " + res.output, res.output.contains("访问将被拒绝"));
+    }
+
+    /** 会话内已按 A/W 放行越界读后，不存在的越界文件同样报纯「文件不存在」 */
+    @Test
+    public void read_missingOutside_sessionApproved_plainMissing() throws Exception {
+        File outside = new File(System.getProperty("java.io.tmpdir"),
+                "minion-approve-sess-" + System.nanoTime() + ".txt");
+        outside.deleteOnExit();
+        Files.write(outside.toPath(), "secret".getBytes(StandardCharsets.UTF_8));
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi(
+                        com.minion.core.tools.confirm.ConfirmUi.Decision.APPROVE_SESSION)));
+        ToolResult first = r.execute(args("{\"path\":\""
+                + outside.getAbsolutePath().replace("\\", "\\\\") + "\"}"));
+        assertTrue(first.output, first.ok); // 首次：弹确认 → 会话放行
+        String missing = new File(System.getProperty("java.io.tmpdir"),
+                "minion-missing-sess-" + System.nanoTime() + ".txt").getAbsolutePath();
+        ToolResult res = r.execute(args("{\"path\":\"" + missing.replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.output.contains("访问将被拒绝"));
+    }
+
+    /** 开关关闭：不存在的越界文件仍保留越界提示（防模型编造路径的既有特性，回归钉） */
+    @Test
+    public void read_missingOutside_switchOff_stillHints() throws Exception {
+        String missing = new File(System.getProperty("java.io.tmpdir"),
+                "minion-missing-switchoff-" + System.nanoTime() + ".txt").getAbsolutePath();
+        ReadTool r = new ReadTool(ws, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi()));
+        ToolResult res = r.execute(args("{\"path\":\"" + missing.replace("\\", "\\\\") + "\"}"));
+        assertFalse(res.ok);
+        assertTrue(res.output.contains("文件不存在"));
+        assertTrue("开关关应保留越界提示: " + res.output, res.output.contains("访问将被拒绝"));
+    }
+
+    // ---- 会话存储目录（只读放行） ----
+
+    /** 会话存储目录：已存在文件读放行（无需确认）；其下不存在文件报纯「文件不存在」；目录未创建同样放行 */
+    @Test
+    public void read_sessionStoreDir_readAllowed() throws Exception {
+        Path work2 = tmp.newFolder("work-ss").toPath();
+        Path sessionDir = tmp.newFolder("session-ss", "wsA").toPath();
+        Workspace w2 = new Workspace(work2.toString());
+        w2.setExtraReadDirs(java.util.Collections.singletonList(sessionDir.toString()));
+        ReadTool r = new ReadTool(w2, null, null, null);
+        Path f = Files.write(sessionDir.resolve("s1.json"), "{\"k\":1}".getBytes(StandardCharsets.UTF_8));
+        ToolResult ok = r.execute(args("{\"path\":\"" + f.toString().replace("\\", "\\\\") + "\"}"));
+        assertTrue(ok.output, ok.ok);
+        assertTrue(ok.output.contains("\"k\""));
+
+        ToolResult missing = r.execute(args("{\"path\":\""
+                + sessionDir.resolve("nope.json").toString().replace("\\", "\\\\") + "\"}"));
+        assertFalse(missing.ok);
+        assertTrue(missing.output.contains("文件不存在"));
+        assertFalse("不应误报越界: " + missing.output, missing.output.contains("访问将被拒绝"));
+
+        // 会话存储目录尚未创建（惰性创建）：配置为只读放行目录后，其下不存在文件同样报纯「文件不存在」
+        Path missingSessionDir = tmp.getRoot().toPath().resolve("session-ss-missing");
+        Workspace w3 = new Workspace(work2.toString());
+        w3.setExtraReadDirs(java.util.Collections.singletonList(missingSessionDir.toString()));
+        ReadTool r3 = new ReadTool(w3, null, null, null);
+        ToolResult missing2 = r3.execute(args("{\"path\":\""
+                + missingSessionDir.resolve("x.json").toString().replace("\\", "\\\\") + "\"}"));
+        assertTrue(missing2.output.contains("文件不存在"));
+        assertFalse("目录未创建也不应误报越界: " + missing2.output, missing2.output.contains("访问将被拒绝"));
+    }
+
+    /** 会话存储目录只放行读：Write 写入仍拒绝（开关关闭时） */
+    @Test
+    public void write_sessionStoreDir_stillRejected() throws Exception {
+        Path work2 = tmp.newFolder("work-sw").toPath();
+        Path sessionDir = tmp.newFolder("session-sw").toPath();
+        Workspace w2 = new Workspace(work2.toString());
+        w2.setExtraReadDirs(java.util.Collections.singletonList(sessionDir.toString()));
+        WriteTool w = new WriteTool(w2, null, null, new com.minion.core.tools.confirm.ConfirmGate(
+                readConfig(false), new com.minion.core.tools.confirm.FakeConfirmUi()));
+        ToolResult res = w.execute(args("{\"path\":\""
+                + sessionDir.resolve("hack.json").toString().replace("\\", "\\\\")
+                + "\",\"content\":\"x\"}"));
+        assertFalse("写会话存储目录应被拒: " + res.output, res.ok);
+    }
+
+    /** 会话存储目录：Grep 指定该目录为搜索根放行（与 Read 同口径） */
+    @Test
+    public void grep_sessionStoreDir_allowed() throws Exception {
+        Path work2 = tmp.newFolder("work-sg").toPath();
+        Path sessionDir = tmp.newFolder("session-sg").toPath();
+        Files.write(sessionDir.resolve("s1.json"),
+                "{\"note\":\"findme-session\"}".getBytes(StandardCharsets.UTF_8));
+        Workspace w2 = new Workspace(work2.toString());
+        w2.setExtraReadDirs(java.util.Collections.singletonList(sessionDir.toString()));
+        GrepTool g = new GrepTool(w2, null, null, null);
+        ToolResult res = g.execute(args("{\"pattern\":\"findme-session\",\"path\":\""
+                + sessionDir.toString().replace("\\", "\\\\") + "\"}"));
+        assertTrue(res.output, res.ok);
+        assertTrue(res.output.contains("s1.json"));
     }
 
     private static void deleteRecursively(Path dir) throws Exception {
