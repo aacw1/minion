@@ -187,3 +187,17 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
 - `provider` 为未知值时回退 deepseek 行为
 - `model.json` 缺失/为空/损坏时自动生成 deepseek + 千问两套配置（除 key 外按各自调用参数预填，key 留空待填）
 - 模板参考：源码目录 `src/resource/config_deepseek.properties` / `config_qwen.properties`（仅记录，实际生效仍为 jar 同目录的配置）
+
+## Bash 命令的中文编码（自动探测）
+
+含中文的命令/路径出现乱码或 `No such file or directory`，通常是 Git Bash 的 locale charset 与
+命令脚本编码不一致（Win7 等老版 Git for Windows 未设 `LANG` 时默认取系统 ANSI 代码页 GBK，
+而新版默认 `C.UTF-8`）。软件在**首次执行 Bash 命令时自动探测一次**并缓存：
+
+- 候选顺序：沿用当前环境（UTF-8）→ 注入 `LC_ALL/LANG=C.UTF-8` → 注入 `zh_CN.UTF-8` → 命令脚本改按 GBK 写；
+- 判定方式：用中文目录跑一次 `ls` 探针，退出码为 0 且输出含预期中文文件名才算通过；
+- 探测失败一律回退「沿用当前环境」，不会比未探测时更差；正常环境（Win10/11 新版 Git、Linux）行为不变。
+
+排查建议：确认已安装 Git for Windows（`bash.exe` 可被找到，否则降级 `cmd /c`）；仍乱码时升级
+Git for Windows 到支持 Win7 的最新版（2.46 及以前的 2.x）。原生 Windows 程序（`cmd //c dir`、
+`ipconfig` 等）输出的 GBK 字节由输出编码探测自动兜底，无需干预。

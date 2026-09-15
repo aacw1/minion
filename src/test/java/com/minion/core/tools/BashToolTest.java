@@ -6,11 +6,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
 public class BashToolTest {
 
@@ -242,6 +244,44 @@ public class BashToolTest {
         ToolResult r = bash.execute(o);
         assertTrue(r.ok);
         assertTrue("乱码: " + r.output, r.output.contains("你好"));
+    }
+
+    /** 中文路径端到端（Win7 乱码根因回归）：命令含中文路径时 ls 必须成功且输出正确中文 */
+    @Test
+    public void execute_chinesePath_ls_ok() throws Exception {
+        Path cn = Paths.get(workDir, "中文目录");
+        Files.createDirectories(cn);
+        Files.write(cn.resolve("中文文件.txt"), "hi".getBytes("UTF-8"));
+        ToolResult r = bash.execute(args("{\"command\":\"ls 中文目录\"}"));
+        assertTrue("命令失败: " + r.output, r.ok);
+        assertTrue("中文乱码: " + r.output, r.output.contains("中文文件.txt"));
+    }
+
+    /** 探测出需注入 locale 的机器（Win7 老 msys）：子进程必须真收到 LC_ALL/LANG */
+    @Test
+    public void execute_injectsProbedLocaleEnv() throws Exception {
+        ShellLocale sl = ShellLocale.detect("bash", new FakeShellProbe("C.UTF-8"));
+        assertEquals("C.UTF-8", sl.extraEnv.get("LC_ALL"));
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir, sl);
+        ToolResult r = tool.execute(args("{\"command\":\"echo LC_ALL=$LC_ALL LANG=$LANG\"}"));
+        assertTrue("命令失败: " + r.output, r.ok);
+        assertTrue("未注入 LC_ALL: " + r.output, r.output.contains("LC_ALL=C.UTF-8"));
+        assertTrue("未注入 LANG: " + r.output, r.output.contains("LANG=C.UTF-8"));
+    }
+
+    /** 命令脚本必须按探测出的编码写：强制 GBK 脚本喂 UTF-8 bash，中文路径解析必然失败
+     *  （反向钉住编码链路——脚本编码与 bash charset 对不上就是本次乱码的根因） */
+    @Test
+    public void execute_commandScriptWrittenWithProbedCharset() throws Exception {
+        assumeTrue("GBK 兜底候选仅 Windows",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
+        Path cn = Paths.get(workDir, "中文目录");
+        Files.createDirectories(cn);
+        ShellLocale gbk = ShellLocale.detect("bash", new FakeShellProbe("GBK"));
+        assertEquals(Charset.forName("GBK"), gbk.scriptCharset);
+        BashTool tool = new BashTool(new Workspace(workDir), tmpDir, gbk);
+        ToolResult r = tool.execute(args("{\"command\":\"ls 中文目录\"}"));
+        assertFalse("脚本编码未生效（GBK 脚本在 UTF-8 bash 下应找不到中文路径）: " + r.output, r.ok);
     }
 
     @Test

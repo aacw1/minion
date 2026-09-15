@@ -34,12 +34,17 @@ public class BashTool implements Tool {
     private final Workspace workspace;
     /** 会话临时目录（jarDir/.session/tmp/<sessionId>；null = 落盘降级为纯内存截断） */
     private final Path tmpDir;
+    /** 指定的 bash 编码（null = 首次执行时探测，见 ShellLocale）；构造注入以便测试固定编码 */
+    private final ShellLocale forcedLocale;
 
     public BashTool(Workspace workspace) { this(workspace, null); }
 
-    public BashTool(Workspace workspace, Path tmpDir) {
+    public BashTool(Workspace workspace, Path tmpDir) { this(workspace, tmpDir, null); }
+
+    public BashTool(Workspace workspace, Path tmpDir, ShellLocale locale) {
         this.workspace = workspace;
         this.tmpDir = tmpDir;
+        this.forcedLocale = locale;
     }
 
     @Override
@@ -89,11 +94,21 @@ public class BashTool implements Tool {
         // JDK8 Windows ProcessBuilder 不转义 -c 参数中的双引号，命令行会被拆碎（已实测）
         File scriptFile = File.createTempFile("minion-cmd", ".sh");
         scriptFile.deleteOnExit();
-        Files.write(scriptFile.toPath(), probe(command, pidFile).getBytes(StandardCharsets.UTF_8));
-        List<String> cmd = buildShellCommand(command, scriptFile);
+        // shell 解析先于写脚本：探测 bash 实际 charset 必须用同一个 shell。
+        // shell == null 仅出现在 Windows 无 Git Bash（降级 cmd /c）：命令由 JDK 宽字符 API 直传、
+        // 无脚本文件，故不探测也不注入 locale
+        String shell = resolveShellExe();
+        ShellLocale locale = shell == null ? ShellLocale.PLAIN
+                : (forcedLocale != null ? forcedLocale : ShellLocale.get(shell));
+        // 脚本编码必须与 bash 的 charset 对上：Win7 老 msys 未设 LANG 时默认取系统 ANSI 代码页
+        // （GBK），恒写 UTF-8 会让脚本里的中文路径被误解 → ls 报 No such file、报错回显乱码
+        // （根因与实测见 ShellLocale 类注释）
+        Files.write(scriptFile.toPath(), probe(command, pidFile).getBytes(locale.scriptCharset));
+        List<String> cmd = buildShellCommand(command, scriptFile, shell);
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workspace.cwd().toFile());
         pb.redirectErrorStream(true);
+        if (!locale.extraEnv.isEmpty()) pb.environment().putAll(locale.extraEnv);
         long start = System.currentTimeMillis();
         final Process process = pb.start();
         final TruncatedOutput out = TruncatedOutput.open(tmpDir, "bash");
@@ -183,21 +198,22 @@ public class BashTool implements Tool {
         return ToolResult.success(out.finish());
     }
 
-    /** 构造命令。Windows 优先 Git Bash，否则 cmd /c；Unix 用 setsid + /bin/sh。
-     *  Git Bash / Unix 分支执行命令脚本（内含 pid 探针）：bash 把自身 pid（$$，
-     *  MSYS 下即 Windows pid）写入探针文件，超时后 Java 据此按进程组整体清杀——
-     *  原生 JVM spawn 的 MSYS bash 自成进程组（已实测），Unix 靠 setsid 使其成为组长。
-     *  cmd /c 分支无探针，超时只能杀直接子进程（降级） */
-    private static List<String> buildShellCommand(String command, File scriptFile) {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("win")) {
-            String bash = findGitBash();
-            if (bash != null) return Arrays.asList(bash, scriptFile.getAbsolutePath());
-            return Arrays.asList("cmd", "/c", command);
-        }
-        // setsid 使命令成为独立进程组组长：超时 kill 才能按进程组整体清杀（kill -9 -pid），
-        // 否则孙进程会成为孤儿。命令输出走管道，脱离控制终端无副作用
-        return Arrays.asList("setsid", "/bin/sh", scriptFile.getAbsolutePath());
+    /** 构造命令。shell != null（Windows 的 Git Bash / Unix 的 /bin/sh）时执行命令脚本（内含 pid
+     *  探针）：bash 把自身 pid（$$，MSYS 下即 Windows pid）写入探针文件，超时后 Java 据此按进程组
+     *  整体清杀——原生 JVM spawn 的 MSYS bash 自成进程组（已实测），Unix 靠 setsid 使其成为组长
+     *  （超时才能按组整体清杀 kill -9 -pid，否则孙进程成为孤儿；命令输出走管道，脱离控制终端
+     *  无副作用）。shell == null（Windows 无 Git Bash）降级 cmd /c 原样传命令：无探针，超时只能
+     *  杀直接子进程 */
+    private static List<String> buildShellCommand(String command, File scriptFile, String shell) {
+        if (shell == null) return Arrays.asList("cmd", "/c", command);
+        if (isWindows()) return Arrays.asList(shell, scriptFile.getAbsolutePath());
+        return Arrays.asList("setsid", shell, scriptFile.getAbsolutePath());
+    }
+
+    /** 解析执行命令脚本的 shell：Windows 优先 Git Bash（找不到返回 null → 降级 cmd /c），
+     *  Unix 恒为 /bin/sh */
+    private static String resolveShellExe() {
+        return isWindows() ? findGitBash() : "/bin/sh";
     }
 
     /** 命令脚本内容：bash 先注册 EXIT trap 等待所有后台任务，再写 pid 到探针文件，
