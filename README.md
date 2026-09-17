@@ -146,7 +146,9 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 
 传输方式为单选：选中一种后其余字段隐藏并清空（表单按传输类型裁剪保存）。
 
-实现说明：MCP 客户端基于 aj-mcp-client 1.5 标准实现（JDK8 兼容）：握手、协议版本协商（2024-11-05/2025-03-26/2025-06-18）、stdio/SSE/Streamable 三传输由库完成；tools/list 与 tools/call 取原始 JSON（inputSchema 原样透传，非文本内容不丢）。依赖变化：okhttp 升 4.12（与库对齐，单份 okhttp + kotlin-stdlib），新增 jackson、slf4j-simple（warn 级日志），产物体积约 2.75 MB → 8 MB。
+实现说明：MCP 客户端基于 aj-mcp-client 1.5 标准实现（JDK8 兼容）：握手、协议版本协商（2024-11-05/2025-03-26/2025-06-18）由库完成；tools/list 与 tools/call 取原始 JSON（inputSchema 原样透传，非文本内容不丢）。依赖变化：okhttp 升 4.12（与库对齐，单份 okhttp + kotlin-stdlib），新增 jackson、slf4j-simple（warn 级日志），产物体积约 2.75 MB → 8 MB。
+
+stdio 传输加固：由 minion 自实现的 `MinionStdioTransport`（继承库公开传输基类，不覆盖库代码）承担 stdio 链路——读循环容忍服务器 stdout 混入的非协议行（banner/启动日志/空行，记录后跳过，不再杀死读线程导致整轮握手失败）、UTF-8 显式读写、`initialized` 通知移出读线程（服务器响应后立即退出不再误判为握手失败）；连接失败 500ms 后重试、最多 3 次（每次重建进程）；失败原因自动附带服务器 stderr 末尾与被跳过的非协议输出（可点击复制全文），便于排查。SSE / Streamable HTTP 传输仍由库完成。
 
 连接时机：启用服务器后首次新建/恢复会话时后台预连接（不阻塞界面），连接完成后该服务器的工具自动补充注册进所有会话（下一轮请求即可被模型调用）；与内置工具重名的自动跳过并在列表标注。
 

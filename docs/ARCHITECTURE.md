@@ -14,7 +14,7 @@ com.minion
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent，报告落盘+带编号事件+上下文压缩）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（重试策略：按类别 5s/30s、墙钟 12 分钟）、RetryProgress（重试进度值对象）
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
     ├── tools/              Tool 接口、ToolRegistry（带插件 gate）、13 个内置工具、db/（只读数据库）、plugin/（可插拔工具）、browser/、mcp/（McpProxyTool）、PathsGuard
-    ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，stdio/SSE/Streamable 三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
+    ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，传输工厂+重试+诊断）、MinionStdioTransport（stdio 传输：读循环容错/UTF-8/握手通知脱离读线程）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
     ├── skills/             SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、ContextCompressor、TokenCounter
     ├── storage/            SessionStore、SessionTempCleaner
@@ -99,8 +99,9 @@ com.minion
 ### core/mcp/（MCP 客户端核心，基于 aj-mcp-client 1.5 标准实现，JDK8）
 
 - `McpManager`：状态机（DISCONNECTED/CONNECTING/CONNECTED/FAILED）+ 惰性连接（幂等去重）+ 全局工具表 + call 路由（未连接先同步重连 ≤10s，连接层异常自动断开待下次重建）+ `save()` + shutdown；`addListener` 连接线程回调（GUI 层 Platform.runLater 刷新）
-- `AjMcpClient`：包装库客户端——`McpClient.builder().transport(t)` 完成握手/版本协商/JSON-RPC 帧；`tools/list`（游标分页）与 `tools/call` 走同一 transport 的原始请求取 JsonNode 转 gson（inputSchema 零损耗；非 text 内容序列化为 JSON 文本）；传输失败抛 `McpConnectionException`（区别于工具业务错误）
-- `McpTransports` 工厂逻辑在 `McpManager.transportOf`：stdio → `StdioTransport`（命令经 `McpCommands` 组装，Windows npx→cmd /c）；sse → `HttpMcpTransport`（旧版 endpoint 事件握手）；streamable → `StreamableHttpTransport`（`Mcp-Session-Id`/`MCP-Protocol-Version` 头 + 请求头）
+- `AjMcpClient`：包装库客户端——`McpClient.builder().transport(t)` 完成握手/版本协商/JSON-RPC 帧；`tools/list`（游标分页）与 `tools/call` 走同一 transport 的原始请求取 JsonNode 转 gson（inputSchema 零损耗；非 text 内容序列化为 JSON 文本）；传输失败抛 `McpConnectionException`（区别于工具业务错误）。另有传输工厂构造器 `AjMcpClient(TransportFactory)`：连接失败 500ms 后重试、最多 3 次（每次重建传输/进程），失败原因自动附加传输诊断（服务器 stderr 末尾 + 被跳过的非协议输出）
+- `MinionStdioTransport`：minion 自实现 stdio 传输（继承库公开抽象基类 `McpTransport`，不覆盖第三方类）——读循环对非 JSON 行/协议帧异常记录后跳过（不杀读线程）；UTF-8 显式读写；`initialize` 响应后在专用写线程发 `notifications/initialized`（不在读线程，服务器响应后即退不再误判握手失败）；stderr 与非协议行各留最近 20 行供失败诊断
+- `McpTransports` 工厂逻辑在 `McpManager.transportFactoryOf`（每次连接尝试新建实例，配合重试）：stdio → `MinionStdioTransport`（命令经 `McpCommands` 组装，Windows npx→cmd /c）；sse → `HttpMcpTransport`（旧版 endpoint 事件握手）；streamable → `StreamableHttpTransport`（`Mcp-Session-Id`/`MCP-Protocol-Version` 头 + 请求头）
 - `McpCommands`：stdio 命令组装（Windows `.cmd/.bat` 自动 `cmd /c` 包装，PATH 探测 npx→npx.cmd）
 - `McpJson`：Jackson JsonNode → gson 转换（仅转换不解析）
 - `McpStore`：jarDir/mcp.json 单文件多服务器（原子写，损坏备份 .bak）
