@@ -57,7 +57,7 @@ public class McpManager {
     /** 连接流程（连接线程内执行）：建客户端 → 握手 → 工具清单 → CONNECTED；异常 → FAILED + 原因 */
     private void doConnect(McpServer s) {
         try {
-            McpHandle client = new AjMcpClient(transportOf(s));
+            McpHandle client = new AjMcpClient(transportFactoryOf(s));
             try {
                 client.connect();
                 List<McpToolInfo> tools = client.listTools();
@@ -79,29 +79,44 @@ public class McpManager {
         notifyListeners(s);
     }
 
-    /** 按传输类型构造库传输：stdio 经 McpCommands 组装命令；streamable 带请求头；sse 为旧版端点 */
-    private static com.ajaxjs.mcp.client.transport.McpTransport transportOf(McpServer s) throws McpException {
+    /**
+     * 按传输类型构造传输工厂（每次连接尝试新建实例，配合 AjMcpClient 重试）：
+     * stdio 用 minion 自实现（读循环容忍非协议行/UTF-8/三步握手脱离读线程）；streamable/sse 用库传输。
+     */
+    private static AjMcpClient.TransportFactory transportFactoryOf(final McpServer s) throws McpException {
         String t = McpServer.normalizedTransport(s.transport);
         if (McpServer.STREAMABLE.equals(t) || McpServer.SSE.equals(t)) {
             if (s.url == null || s.url.trim().isEmpty())
                 throw new McpException("MCP 服务器缺少 URL 配置: " + s.name);
         }
         if (McpServer.STREAMABLE.equals(t)) {
-            return com.ajaxjs.mcp.client.transport.StreamableHttpTransport.builder()
-                    .endpointUrl(s.url.trim())
-                    .openEventStream(false)
-                    .timeout(java.time.Duration.ofMillis(McpHandle.CALL_TIMEOUT_MS))
-                    .requestHeaders(s.headers)
-                    .build();
+            return new AjMcpClient.TransportFactory() {
+                @Override public com.ajaxjs.mcp.client.transport.McpTransport create() {
+                    return com.ajaxjs.mcp.client.transport.StreamableHttpTransport.builder()
+                            .endpointUrl(s.url.trim())
+                            .openEventStream(false)
+                            .timeout(java.time.Duration.ofMillis(McpHandle.CALL_TIMEOUT_MS))
+                            .requestHeaders(s.headers)
+                            .build();
+                }
+            };
         }
         if (McpServer.SSE.equals(t)) {
-            return com.ajaxjs.mcp.client.transport.HttpMcpTransport.builder().sseUrl(s.url.trim()).build();
+            return new AjMcpClient.TransportFactory() {
+                @Override public com.ajaxjs.mcp.client.transport.McpTransport create() {
+                    return com.ajaxjs.mcp.client.transport.HttpMcpTransport.builder().sseUrl(s.url.trim()).build();
+                }
+            };
         }
-        return com.ajaxjs.mcp.client.transport.StdioTransport.builder()
-                .command(McpCommands.build(s.command, s.args))
-                .environment(s.env)
-                .logEvents(false)
-                .build();
+        return new AjMcpClient.TransportFactory() {
+            @Override public com.ajaxjs.mcp.client.transport.McpTransport create() {
+                return MinionStdioTransport.builder()
+                        .command(McpCommands.build(s.command, s.args))
+                        .environment(s.env)
+                        .logEvents(false)
+                        .build();
+            }
+        };
     }
 
     /** 关闭连接：进程销毁 + 状态 DISCONNECTED + 清工具表 */
