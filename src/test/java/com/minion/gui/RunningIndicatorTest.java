@@ -154,4 +154,32 @@ public class RunningIndicatorTest {
         assertEquals("上下文压缩中...(空响应，重试第1次，约 30 秒后重试)",
                 RunningIndicator.retryText(p, RunningIndicator.COMPRESSING_TEXT));
     }
+
+    /** 点击复制：返回完整 body 原文（超 200 字符不截断，与展示截断口径区分） */
+    @Test
+    public void copyText_returnsFullBody() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 250; i++) sb.append('z');
+        String body = sb.toString();
+        assertEquals(body, RunningIndicator.copyText(RetryProgress.of(2, 500, body)));
+        assertEquals(250, RunningIndicator.copyText(RetryProgress.of(2, 500, body)).length());
+        assertEquals("{\"error\":\"boom\"}", RunningIndicator.copyText(RetryProgress.of(1, 429, "{\"error\":\"boom\"}")));
+    }
+
+    /** 点击复制：复位态 / null / 空 body / 纯空白 body → null（不可点） */
+    @Test
+    public void copyText_nullForNoBody() {
+        assertNull(RunningIndicator.copyText(null));
+        assertNull(RunningIndicator.copyText(RetryProgress.none()));
+        assertNull(RunningIndicator.copyText(RetryProgress.of(3, 429, null)));
+        assertNull(RunningIndicator.copyText(RetryProgress.of(3, 429, "")));
+        assertNull(RunningIndicator.copyText(RetryProgress.of(3, 429, "   ")));
+    }
+
+    /** 网络类错误：复制异常消息原文（完整原文，不剥离前缀） */
+    @Test
+    public void copyText_networkDetail() {
+        RetryProgress p = RetryProgress.ofNetwork(3, "网络超时", "请求超时：60 秒内未收到模型输出");
+        assertEquals("请求超时：60 秒内未收到模型输出", RunningIndicator.copyText(p));
+    }
 }

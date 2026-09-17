@@ -5,8 +5,12 @@ import com.minion.gui.icon.IconFactory;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
+import javafx.scene.Cursor;
 import javafx.scene.control.Label;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.shape.SVGPath;
 import javafx.util.Duration;
@@ -28,6 +32,9 @@ public class RunningIndicator extends HBox {
     static final String COMPRESSING_TEXT = "上下文压缩中...";
     /** 错误体在指示器内的最大显示长度（500/502 展示服务返回的报错，防单行爆宽） */
     static final int BODY_MAX_CHARS = 200;
+    /** 点击复制后的反馈文案与显示时长（ms）：短暂提示后按当前状态重绘 */
+    static final String COPIED_TEXT = "已复制 ✓";
+    static final long COPY_FEEDBACK_MS = 1500;
     /** 齿轮旋转周期（2s/圈） */
     static final double SPIN_MS = 2000;
     /** 文案轮换间隔（10s） */
@@ -42,6 +49,7 @@ public class RunningIndicator extends HBox {
     private boolean compressing;
     private String retryBase;          // 进入重试态时冻结的基础文案；null = 非重试态
     private RetryProgress retryProgress; // 最近一次进度（挂起/恢复时重绘重试文案用）
+    private PauseTransition copyFeedback; // 「已复制 ✓」反馈计时（隐藏/状态更新时停，防过期回调）
 
     public RunningIndicator() {
         getStyleClass().add("running-indicator");
@@ -55,11 +63,12 @@ public class RunningIndicator extends HBox {
             if (!nv) {
                 stopAnimations();
             } else if (running) {
-                text.setText(retryBase != null ? retryText(retryProgress, retryBase)
-                        : displayText(compressing, pickText(rnd)));
+                renderText();
                 startAnimations();
             }
         });
+        // 点击复制完整错误详情（仅重试态且有 body 时可复制；复制后短暂「已复制 ✓」）
+        setOnMouseClicked(e -> copyErrorDetail());
     }
 
     /** 从轮换池随机取一个文案（纯静态可单测；允许连续相同，符合"随机"语义） */
@@ -119,6 +128,36 @@ public class RunningIndicator extends HBox {
         return s;
     }
 
+    /** 可复制错误原文：body 为 null/空白 → null（不可点）；否则返回完整原文（不截断，
+     *  与 bodyPart 的 200 字符展示截断口径区分） */
+    static String copyText(RetryProgress p) {
+        if (p == null || p.body == null || p.body.trim().isEmpty()) return null;
+        return p.body;
+    }
+
+    /** 点击复制完整错误详情（package-private 供探针直接调用）：无详情不动作；
+     *  复制后文字短暂显示「已复制 ✓」，到期按当前状态重绘 */
+    void copyErrorDetail() {
+        String full = copyText(retryProgress);
+        if (full == null) return;
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(full);
+        Clipboard.getSystemClipboard().setContent(cc);
+        if (copyFeedback != null) copyFeedback.stop();
+        text.setText(COPIED_TEXT);
+        copyFeedback = new PauseTransition(Duration.millis(COPY_FEEDBACK_MS));
+        copyFeedback.setOnFinished(e -> { copyFeedback = null; renderText(); });
+        copyFeedback.play();
+    }
+
+    /** 按当前状态重绘文案（统一口径：状态变化/反馈到期共用）：重试态 → 重试文案；
+     *  否则压缩/轮换文案。反馈计时未到期即被新状态覆盖时在此停表（提示让位于实时状态） */
+    private void renderText() {
+        if (copyFeedback != null) { copyFeedback.stop(); copyFeedback = null; }
+        text.setText(retryBase != null ? retryText(retryProgress, retryBase)
+                : displayText(compressing, pickText(rnd)));
+    }
+
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩态；true → 显示 + 启动动画（收敛到可见性监听） */
     public void setRunning(boolean running) {
         this.running = running;
@@ -126,6 +165,7 @@ public class RunningIndicator extends HBox {
             compressing = false;
             retryBase = null;
             retryProgress = null;
+            setCursor(null);
             stopAnimations();
             setVisible(false);
             return;
@@ -148,7 +188,7 @@ public class RunningIndicator extends HBox {
         this.compressing = compressing;   // 重试态也更新字段：重试结束后能回到正确文案
         if (retryBase != null) return;    // 重试态：不重绘（重试文案优先）
         if (!running) return;
-        text.setText(displayText(compressing, pickText(rnd)));
+        renderText();
         if (compressing) {
             if (rotateText != null) rotateText.stop();
         } else {
@@ -161,16 +201,17 @@ public class RunningIndicator extends HBox {
     public void setRetryProgress(RetryProgress p) {
         if (!running) return;
         retryProgress = p;
+        setCursor(copyText(p) != null ? Cursor.HAND : null); // 有详情可复制：手型提示，否则默认光标
         if (p.attempt >= 1) {
             if (retryBase == null) {
                 // 压缩中的重试：基础文案取压缩固定文案（否则显示成普通加载文案，用户不知在压缩）
                 retryBase = compressing ? COMPRESSING_TEXT : pickText(rnd);
                 if (rotateText != null) rotateText.stop();
             }
-            text.setText(retryText(p, retryBase));
+            renderText();
         } else {
             retryBase = null;
-            text.setText(displayText(compressing, pickText(rnd)));
+            renderText();
             startRotateText();
         }
     }
@@ -198,5 +239,6 @@ public class RunningIndicator extends HBox {
     private void stopAnimations() {
         if (spin != null) { spin.stop(); spin = null; }
         if (rotateText != null) { rotateText.stop(); rotateText = null; }
+        if (copyFeedback != null) { copyFeedback.stop(); copyFeedback = null; } // 隐藏时停反馈（防过期回调与引用泄漏）
     }
 }
