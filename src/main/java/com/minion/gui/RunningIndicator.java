@@ -230,7 +230,12 @@ public class RunningIndicator extends HBox {
     private void startRotateText() {
         if (compressing || rotateText != null && rotateText.getStatus() == Animation.Status.RUNNING) return;
         rotateText = new Timeline(new KeyFrame(Duration.millis(ROTATE_INTERVAL_MS),
-                e -> text.setText(displayText(compressing, pickText(rnd)))));
+                e -> {
+                    // 轮换 tick 走统一重绘口径（renderText），但重试文案/复制反馈优先、不抢占：
+                    // 重试态经 suspend/resume 可能重启轮换表，若直接 setText 会在 10s 后覆盖重试文案/「已复制 ✓」
+                    if (retryBase != null || copyFeedback != null) return;
+                    renderText();
+                }));
         rotateText.setCycleCount(Animation.INDEFINITE);
         rotateText.play();
     }

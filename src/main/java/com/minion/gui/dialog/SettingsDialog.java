@@ -36,6 +36,7 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -325,6 +326,7 @@ public class SettingsDialog {
                 if (failFull != null) {
                     meta.setCursor(Cursor.HAND);
                     meta.setOnMouseClicked(e -> {
+                        if (e.getButton() != MouseButton.PRIMARY) return; // 仅左键触发：右键/中键不复制、不弹反馈
                         ClipboardContent cc = new ClipboardContent();
                         cc.putString(failFull);
                         Clipboard.getSystemClipboard().setContent(cc);
