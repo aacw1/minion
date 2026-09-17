@@ -10,8 +10,10 @@ import com.minion.gui.icon.IconFactory;
 import com.minion.gui.plugin.ToolsPane;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
+import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
+import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -32,6 +34,8 @@ import javafx.scene.control.TextInputControl;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -41,6 +45,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Window;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +55,10 @@ import java.util.Set;
 
 /** 设置窗（右上角 ⚙）：左列导航 基础设置 / 模型 / MCP / 工具 / 关于，右侧内容切换；模型操作后触发 applyModelChanged 实时生效 */
 public class SettingsDialog {
+
+    /** 点击复制后的反馈文案与显示时长（ms） */
+    private static final String COPIED_TEXT = "已复制 ✓";
+    private static final long COPY_FEEDBACK_MS = 1500;
 
     public static void show(Window owner, final ModelManager models,
                             final SessionManager manager, final Config config,
@@ -286,8 +295,11 @@ public class SettingsDialog {
         }
         final ListView<McpServer> list = new ListView<McpServer>();
         list.setCellFactory(lv -> new ListCell<McpServer>() {
+            /** 复制反馈计时（cell 重建时停旧计时，防过期回调） */
+            private PauseTransition copyReset;
             @Override protected void updateItem(McpServer item, boolean empty) {
                 super.updateItem(item, empty);
+                if (copyReset != null) { copyReset.stop(); copyReset = null; }
                 if (empty || item == null) {
                     setGraphic(null);
                     return;
@@ -307,6 +319,22 @@ public class SettingsDialog {
                             : item.state == McpServer.State.CONNECTING ? "  连接中…" : "");
                 Label meta = new Label(metaText);
                 meta.getStyleClass().add("msg-thinking");
+                // 失败原因展示被 shorten 截断（40 字符）：点击文字复制完整原因（含多行），
+                // 短暂「已复制 ✓」后恢复（完整原文仅供复制，展示仍截断防爆宽）
+                final String failFull = copyableFailReason(item);
+                if (failFull != null) {
+                    meta.setCursor(Cursor.HAND);
+                    meta.setOnMouseClicked(e -> {
+                        ClipboardContent cc = new ClipboardContent();
+                        cc.putString(failFull);
+                        Clipboard.getSystemClipboard().setContent(cc);
+                        meta.setText(COPIED_TEXT);
+                        if (copyReset != null) copyReset.stop();
+                        copyReset = new PauseTransition(Duration.millis(COPY_FEEDBACK_MS));
+                        copyReset.setOnFinished(ev -> meta.setText(metaText));
+                        copyReset.play();
+                    });
+                }
                 CheckBox on = new CheckBox("启用");
                 on.setSelected(item.enabled);
                 on.selectedProperty().addListener((obs, ov, nv) -> {
@@ -599,6 +627,14 @@ public class SettingsDialog {
         String first = i < 0 ? s : s.substring(0, i);
         first = first.trim();   // 首行去空白（stdio stderr / 多行异常常带换行缩进）
         return first.length() > 40 ? first.substring(0, 40) + "…" : first;
+    }
+
+    /** 失败原因可复制文本：仅 FAILED 态且原因非空白 → 返回完整原文（不截断，
+     *  与列表展示的 shorten 截断口径区分）；其余 → null（不可点复制） */
+    static String copyableFailReason(McpServer s) {
+        if (s == null || s.state != McpServer.State.FAILED) return null;
+        if (s.failReason == null || s.failReason.trim().isEmpty()) return null;
+        return s.failReason;
     }
 
     // ===== 基础设置页 =====

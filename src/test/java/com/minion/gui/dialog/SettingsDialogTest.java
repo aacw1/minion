@@ -1,5 +1,6 @@
 package com.minion.gui.dialog;
 
+import com.minion.core.mcp.McpServer;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -39,6 +40,24 @@ public class SettingsDialogTest {
         String s = SettingsDialog.shorten(longLine + "\nsecond");
         assertEquals(41, s.length()); // 40 字符 + …
         assertTrue(s.endsWith("…"));
+    }
+
+    /** 失败原因复制：FAILED 态返回完整原文（多行不截断）；非失败态/null/空白 → null（不可点） */
+    @Test
+    public void copyableFailReason_fullTextOrNull() {
+        McpServer s = new McpServer();
+        s.state = McpServer.State.FAILED;
+        s.failReason = "第一行失败原因超过四十个字符会被 shorten 截断……\nexception: boom\n\tat x.y.Z.main(Z.java:1)";
+        assertEquals(s.failReason, SettingsDialog.copyableFailReason(s));
+        assertTrue("复制为完整原文（不截断）", SettingsDialog.copyableFailReason(s).length() > 40);
+        assertNull(SettingsDialog.copyableFailReason(null));
+        s.state = McpServer.State.CONNECTED; // 非失败态：即使 failReason 残留也不可点
+        assertNull(SettingsDialog.copyableFailReason(s));
+        s.state = McpServer.State.FAILED;
+        s.failReason = null;
+        assertNull(SettingsDialog.copyableFailReason(s));
+        s.failReason = "   \n\t ";
+        assertNull(SettingsDialog.copyableFailReason(s));
     }
 
     // ===== 模型页激活判定（纯逻辑，无 JavaFX） =====
