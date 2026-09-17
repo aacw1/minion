@@ -68,6 +68,7 @@ public class SystemPromptBuilder {
             sb.append("\n\n=== 当前工作目录 ===\n")
               .append("工作目录: ").append(workDir).append("\n")
               .append("- 工具的相对路径与 Bash 命令均以工作目录为基准；不要猜测或编造其他项目路径。\n")
+              .append("- 搜索类工具的 pattern 可写相对工作目录的形式（如 src/**/*.java），也支持绝对路径。\n")
               .append("- 不确定当前目录时，用 Bash 执行 pwd 查看。\n")
               .append("- 工作目录之外：读取需经系统授权确认；修改/新建将被拒绝。确需访问外部路径时说明用途，等待系统确认。\n");
             if (tmpDir != null && !tmpDir.trim().isEmpty()) {

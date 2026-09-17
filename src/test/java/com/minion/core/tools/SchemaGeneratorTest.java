@@ -19,4 +19,16 @@ public class SchemaGeneratorTest {
         assertEquals(1, s.getAsJsonArray("required").size());
         assertEquals("a", s.getAsJsonArray("required").get(0).getAsString());
     }
+
+    /** 带属性描述的重载：{名称, 描述} 二元组；描述为空时不输出该字段 */
+    @Test
+    public void objectSchema_withPropertyDescriptions() {
+        JsonObject s = SchemaGenerator.objectSchema("带描述", new String[][]{
+                {"a", "描述A"}, {"b", null}}, new String[]{"a"});
+        JsonObject props = s.getAsJsonObject("properties");
+        assertEquals("string", props.getAsJsonObject("a").get("type").getAsString());
+        assertEquals("描述A", props.getAsJsonObject("a").get("description").getAsString());
+        assertFalse(props.getAsJsonObject("b").has("description"));
+        assertEquals("a", s.getAsJsonArray("required").get(0).getAsString());
+    }
 }

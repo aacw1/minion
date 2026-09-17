@@ -411,6 +411,72 @@ public class FileToolsTest {
         assertTrue(r.output.contains("路径不存在"));
     }
 
+    // ---- Glob 匹配基准：pattern 绝对路径 / 相对工作空间 / 双星零层 ----
+
+    @Test
+    public void glob_patternAbsolutePath_insideWork_finds() throws Exception {
+        Files.createDirectories(p("src/sub"));
+        Files.write(p("src/sub/A.java"), "x".getBytes(StandardCharsets.UTF_8));
+        String abs = p("src").toAbsolutePath().toString().replace('\\', '/');
+        ToolResult r = glob.execute(args("{\"pattern\":\"" + abs + "/**/*.java\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue(r.output, r.output.contains("src/sub/A.java")); // 输出相对 cwd，Read 可直接解析
+    }
+
+    @Test
+    public void glob_patternRelativeCwd_withAbsoluteSubdirPath_finds() throws Exception {
+        Files.createDirectories(p("src/sub"));
+        Files.write(p("src/sub/A.java"), "x".getBytes(StandardCharsets.UTF_8));
+        String abs = p("src").toAbsolutePath().toString().replace('\\', '/');
+        ToolResult r = glob.execute(args("{\"pattern\":\"src/**/*.java\",\"path\":\"" + abs + "\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue(r.output, r.output.contains("src/sub/A.java"));
+    }
+
+    @Test
+    public void glob_doubleStar_matchesTopLevelAndDirectChild() throws Exception {
+        Files.write(p("Top.java"), "x".getBytes(StandardCharsets.UTF_8));
+        Files.createDirectories(p("src"));
+        Files.write(p("src/Direct.java"), "y".getBytes(StandardCharsets.UTF_8));
+        Files.createDirectories(p("src/sub"));
+        Files.write(p("src/sub/Deep.java"), "z".getBytes(StandardCharsets.UTF_8));
+
+        ToolResult top = glob.execute(args("{\"pattern\":\"**/*.java\"}"));
+        assertTrue(top.output, top.output.contains("Top.java"));      // 零层：根下直接文件
+
+        ToolResult zero = glob.execute(args("{\"pattern\":\"src/**/*.java\"}"));
+        assertTrue(zero.output, zero.output.contains("src/Direct.java")); // 零层：一级直接子文件
+        assertTrue(zero.output, zero.output.contains("src/sub/Deep.java"));
+    }
+
+    @Test
+    public void glob_patternBackslash_normalizedOnWindows() throws Exception {
+        org.junit.Assume.assumeTrue(File.separatorChar == '\\');
+        Files.createDirectories(p("src"));
+        Files.write(p("src/A.java"), "x".getBytes(StandardCharsets.UTF_8));
+        String pat = work + "\\src\\*.java";
+        ToolResult r = glob.execute(args("{\"pattern\":\"" + pat.replace("\\", "\\\\") + "\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue(r.output, r.output.contains("src/A.java"));
+    }
+
+    @Test
+    public void glob_notFound_hintContainsSearchRootAndHint() throws Exception {
+        ToolResult r = glob.execute(args("{\"pattern\":\"**/*.nope\"}"));
+        assertTrue(r.output, r.ok);
+        assertTrue(r.output, r.output.contains("未找到匹配文件"));
+        assertTrue(r.output, r.output.contains("搜索根"));
+        assertTrue(r.output, r.output.contains("相对工作空间"));
+    }
+
+    @Test
+    public void glob_schema_hasPatternAndPathDescriptions() {
+        JsonObject props = glob.schema().getAsJsonObject("properties");
+        assertTrue(props.getAsJsonObject("pattern").has("description"));
+        assertTrue(props.getAsJsonObject("path").has("description"));
+        assertTrue(glob.description().contains("绝对路径")); // 描述写清 pattern 基准（提示词层）
+    }
+
     // ---- 「有权限路径」文件不存在：不加越界拒绝提示（放行目录未创建 / 开关开 / 会话放行） ----
 
     /** 会话临时目录尚未创建时，读其下不存在文件应报纯「文件不存在」，不得误报越界拒绝 */
