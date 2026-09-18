@@ -103,14 +103,12 @@ public class ChatViewStreamBufferTest {
         assertFalse(ChatView.sameStream(ChatView.StreamKind.NONE, 1, ChatView.StreamKind.NONE, 1));
     }
 
-    /** 标签与配色：子代理事件用【子代理N】+ log-subagent，主代理保持原标签 */
+    /** 标签：子代理事件用【子代理N】，主代理保持原标签（配色与主代理同类型一致，无独立映射函数） */
     @Test
-    public void tagAndColor_subAgentVsMain() {
+    public void tag_subAgentVsMain() {
         assertEquals("【思考】", ChatView.tagOf(0, "【思考】"));
         assertEquals("【子代理2】", ChatView.tagOf(2, "【思考】"));
         assertEquals("【子代理12】", ChatView.tagOf(12, "【回复】"));
-        assertEquals("log-reply", ChatView.colorOf(0, "log-reply"));
-        assertEquals("log-subagent", ChatView.colorOf(3, "log-reply"));
     }
 
     /** 清空（删会话）后所有子代理缓冲一并释放 */

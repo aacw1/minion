@@ -27,7 +27,8 @@ import java.util.function.DoubleConsumer;
  * 段内原生拖选/Ctrl+C/右键复制。
  * 流式身份 = (StreamKind, subAgentId)：THINK/REPLY 按活跃段引用就地更新正文（并发交错不串台、不起重复段），
  * NONE 静态行（输入/工具/系统等）永不参与就地更新；
- * 按 subAgentId 隔离——并发子代理与主代理的思考/正文交错时不串台（子代理段带【子代理N】标签 + log-subagent 配色）。
+ * 按 subAgentId 隔离——并发子代理与主代理的思考/正文交错时不串台（子代理段带【子代理N】标签，
+ * 标签与正文配色按消息类型与主代理一致；青色 log-subagent 仅用于子任务开始/完成边界行）。
  */
 public class ChatView extends VBox {
 
@@ -74,11 +75,6 @@ public class ChatView extends VBox {
     /** 子代理事件标签：0=主代理保持原标签；>0=【子代理N】（与主代理输出区分，编号=会话内派发序号） */
     static String tagOf(int subAgentId, String mainTag) {
         return subAgentId > 0 ? "【子代理" + subAgentId + "】" : mainTag;
-    }
-
-    /** 子代理事件配色类（theme.css .log-subagent；主代理保持原色） */
-    static String colorOf(int subAgentId, String mainColor) {
-        return subAgentId > 0 ? "log-subagent" : mainColor;
     }
 
     /** 流式段身份判等（纯逻辑供单测）：kind 相同且同属一个主人（subAgentId）才就地更新；
@@ -203,11 +199,11 @@ public class ChatView extends VBox {
         if (e.kind != EventList.Kind.THINKING) finalizeThinking(id);
         switch (e.kind) {
             case USER_MESSAGE:
-                append(tagOf(id, "【输入】"), colorOf(id, "log-input"), e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             case USER_SUPPLEMENT:
-                append(tagOf(id, "【输入】"), colorOf(id, "log-input"), e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
                 break;
             case THINKING: {
                 // 空思考增量不渲染（与 CONTENT 分支空防御对称）：qwen 流式每 chunk 带
@@ -216,7 +212,7 @@ public class ChatView extends VBox {
                 if (e.text == null || e.text.isEmpty()) break;
                 StreamBuffer buf = streams.of(id);
                 buf.onThinking(e.text);
-                stream(tagOf(id, "【思考】"), colorOf(id, "log-think"), buf.thinking(), StreamKind.THINK, id);
+                stream(tagOf(id, "【思考】"), "log-think", buf.thinking(), StreamKind.THINK, id);
                 break;
             }
             case CONTENT: {
@@ -227,20 +223,20 @@ public class ChatView extends VBox {
                 // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
                 // 不打印【回复】标签——空标签+空白正文的"幽灵段"；缓冲只追加不会中途变空
                 if (plain.trim().isEmpty()) break;
-                stream(tagOf(id, "【回复】"), colorOf(id, "log-reply"), plain, StreamKind.REPLY, id);
+                stream(tagOf(id, "【回复】"), "log-reply", plain, StreamKind.REPLY, id);
                 break;
             }
             case TOOL_CALL: {
                 if ("AskUserQuestion".equals(e.text)) {
                     // 提问段无视长度阈值恒展开（长选项被折叠 = 「看不见提问内容」的第二类成因）
                     String askBody = askQuestionOf(e.data);
-                    appendCollapsible(tagOf(id, "【工具】"), colorOf(id, "log-tool"),
+                    appendCollapsible(tagOf(id, "【工具】"), "log-tool",
                             statusSummary(IconFactory.help(), askSummaryText(e.data)),
                             askBody, StreamKind.NONE, askExpanded(askBody), id);
                     // 提问必须可见：模型在等回答，滚出视口会静默卡住整个流程
                     if (scrollBottomRequest != null) scrollBottomRequest.run();
                 } else {
-                    appendCollapsible(tagOf(id, "【工具】"), colorOf(id, "log-tool"),
+                    appendCollapsible(tagOf(id, "【工具】"), "log-tool",
                             toolSummary(toolCallSummary(e.text, e.data)), toolCallBody(e.text, e.data), id);
                 }
                 break;
@@ -249,22 +245,22 @@ public class ChatView extends VBox {
                 String data = e.data == null ? "" : e.data.toString();
                 boolean ok = data.startsWith("ok");
                 appendCollapsible(tagOf(id, ok ? "【工具】" : "【系统】"),
-                        colorOf(id, ok ? "log-tool" : "log-error"),
+                        ok ? "log-tool" : "log-error",
                         statusSummary(ok ? IconFactory.success() : IconFactory.error(),
                                 e.text + (ok ? " 成功" : " 失败")),
                         toolResultBody(e.text, data), id);
                 break;
             }
             case ERROR:
-                append(tagOf(id, "【系统】"), colorOf(id, "log-error"), e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-error", e.text, StreamKind.NONE, id);
                 break;
             case WARNING:
-                append(tagOf(id, "【系统】"), colorOf(id, "log-warn"), e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-warn", e.text, StreamKind.NONE, id);
                 break;
             case STATS: {
                 // 统计行 "⏱ " 前缀由 GUI 剥离展示（core StatsLine 保持原样；不匹配则原样展示）
                 String stats = e.text != null && e.text.startsWith("⏱ ") ? e.text.substring(2) : e.text;
-                appendCollapsible(tagOf(id, "【系统】"), colorOf(id, "log-sys"),
+                appendCollapsible(tagOf(id, "【系统】"), "log-sys",
                         statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE, id);
                 // 轮次结束（AgentLoop 末尾发统计行）：强制回到底部，让回复末尾与统计行可见
                 if (scrollBottomRequest != null) scrollBottomRequest.run();
@@ -276,7 +272,7 @@ public class ChatView extends VBox {
                 break;
             }
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
-                append(tagOf(id, "【系统】"), colorOf(id, "log-sys"), e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-sys", e.text, StreamKind.NONE, id);
                 break;
             case SUB_AGENT_START:
                 appendCollapsible(tagOf(id, "【工具】"), "log-subagent",
