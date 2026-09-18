@@ -9,11 +9,16 @@ import java.util.Set;
  *  读取类只截断 + 分页续读提示（**不落盘**，杜绝"读→落盘→再读→再落盘"套娃循环）。
  *  与 BashTool/GrepTool/MarkdownTable 的工具内预算同口径（30000 字符）；工具内预算未覆盖的通道
  *  （Read 全量读回、MCP/浏览器等第三方输出）由本闸门兜底——工具层是各自防线，本类是统一防线。
+ *  Read 放宽到 READ_FULL_MAX_CHARS（配合 ReadTool full=true 一次读回大字段原文），
+ *  Grep/Glob 与生产类维持 MAX_CHARS。
  *  只作用于"写入历史"的字符串：GUI 展示（ui.onToolResult）仍用原始结果，行为不变。 */
 public final class ToolOutputGate {
 
     /** 单条工具结果入历史字符上限（与 BashTool/GrepTool/MarkdownTable 同口径） */
     public static final int MAX_CHARS = 30000;
+
+    /** Read 的放宽上限：full=true 时可一次读回大字段原文（10 万字符 ≈ 2.5 万 token，ASCII 口径） */
+    public static final int READ_FULL_MAX_CHARS = 100000;
 
     /** 读取类工具：超限不落盘——它们的输出本身就是"可再读"的内容，
      *  落盘会形成"读→落盘→再读"的新落盘来源，套娃无穷；改为原地分页续读 */
@@ -27,10 +32,11 @@ public final class ToolOutputGate {
      *  @param output 工具输出原文（空输出占位逻辑在调用方，先于本闸门）
      *  @param tmpDir 会话临时目录（落盘位置）；null/落盘失败时降级为纯截断提示 */
     public static String apply(String toolName, String output, Path tmpDir) {
-        if (output == null || output.length() <= MAX_CHARS) return output;
-        String head = truncateAt(output, MAX_CHARS);
+        int max = "Read".equals(toolName) ? READ_FULL_MAX_CHARS : MAX_CHARS;
+        if (output == null || output.length() <= max) return output;
+        String head = truncateAt(output, max);
         if (READ_TOOLS.contains(toolName)) {
-            return head + "\n\n…（内容超单次上限（" + MAX_CHARS + " 字符）已截断，原内容共 "
+            return head + "\n\n…（内容超单次上限（" + max + " 字符）已截断，原内容共 "
                     + output.length() + " 字符；请缩小范围或用 offset/limit 分页继续读取）";
         }
         Path dumped = OutputDump.write(tmpDir, "tool-" + safeName(toolName), output);

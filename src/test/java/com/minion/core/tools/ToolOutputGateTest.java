@@ -59,19 +59,20 @@ public class ToolOutputGateTest {
         assertTrue("提示可用 Read 分页查看", gated.contains("Read 分页查看"));
     }
 
-    /** 读取类超限：只截断 + 分页续读提示，绝不落盘（防"读→落盘→再读"套娃） */
+    /** 读取类超限：只截断 + 分页续读提示，绝不落盘（防"读→落盘→再读"套娃）；
+     *  Read 已放宽到 READ_FULL_MAX_CHARS，此处用 Grep/Glob 覆盖 30000 口径 */
     @Test
     public void apply_readerOverLimit_noDumpAndPagingHint() throws Exception {
         Path dir = tmp.newFolder("tmp").toPath();
         String out = repeat('x', ToolOutputGate.MAX_CHARS + 5000);
-        String gated = ToolOutputGate.apply("Read", out, dir);
+        assertSame("Read 放宽后此长度不再截断", out, ToolOutputGate.apply("Read", out, dir));
+        String gated = ToolOutputGate.apply("Grep", out, dir);
         assertTrue(gated.startsWith(repeat('x', ToolOutputGate.MAX_CHARS)));
         assertTrue("提示分页续读", gated.contains("offset/limit"));
         assertFalse("不得落盘", gated.contains("已落盘"));
         assertTrue("目录中不得产生文件", filesIn(dir).isEmpty());
-        // Grep/Glob 同属读取类
-        assertTrue(filesIn(dir).isEmpty());
-        assertTrue(ToolOutputGate.apply("Grep", out, dir).contains("offset/limit"));
+        // Glob 同属读取类
+        assertTrue(ToolOutputGate.apply("Glob", out, dir).contains("offset/limit"));
         assertTrue(filesIn(dir).isEmpty());
     }
 
@@ -84,15 +85,34 @@ public class ToolOutputGateTest {
         assertTrue("降级提示未落盘", gated.contains("未能落盘"));
     }
 
-    /** 截断点落在代理对（emoji）中间：回退一位，不产生孤立高代理 */
+    /** 截断点落在代理对（emoji）中间：回退一位，不产生孤立高代理（Read 放宽上限与生产类 30000 口径各测一条） */
     @Test
     public void apply_surrogatePairBoundary_trimsHighSurrogate() {
         String emoji = "\uD83D\uDE00"; // U+1F600
-        String out = repeat('a', ToolOutputGate.MAX_CHARS - 1) + emoji + repeat('b', 100);
+        int max = ToolOutputGate.READ_FULL_MAX_CHARS;
+        String out = repeat('a', max - 1) + emoji + repeat('b', 100);
         String gated = ToolOutputGate.apply("Read", out, null);
         String head = gated.substring(0, gated.indexOf("\n\n…（"));
-        assertEquals("原内容共 " + out.length() + " 字符", ToolOutputGate.MAX_CHARS - 1, head.length());
+        assertEquals("原内容共 " + out.length() + " 字符", max - 1, head.length());
         assertFalse("不得以孤立高代理结尾", Character.isHighSurrogate(head.charAt(head.length() - 1)));
+        // 生产类仍按 MAX_CHARS 截断（落盘失败降级路径，不落盘）
+        String outBash = repeat('a', ToolOutputGate.MAX_CHARS - 1) + emoji + repeat('b', 100);
+        String gatedBash = ToolOutputGate.apply("Bash", outBash, null);
+        String headBash = gatedBash.substring(0, gatedBash.indexOf("\n\n…（"));
+        assertEquals(ToolOutputGate.MAX_CHARS - 1, headBash.length());
+    }
+
+    /** Read 放宽到 100000：100000 原样、100001 截断且不落盘（Read full 依赖） */
+    @Test
+    public void apply_readRelaxedTo100k_noDump() throws Exception {
+        Path dir = tmp.newFolder("readfull").toPath();
+        String out = repeat('a', ToolOutputGate.READ_FULL_MAX_CHARS);
+        assertSame(out, ToolOutputGate.apply("Read", out, dir));
+        String over = repeat('a', ToolOutputGate.READ_FULL_MAX_CHARS + 1);
+        String gated = ToolOutputGate.apply("Read", over, dir);
+        assertTrue(gated.startsWith(repeat('a', ToolOutputGate.READ_FULL_MAX_CHARS)));
+        assertTrue(gated.contains("单次上限（" + ToolOutputGate.READ_FULL_MAX_CHARS + " 字符）"));
+        assertEquals("读取类不落盘", 0, filesIn(dir).size());
     }
 
     /** 工具名含非法文件名字符：落盘前缀清洗后仍可落盘 */

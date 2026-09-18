@@ -14,6 +14,7 @@ import com.minion.core.llm.Usage;
 import com.minion.core.skills.Skill;
 import com.minion.core.storage.SessionStore;
 import com.minion.core.tools.Tool;
+import com.minion.core.tools.ToolOutputGate;
 import com.minion.core.tools.ToolRegistry;
 import com.minion.core.tools.ToolResult;
 import com.minion.core.tools.Workspace;
@@ -175,7 +176,11 @@ public class AgentLoopTest {
         loop.setSessionTmpDir(sessionTmp.toString());
         loop.runUserTurn("读大文件");
         Message toolMsg = loop.messages().get(2);
-        assertTrue(toolMsg.content.length() < BigOutputReadTool.SIZE);
+        // 正文截断到 Read 放宽上限 + 分页提示（上限+提示总长已超过 SIZE，不能再按"总长 < SIZE"断言）
+        StringBuilder head = new StringBuilder(ToolOutputGate.READ_FULL_MAX_CHARS);
+        for (int i = 0; i < ToolOutputGate.READ_FULL_MAX_CHARS; i++) head.append('y');
+        assertTrue("正文截断到放宽上限", toolMsg.content.startsWith(head.toString()));
+        assertTrue("提示已截断", toolMsg.content.contains("单次上限（" + ToolOutputGate.READ_FULL_MAX_CHARS + " 字符）"));
         assertFalse("读取类不落盘: " + toolMsg.content, toolMsg.content.contains("已落盘"));
         assertFalse("不应产生落盘文件", Files.exists(sessionTmp)
                 && sessionTmp.toFile().list() != null && sessionTmp.toFile().list().length > 0);
@@ -195,9 +200,9 @@ public class AgentLoopTest {
         }
     }
 
-    /** 大输出测试工具（读取类白名单：只截断不落盘） */
+    /** 大输出测试工具（读取类白名单：只截断不落盘）——尺寸跟着 Read 放宽上限走（+1 触发截断） */
     static final class BigOutputReadTool implements Tool {
-        static final int SIZE = 40000;
+        static final int SIZE = ToolOutputGate.READ_FULL_MAX_CHARS + 1;
 
         @Override public String name() { return "Read"; }
         @Override public String description() { return "读取类工具（测试用，名字命中闸门白名单）"; }
