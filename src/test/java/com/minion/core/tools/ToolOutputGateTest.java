@@ -124,4 +124,17 @@ public class ToolOutputGateTest {
         assertEquals(1, filesIn(dir).size());
         assertTrue(gated.contains(filesIn(dir).get(0).getFileName().toString()));
     }
+
+    /** 常量关系守卫（修复波 Important 1）：Read full 的输出上限必须不超本闸门对 Read 的放宽上限，
+     *  否则工具侧放开会被闸门砍回（offset 精确续读提示被换成通用分页提示，模型可能原样重发）。
+     *  ReadTool 侧另有 FULL_TAIL_RESERVE 预留尾提示空间，保证「内容 + 尾提示」逐字通过本闸门。 */
+    @Test
+    public void readFullLimit_mustNotExceedGateLimit() {
+        assertTrue("ReadTool.FULL_MAX_OUTPUT_CHARS=" + ReadTool.FULL_MAX_OUTPUT_CHARS
+                        + " 必须 ≤ ToolOutputGate.READ_FULL_MAX_CHARS=" + ToolOutputGate.READ_FULL_MAX_CHARS,
+                ReadTool.FULL_MAX_OUTPUT_CHARS <= ToolOutputGate.READ_FULL_MAX_CHARS);
+        assertTrue("尾提示预留必须为正", ReadTool.FULL_TAIL_RESERVE > 0);
+        assertTrue("预留后正文空间仍须显著高于默认口径",
+                ReadTool.FULL_MAX_OUTPUT_CHARS - ReadTool.FULL_TAIL_RESERVE > ReadTool.MAX_OUTPUT_CHARS);
+    }
 }

@@ -141,7 +141,8 @@ public class FileToolsTest {
         // 全文 106890 字符：须放开默认 2000 行窗口（2000 行仅 34890 字符）才能触及 full 的 100000 字符上限
         ToolResult r = read.execute(args("{\"path\":\"hugefield.txt\",\"limit\":6000,\"full\":true}"));
         assertTrue(r.output, r.ok);
-        assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("受 full 上限约束（含全部提示，实际 " + r.output.length() + "）",
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
         assertTrue("确为 full 生效（超出默认上限）", r.output.length() > ReadTool.MAX_OUTPUT_CHARS + 200);
         assertTrue("截断提示", r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
     }
@@ -154,7 +155,8 @@ public class FileToolsTest {
         Files.write(p("overfull.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
         ToolResult r = read.execute(args("{\"path\":\"overfull.txt\",\"full\":true}"));
         assertTrue(r.output, r.ok);
-        assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("受 full 上限约束（含全部提示，实际 " + r.output.length() + "）",
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
         assertTrue("该行无法续读、提示交 Bash",
                 r.output.contains("无法用 offset 续读") && r.output.contains("请用 Bash 处理"));
         assertFalse("未走字符上限截断分支（提示行特征）", r.output.contains("单次输出上限"));
@@ -169,7 +171,8 @@ public class FileToolsTest {
         Files.write(p("exact-limit.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
         ToolResult r = read.execute(args("{\"path\":\"exact-limit.txt\",\"full\":true}"));
         assertTrue(r.output, r.ok);
-        assertTrue("输出受上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("输出受上限约束（含全部提示，实际 " + r.output.length() + "）",
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
         assertTrue("必须含真实内容（非空输出），实际输出: " + r.output, r.output.startsWith("qqqq"));
         assertTrue("须指引交 Bash", r.output.contains("请用 Bash 处理"));
         assertFalse("不得 offset 自指（offset 不推进）", r.output.contains("请用 offset="));
@@ -183,10 +186,81 @@ public class FileToolsTest {
         Files.write(p("exact-limit-num.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
         ToolResult r = read.execute(args("{\"path\":\"exact-limit-num.txt\",\"lineNumbers\":true,\"full\":true}"));
         assertTrue(r.output, r.ok);
-        assertTrue("输出受上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("输出受上限约束（含全部提示，实际 " + r.output.length() + "）",
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
         assertTrue("必须含真实内容（含行号前缀）", r.output.startsWith("1: wwww"));
         assertTrue("须指引交 Bash", r.output.contains("请用 Bash 处理"));
         assertFalse("不得 offset 自指", r.output.contains("请用 offset="));
+    }
+
+    // ---- 修复波：full 输出与入历史闸门（100000）之间的缓冲 ----
+
+    /** 组合断言（修复波 Important 1）：full 输出「内容接近上限 + charLimited 尾提示」总长 ≤
+     *  FULL_MAX_OUTPUT_CHARS，过 ToolOutputGate.apply("Read", out) 后逐字不变（不被换成通用分页提示，
+     *  否则模型可能原样重发吃 10 万字符）且不落盘 */
+    @Test
+    public void read_fullOutputWithTailHint_passesGateVerbatimWithoutDump() throws Exception {
+        StringBuilder src = new StringBuilder();
+        for (int i = 0; i < 6000; i++) {
+            src.append("行").append(i);
+            for (int j = 0; j < 12; j++) src.append('y');
+            src.append('\n');
+        }
+        Files.write(p("gate-full.txt"), src.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"gate-full.txt\",\"limit\":6000,\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("须触发 charLimited 的 offset 精确续读尾提示",
+                r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
+        assertTrue("内容 + 全部提示总长 ≤ " + ReadTool.FULL_MAX_OUTPUT_CHARS + "，实际 " + r.output.length(),
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
+        assertSame("闸门须逐字放行（尾提示不被替换）",
+                r.output, ToolOutputGate.apply("Read", r.output, tmpDir));
+        assertTrue("读取类不得落盘", filesIn(tmpDir).isEmpty());
+    }
+
+    /** 单行超 full 上限且后面还有行：兜底路径（首行即装不下）同样总长 ≤ FULL_MAX_OUTPUT_CHARS、
+     *  含 Bash 指引，且过闸门逐字不变（修复波 Important 1 的边界） */
+    @Test
+    public void read_fullOverLongLineThenMoreLines_passesGateVerbatim() throws Exception {
+        StringBuilder src = new StringBuilder();
+        for (int i = 0; i < ReadTool.FULL_MAX_OUTPUT_CHARS + 1000; i++) src.append('m');
+        src.append("\n后续行\n");
+        Files.write(p("gate-full-over.txt"), src.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"gate-full-over.txt\",\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("必须含真实内容（非零输出）", r.output.startsWith("mmmm"));
+        assertTrue("该行无法续读、提示交 Bash", r.output.contains("请用 Bash 处理"));
+        assertTrue("总长 ≤ " + ReadTool.FULL_MAX_OUTPUT_CHARS + "，实际 " + r.output.length(),
+                r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS);
+        assertSame(ToolOutputGate.apply("Read", r.output, tmpDir), r.output);
+        assertTrue(filesIn(tmpDir).isEmpty());
+    }
+
+    /** schema 必须声明 full 布尔开关（修复波 Important 3：现 6 条 full 用例全绕过 schema，
+     *  schema 被重构时 full 会静默失效——仿 DbToolTest.schemaDeclaresFullParameter 写法） */
+    @Test
+    public void read_schemaDeclaresFullBoolean() {
+        JsonObject props = read.schema().getAsJsonObject("properties");
+        assertTrue("full 必须声明", props.has("full"));
+        JsonObject full = props.getAsJsonObject("full");
+        assertEquals("full 必须是布尔类型，模型才会当开关用", "boolean", full.get("type").getAsString());
+        String desc = full.get("description").getAsString();
+        assertTrue(desc, desc.contains("整段") || desc.contains("大字段"));
+        assertTrue(desc, desc.contains(String.valueOf(ReadTool.FULL_MAX_OUTPUT_CHARS)));
+        assertTrue("工具 description 也须说明 full=true", read.description().contains("full=true"));
+    }
+
+    /** 目录内文件列举（测试辅助） */
+    private static java.util.List<Path> filesIn(Path dir) throws Exception {
+        java.util.List<Path> out = new java.util.ArrayList<Path>();
+        if (!Files.exists(dir)) return out;
+        java.nio.file.DirectoryStream<Path> ds = Files.newDirectoryStream(dir);
+        try {
+            for (Path f : ds) out.add(f);
+        } finally {
+            ds.close();
+        }
+        return out;
     }
 
     /** 工具提示行剥离（测试辅助）：提示统一以 "... " 开头 */
