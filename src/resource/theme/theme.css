@@ -270,7 +270,7 @@
 .log-think { -fx-text-fill: #8c8c8c; } /* 思考 灰白 */
 .log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
 .log-reply { -fx-text-fill: #bfbfbf; } /* 回复 白 */
-.log-subagent { -fx-text-fill: #4dd0e1; } /* 子代理 青（与主代理紫/蓝/灰区分） */
+.log-subagent { -fx-text-fill: #4dd0e1; } /* 子代理边界 青（仅「子任务开始/完成」行；子代理消息配色与主代理同类型一致） */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
 .log-sys { -fx-text-fill: #16C60C; }   /* 系统/占位 灰 */
@@ -283,7 +283,7 @@
 .log-body-input { -fx-text-fill: #8cbcff; } /* 输入正文 浅蓝 */
 .log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
 .log-body-reply { -fx-text-fill: #c9c9c9; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
-.log-body-subagent { -fx-text-fill: #b3e5fc; } /* 子代理正文 浅青 */
+.log-body-subagent { -fx-text-fill: #b3e5fc; } /* 子代理边界正文 浅青（仅子任务完成报告） */
 .log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
