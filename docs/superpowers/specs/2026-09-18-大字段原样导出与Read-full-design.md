@@ -1,7 +1,7 @@
 # 大字段原样导出与 Read full 设计
 
 日期：2026-09-18
-状态：待实施
+状态：已实施（2026-09-18，全量测试通过）
 
 ## 1. 背景与问题
 
@@ -90,7 +90,7 @@
 
 **抽出的纯函数（便于单测，无 JDBC）**：新增 `core/tools/db/DbExport.java`：
 
-- `long EXPORT_MIN_CHARS = 20000`
+- `int EXPORT_MIN_CHARS = 20000`
 - `boolean shouldExport(Object rawValue)` — 原始值长度判定
 - `String prefix(int rowNum, int colIdx, String colName)` — 文件名前缀（清洗 + 兜底）
 - `String hint(List<Entry> exports, int failed)` — 清单拼装（含 5 条折叠、失败降级文案）

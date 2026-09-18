@@ -88,8 +88,8 @@ com.minion
 - `PathLocks`：**进程内按规范化路径串行化**（256 条 striped `ReentrantLock` 按 `hashCode` 取模，可重入，避免 map 无限增长）。必要性：`AgentLoop:661-665` 把同轮 tool_call 先全部 submit 到池宽 4 的线程池再逐个收结果——**收集是顺序的、执行是并行的**，两次 Edit 的"读-改-写"交错会静默丢更新（实测 4 线程 60 轮 240 处改动仅生效 61 处）并产生残留尾部坏字节（事故 0x89 成因）。锁覆盖读-改-写全周期，且**必须在所有 `ConfirmGate` 调用之后获取**（确认会阻塞等用户点击，持锁等待会挂死其他写者）；`tryLock` 30s 超时返回「文件正被其他操作占用」失败结果。跨进程不在范围内（`FileLock` 与 `ATOMIC_MOVE` 冲突），由 `AtomicFiles` 保证不产坏文件
 - `ShellLocale`：bash 编码一次性探测（进程级缓存）——让「命令脚本编码 + 注入的 locale」与 bash 实际 charset 对上。候选序：不注入(UTF-8) → `LC_ALL/LANG=C.UTF-8` → `zh_CN.UTF-8` → 脚本改按 ANSI(GBK) 写；判定=探针 `ls 中文目录` exit==0 且输出含预期中文名；全失败/异常回退不注入（等价探测前行为）。修 Win7 老 msys 默认 ANSI 导致的中文路径乱码（BashTool 调用，`cmd /c` 分支不探测）
 - `OutputDump`：工具输出超限 / 子代理报告落盘公共类——写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级）、`tail` 供截断显示读取；**清理不做**：文件生命周期=会话生命周期（SessionManager 删会话递归删除；启动孤儿兜底 `SessionTempCleaner.cleanOrphans(sessionRoot, tmpRoot, 1h)`）
-- `ToolOutputGate`：**入历史闸门**（AgentLoop/SubAgentLoop 工具结果写历史前唯一入口）——单条上限 MAX_CHARS=30000（与 Bash/Grep/DB 同口径），未超原样返回；读取类白名单 {Read, Grep, Glob} 只截断 + 「请用 offset/limit 分页继续读取」**不落盘**（防"读→落盘→再读"套娃）；其余截断 + `OutputDump.write` 落盘 + 路径提示（落盘失败降级文案）；代理对边界安全（高代理回退一位）。GUI 展示不受影响（闸门只改入历史副本）
-- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**自限**：单次输出上限 MAX_OUTPUT_CHARS=30000（超出提示「已显示第 A-B 行（共 N 行），请用 offset=B 继续读取」）、单行上限 MAX_LINE_CHARS=2000（超长行截断并标注总长），default limit=2000 行。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
+- `ToolOutputGate`：**入历史闸门**（AgentLoop/SubAgentLoop 工具结果写历史前唯一入口）——单条上限 MAX_CHARS=30000（与 Bash/Grep/DB 同口径），未超原样返回；Read 放宽至 READ_FULL_MAX_CHARS=100000（仍不落盘）；Grep/Glob 与生产类维持 30000；读取类白名单 {Read, Grep, Glob} 只截断 + 「请用 offset/limit 分页继续读取」**不落盘**（防"读→落盘→再读"套娃）；其余截断 + `OutputDump.write` 落盘 + 路径提示（落盘失败降级文案）；代理对边界安全（高代理回退一位）。GUI 展示不受影响（闸门只改入历史副本）
+- `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**自限**：单次输出上限 MAX_OUTPUT_CHARS=30000（超出提示「已显示第 A-B 行（共 N 行），请用 offset=B 继续读取」）、单行上限 MAX_LINE_CHARS=2000（超长行截断并标注总长），default limit=2000 行；**`full=true`**：单次上限 FULL_MAX_OUTPUT_CHARS=100000、单行不截断（大字段原文读回）。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
 - `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `core/tools/db/` 子包：**只读数据库**（mysql/postgresql/oracle）。`SqlGuard` SQL 白名单（去前导注释、拒多语句/INTO OUTFILE/FOR UPDATE/LOCK IN SHARE MODE）；`DbExecutor`（新建连接即用即关、setReadOnly(true)、maxRows=100 探测截断、queryTimeout=300s、Oracle 表清单限定 getUserName()）；`DbTool` 三个工具实例（动态 description 带当前数据源与按类型的 action 能力提示）；`DataSourceConfig`/`DataSourceValidator`（标识名唯一、URL 须 `jdbc:` 前缀）；`DbType` 枚举（MySQL 8.0.33 / PostgreSQL 42.7.4 / Oracle 21 OJDBC 驱动，双保险显式 Class.forName）
@@ -203,6 +203,9 @@ com.minion
 | 数据库结果字符预算 DB_CHARS_BUDGET / 单格截断 CELL_MAX | 30000 / 120 | DbExecutor |
 | 工具结果入历史闸门 MAX_CHARS（读取类只截断不落盘） | 30000 | ToolOutputGate |
 | Read 单次输出上限 / 单行上限 | 30000 / 2000 | ReadTool |
+| 大字段原样导出阈值 EXPORT_MIN_CHARS / 清单折叠条数 | 20000 / 5 | DbExport |
+| Read full 单次输出上限 | 100000 | ReadTool |
+| 入历史闸门 Read 放宽上限 | 100000 | ToolOutputGate |
 | DB 工具结果超限落盘 tmpDir | `<jarDir>/.session/tmp/<sessionId>/db-*.md` | OutputDump |
 | 压缩保留区预算（=max×0.65×0.2）/ 保底组数 / 收益门槛 / 危险区 | 0.13×max（配比 0.2）/ 常态 4 组（危险区 1 组）/ 5%×max / 85%×max | ContextManager |
 

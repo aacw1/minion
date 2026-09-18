@@ -821,3 +821,26 @@ git commit -m "docs: 大字段原样导出与 Read full 实施记录与文档同
 - **Spec 覆盖**：设计 §4.1（导出/清单/降级）→ Task 1+3；§4.2（Read full）→ Task 4；§4.3（闸门）→ Task 5；§4.4（描述）→ Task 3+4；§5 测试计划 → Task 1-5 各步；§7 文档同步 → Task 6。无遗漏。
 - **占位符**：无 TBD/TODO；所有代码步骤含实际代码；Task 6 的 `<commit>` 为提交前需替换的明确占位（有替换指引）。
 - **类型一致性**：`DbExport.Entry/prefix/dump/hint/shouldExport`、`MarkdownTable.cell(v, cellMax, exported)`、`MarkdownTable.fit(display, complete, tmpDir, extraHint)`、`ReadTool.FULL_MAX_OUTPUT_CHARS`、`ToolOutputGate.READ_FULL_MAX_CHARS` 在 Task 1-5 中命名一致。
+
+---
+
+## 执行快照（2026-09-18）
+
+| Task | 完成提交 | 说明 |
+|---|---|---|
+| 1 DbExport | `a7b32b9` | 阈值/前缀/写盘/清单纯函数 + 5 用例 |
+| 2 MarkdownTable | `977c6b9` | cell exported 重载 + fit extraHint + 文案引导 full |
+| 3 DbExecutor/DbTool | `6e7aff4` | 接线 + description 引导 |
+| 4 ReadTool full | `c111a69` | 上限 100000、单行不截断 |
+| 5 ToolOutputGate | `c6d91a1` | Read 放宽 100000 |
+| 6 文档与回归 | 本次提交 | README/ARCHITECTURE/spec 状态 + `mvn test` 全绿 |
+
+执行期事实（如实记录简报与实际的差异，供后续参考）：
+
+- Task 2 的执行说明「等断言文案未被改动」与强制文案变更存在措辞矛盾，实际同步了 MarkdownTableTest 一条期望字符串（等强度，未弱化）。
+- Task 4 简报第 2 条用例数据不自洽（默认 limit 窗口仅 34890 字符，full 不会触发截断），实际改用 limit=6000；另追加了单行 >100000 的 Bash 提示用例（超简报范围，设计 4.2 要求）。
+- Task 4 fix 轮修复了「恰好 100000 字符单行 → 空输出 + offset=0 自指循环」（commit `c0e12aa`，补 2 用例）。
+- Task 5 的必要连带修改：ToolOutputGateTest 2 处 + AgentLoopTest 1 处既有断言按新口径更新（断言强度未降）。
+- 遗留（未修，另行处理）：Task 5 review Minor 1——ReadTool 尾提示可超 100000 被闸门替换。
+
+> Task 6 为本计划的收尾提交，hash 无法自指，故其行记「本次提交」；Task 1-5 为实际短 hash。
