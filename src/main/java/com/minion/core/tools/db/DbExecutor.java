@@ -70,7 +70,8 @@ public class DbExecutor {
     }
 
     /** 执行只读 SQL，结果渲染成 Markdown 表格；单元格被截断（超 cellMax）或总长超 30000 时，
-     *  整表**未截断全量**落盘并附路径；full=true 时单元格截断线放宽到 FULL_CELL_MAX */
+     *  整表**未截断全量**落盘并附路径；超过 {@link DbExport#EXPORT_MIN_CHARS} 字符的大字段
+     *  另存为**原样文件**（未转义、未截断）并在表尾给出导出清单；full=true 时单元格截断线放宽到 FULL_CELL_MAX */
     public ToolResult query(DataSourceConfig ds, DbType type, String sql, boolean full) {
         Opened opened = open(ds, type);
         if (opened.conn == null) return opened.error;
@@ -92,15 +93,21 @@ public class DbExecutor {
             int cellMax = full ? FULL_CELL_MAX : MarkdownTable.CELL_MAX;
             List<List<String>> rows = new ArrayList<List<String>>();      // 展示（单元格可能含截断标注）
             List<List<String>> fullRows = new ArrayList<List<String>>();  // 未截断全量（落盘口径）
+            List<DbExport.Entry> pending = new ArrayList<DbExport.Entry>();  // 待原样导出的大字段
             boolean truncated = false;
             while (rs.next()) {
                 if (rows.size() == MAX_ROWS) { truncated = true; break; }
                 List<String> row = new ArrayList<String>();
                 List<String> fullRow = new ArrayList<String>();
+                int rowNum = rows.size() + 1;   // 1-based，与清单/文件名一致
                 for (int i = 1; i <= cols; i++) {
                     Object v = rs.getObject(i);
-                    row.add(MarkdownTable.cell(v, cellMax));
+                    boolean exported = DbExport.shouldExport(v);
+                    row.add(MarkdownTable.cell(v, cellMax, exported));
                     fullRow.add(MarkdownTable.escape(v));
+                    if (exported) {
+                        pending.add(new DbExport.Entry(rowNum, i, names.get(i - 1), String.valueOf(v), null));
+                    }
                 }
                 rows.add(row);
                 fullRows.add(fullRow);
@@ -108,9 +115,10 @@ public class DbExecutor {
             long elapsed = System.currentTimeMillis() - t0;
             String head = MarkdownTable.header(ds.name, elapsed, rows.size(), truncated, MAX_ROWS);
             if (rows.isEmpty()) return ToolResult.success(head + "\n\n查询成功，0 行结果");
+            String exportHint = DbExport.dump(tmpDir, pending);   // 大字段原样导出（失败自动降级）
             return ToolResult.success(MarkdownTable.fit(
                     head + "\n\n" + MarkdownTable.render(names, rows),
-                    head + "\n\n" + MarkdownTable.render(names, fullRows), tmpDir));
+                    head + "\n\n" + MarkdownTable.render(names, fullRows), tmpDir, exportHint));
         } catch (SQLException e) {
             return ToolResult.error(sqlError(e));
         } finally {

@@ -67,6 +67,9 @@ public class DbTool implements Tool {
           .append("必须重发同一查询并设 full=true，并用 WHERE/LIMIT 把 SQL 限定到需要的行：")
           .append("full=true 时单元格上限 ").append(DbExecutor.FULL_CELL_MAX)
           .append(" 字符，单值查询可 inline 全文，超出自动落盘并附文件路径；")
+          .append("超过 ").append(DbExport.EXPORT_MIN_CHARS)
+          .append(" 字符的单元格会另存为原样文件（未转义、未截断）并在表尾给出导出清单：")
+          .append("需要解析/解码时优先用 Bash 在文件上做，需要整段读进上下文时用 Read full=true 一次读回；")
           .append("结果超过 ").append(MarkdownTable.CHAR_BUDGET)
           .append(" 字符会落盘并提示拆分——请避免一次拉取大量大字段（如整表 JSON 列），")
           .append("按需 WHERE/LIMIT 拆分查询");

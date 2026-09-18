@@ -253,4 +253,16 @@ public class DbToolTest {
         assertEquals(201, out.length());
         assertTrue(out.endsWith("…"));
     }
+
+    /** description 必须引导：大字段原样导出（未转义未截断）+ Read full=true 读回 */
+    @Test
+    public void descriptionMentionsRawExportAndReadFull() {
+        DbConfig c = new DbConfig();
+        c.dataSources.add(new DataSourceConfig("ds1", "jdbc:mysql://127.0.0.1:3306/db", "u", "p"));
+        c.current = "ds1";
+        DbTool t = new DbTool(DbType.MYSQL, c, (java.nio.file.Path) null);
+        String d = t.description();
+        assertTrue(d, d.contains("原样文件"));
+        assertTrue(d, d.contains("Read full=true"));
+    }
 }
