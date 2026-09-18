@@ -36,7 +36,7 @@
   - `public static String hint(List<Entry> written, int failed)`
   - `public static String dump(Path tmpDir, List<Entry> pending)` — 写盘全部 pending 条目并返回清单文案；无条目返回 `""`
 
-- [ ] **Step 1: 写失败测试** `src/test/java/com/minion/core/tools/db/DbExportTest.java`
+- [x] **Step 1: 写失败测试** `src/test/java/com/minion/core/tools/db/DbExportTest.java`
 
 ```java
 package com.minion.core.tools.db;
@@ -135,12 +135,12 @@ public class DbExportTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `mvn test -Dtest=DbExportTest`
 Expected: 编译失败 `cannot find symbol: class DbExport`
 
-- [ ] **Step 3: 实现** `src/main/java/com/minion/core/tools/db/DbExport.java`
+- [x] **Step 3: 实现** `src/main/java/com/minion/core/tools/db/DbExport.java`
 
 ```java
 package com.minion.core.tools.db;
@@ -239,12 +239,12 @@ public final class DbExport {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `mvn test -Dtest=DbExportTest`
 Expected: 全绿（5 个用例）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/main/java/com/minion/core/tools/db/DbExport.java src/test/java/com/minion/core/tools/db/DbExportTest.java
@@ -266,7 +266,7 @@ git commit -m "feat(db): 新增大字段原样导出纯函数类 DbExport"
   - `public static String fit(String display, String complete, Path tmpDir, String extraHint)` — extraHint（非 null）附加在落盘提示**之前**，返回总长恒 ≤ `CHAR_BUDGET`；旧 3 参/2 参签名委托 extraHint=null，行为不变
   - hint 文案中「Read 分页查看」改为「Read（full=true 一次读回或分页）查看」
 
-- [ ] **Step 1: 写失败测试**（追加到 `MarkdownTableTest`，类尾部即可；文件已 import `Files/Path/List/ArrayList`，无需新增 import）
+- [x] **Step 1: 写失败测试**（追加到 `MarkdownTableTest`，类尾部即可；文件已 import `Files/Path/List/ArrayList`，无需新增 import）
 
 ```java
     /** exported=true 的截断标注追加导出清单指引；exported=false 文案与现状逐字符一致 */
@@ -307,12 +307,12 @@ git commit -m "feat(db): 新增大字段原样导出纯函数类 DbExport"
     }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `mvn test -Dtest=MarkdownTableTest`
 Expected: 编译失败（`cell(Object,int,boolean)` 与 4 参 `fit` 不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `MarkdownTable` 顶部常量区新增：
 
@@ -399,12 +399,12 @@ Expected: 编译失败（`cell(Object,int,boolean)` 与 4 参 `fit` 不存在）
     }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `mvn test -Dtest=MarkdownTableTest`
 Expected: 全绿（含既有回归用例：`fitTruncatesWhenNoTmpDir` / `fitDumpsUncutCompleteWhenCellTruncated` / `fitDumpsToTmpDirWhenOverBudget` 等断言文案未被改动）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/main/java/com/minion/core/tools/db/MarkdownTable.java src/test/java/com/minion/core/tools/db/MarkdownTableTest.java
@@ -426,7 +426,7 @@ git commit -m "feat(db): 表格标记大字段导出并支持附加导出清单"
 
 **说明：** DbExecutor 无 JDBC 环境无法直接单测，其正确性由 Task 1/2 的纯函数测试 + 代码审查保证；本任务测试聚焦 DbTool description 文案。
 
-- [ ] **Step 1: 写失败测试**（追加到 `DbToolTest`）
+- [x] **Step 1: 写失败测试**（追加到 `DbToolTest`）
 
 ```java
     /** description 必须引导：大字段原样导出（未转义未截断）+ Read full=true 读回 */
@@ -442,12 +442,12 @@ git commit -m "feat(db): 表格标记大字段导出并支持附加导出清单"
     }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `mvn test -Dtest=DbToolTest`
 Expected: `descriptionMentionsRawExportAndReadFull` 失败（文案尚未包含）
 
-- [ ] **Step 3: 改 DbExecutor.query 接线**
+- [x] **Step 3: 改 DbExecutor.query 接线**
 
 `query` 方法内（原 `List<List<String>> rows` 与 `List<List<String>> fullRows` 声明之后）新增：
 
@@ -489,7 +489,7 @@ Expected: `descriptionMentionsRawExportAndReadFull` 失败（文案尚未包含�
 
 （`listTables` / `describe` 里既有的 `MarkdownTable.fit(sb.toString(), tmpDir)` 两参调用不动，走旧签名。）
 
-- [ ] **Step 4: 改 DbTool.description**
+- [x] **Step 4: 改 DbTool.description**
 
 在 `.append(" 字符，单值查询可 inline 全文，超出自动落盘并附文件路径；")` 之后插入一句（保持链式 append）：
 
@@ -499,12 +499,12 @@ Expected: `descriptionMentionsRawExportAndReadFull` 失败（文案尚未包含�
           .append("需要解析/解码时优先用 Bash 在文件上做，需要整段读进上下文时用 Read full=true 一次读回；")
 ```
 
-- [ ] **Step 5: 运行测试与编译**
+- [x] **Step 5: 运行测试与编译**
 
 Run: `mvn -q compile && mvn test -Dtest='DbToolTest,DbExportTest,MarkdownTableTest'`
 Expected: 全绿（DbToolTest 含既有用例；编译零错误）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/main/java/com/minion/core/tools/db/DbExecutor.java src/main/java/com/minion/core/tools/db/DbTool.java src/test/java/com/minion/core/tools/db/DbToolTest.java
@@ -525,7 +525,7 @@ git commit -m "feat(db): 查询时大字段原样导出并在表尾给出清单"
   - `public static final int FULL_MAX_OUTPUT_CHARS = 100000`
   - `full=true` 时单次上限 100000 字符且单行不截断；`full=false` 行为逐字符不变
 
-- [ ] **Step 1: 写失败测试**（追加到 `FileToolsTest`，Read 相关用例区）
+- [x] **Step 1: 写失败测试**（追加到 `FileToolsTest`，Read 相关用例区）
 
 ```java
     /** full=true：单行 50000 字符一次读回、无截断（大字段解析场景） */
@@ -558,12 +558,12 @@ git commit -m "feat(db): 查询时大字段原样导出并在表尾给出清单"
     }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `mvn test -Dtest=FileToolsTest`
 Expected: `read_full_readsLongSingleLineInOneCall` 失败（无 full 参数，单行被 2000 截断）
 
-- [ ] **Step 3: 实现 ReadTool 改动**
+- [x] **Step 3: 实现 ReadTool 改动**
 
 (a) 常量区新增：
 
@@ -663,12 +663,12 @@ Expected: `read_full_readsLongSingleLineInOneCall` 失败（无 full 参数，�
     }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `mvn test -Dtest=FileToolsTest`
 Expected: 全绿（含既有回归：`read_charLimit_truncatesAndHintsNextOffset`、`read_singleLineOverLimit_clipped`）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/main/java/com/minion/core/tools/ReadTool.java src/test/java/com/minion/core/tools/FileToolsTest.java
@@ -687,7 +687,7 @@ git commit -m "feat(read): 新增 full 模式一次读回大字段原文"
 - Consumes: Task 4 的 `ReadTool.FULL_MAX_OUTPUT_CHARS` 口径（数值一致 100000）
 - Produces: `public static final int READ_FULL_MAX_CHARS = 100000`；`apply` 对 `"Read"` 用放宽上限（仍不落盘），其余工具/读取类口径不变
 
-- [ ] **Step 1: 写失败测试**（追加到 `ToolOutputGateTest`）
+- [x] **Step 1: 写失败测试**（追加到 `ToolOutputGateTest`）
 
 ```java
     /** Read 放宽到 100000：100000 原样、100001 截断且不落盘（Read full 依赖） */
@@ -704,12 +704,12 @@ git commit -m "feat(read): 新增 full 模式一次读回大字段原文"
     }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `mvn test -Dtest=ToolOutputGateTest`
 Expected: 编译失败（`READ_FULL_MAX_CHARS` 不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 常量区新增：
 
@@ -734,12 +734,12 @@ Expected: 编译失败（`READ_FULL_MAX_CHARS` 不存在）
 
 （类注释同步补一句：Read 放宽到 `READ_FULL_MAX_CHARS`，Grep/Glob 与生产类维持 `MAX_CHARS`。）
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `mvn test -Dtest=ToolOutputGateTest`
 Expected: 全绿（含既有回归：Bash 30000 落盘、Grep 30000 不落盘）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/main/java/com/minion/core/tools/ToolOutputGate.java src/test/java/com/minion/core/tools/ToolOutputGateTest.java
@@ -758,14 +758,14 @@ git commit -m "feat(tools): 入历史闸门放宽 Read 上限至 10 万字符"
 
 **Interfaces:** 无代码接口；纯文档。
 
-- [ ] **Step 1: 更新 README**
+- [x] **Step 1: 更新 README**
 
 - 「内置工具输出上限与落盘」条目：Read 自限改为
   「**Read 自限**：单次输出上限 30000 字符、单行 2000 字符（超长行截断并标注总长）；`full=true` 时上限放宽到 100000 字符且单行不截断（读大字段原文用，代价是单次上下文占用变大）；达到上限时提示「请用 offset=B 继续读取」分页续读」
 - 数据库条目：在「大字段全文」一行后补
   「超过 20000 字符的单元格会**另存为原样文件**（未转义、未截断，`db-r<行>-c<列>-<列名>-*.txt`）并在表尾给出导出清单：解析/解码优先用 Bash 在文件上做，需整段读进上下文时用 `Read full=true` 一次读回」
 
-- [ ] **Step 2: 更新 ARCHITECTURE**
+- [x] **Step 2: 更新 ARCHITECTURE**
 
 - `ToolOutputGate` 行：补「Read 放宽至 READ_FULL_MAX_CHARS=100000（仍不落盘）；Grep/Glob 与生产类维持 30000」
 - `ReadTool` 行：补「`full=true`：单次上限 FULL_MAX_OUTPUT_CHARS=100000、单行不截断（大字段原文读回）」
@@ -777,7 +777,7 @@ git commit -m "feat(tools): 入历史闸门放宽 Read 上限至 10 万字符"
 | 入历史闸门 Read 放宽上限 | 100000 | ToolOutputGate |
 ```
 
-- [ ] **Step 3: 回写设计文档状态**
+- [x] **Step 3: 回写设计文档状态**
 
 `docs/superpowers/specs/2026-09-18-大字段原样导出与Read-full-design.md` 状态行改为：
 
@@ -785,12 +785,12 @@ git commit -m "feat(tools): 入历史闸门放宽 Read 上限至 10 万字符"
 状态：已实施（2026-09-18，全量测试通过）
 ```
 
-- [ ] **Step 4: 全量回归**
+- [x] **Step 4: 全量回归**
 
 Run: `mvn test`
 Expected: 全绿（无失败、无错误；含 Task 1-5 全部新增用例）
 
-- [ ] **Step 5: 本计划追加执行快照并提交**
+- [x] **Step 5: 本计划追加执行快照并提交**
 
 在本文件末尾追加：
 
@@ -833,7 +833,7 @@ git commit -m "docs: 大字段原样导出与 Read full 实施记录与文档同
 | 3 DbExecutor/DbTool | `6e7aff4` | 接线 + description 引导 |
 | 4 ReadTool full | `c111a69` | 上限 100000、单行不截断 |
 | 5 ToolOutputGate | `c6d91a1` | Read 放宽 100000 |
-| 6 文档与回归 | 本次提交 | README/ARCHITECTURE/spec 状态 + `mvn test` 全绿 |
+| 6 文档与回归 | `d296274` | README/ARCHITECTURE/spec 状态 + `mvn test` 全绿 |
 
 执行期事实（如实记录简报与实际的差异，供后续参考）：
 
@@ -841,6 +841,12 @@ git commit -m "docs: 大字段原样导出与 Read full 实施记录与文档同
 - Task 4 简报第 2 条用例数据不自洽（默认 limit 窗口仅 34890 字符，full 不会触发截断），实际改用 limit=6000；另追加了单行 >100000 的 Bash 提示用例（超简报范围，设计 4.2 要求）。
 - Task 4 fix 轮修复了「恰好 100000 字符单行 → 空输出 + offset=0 自指循环」（commit `c0e12aa`，补 2 用例）。
 - Task 5 的必要连带修改：ToolOutputGateTest 2 处 + AgentLoopTest 1 处既有断言按新口径更新（断言强度未降）。
-- 遗留（未修，另行处理）：Task 5 review Minor 1——ReadTool 尾提示可超 100000 被闸门替换。
+- 遗留（已修，修复波）：Task 5 review Minor 1——ReadTool 尾提示可超 100000 被闸门替换 → 修复波引入
+  `ReadTool.FULL_TAIL_RESERVE=128`（正文按 100000-128 累积，保证内容 + 全部尾提示 ≤ 100000 逐字过闸门），
+  并补常量守卫断言 + 逐字过闸门组合用例；同波修复 Oracle CLOB 取值（`DbExport.stringOf`）与 Read `full` 的 schema 断言。
 
-> Task 6 为本计划的收尾提交，hash 无法自指，故其行记「本次提交」；Task 1-5 为实际短 hash。
+> Task 6 为本计划的收尾提交，提交时 hash 无法自指，故其行原记「本次提交」，后回填为 `d296274`；
+> Task 1-5 为实际短 hash。
+> 最终审查修复波（Read full 尾提示预留 / CLOB 原样导出 / full schema 断言 / 文档打磨）为**后续独立提交**，
+> hash 同样无法在本文件内自指（提交时写死会与自身 hash 不一致）；改动明细与验证证据见
+> `.superpowers/sdd/2026-09-18-大字段原样导出与Read-full-plan/final-fix-report.md`。
