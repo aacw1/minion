@@ -12,3 +12,6 @@ src/resource/config.properties
 
 # 编辑工具产生的备份文件
 *.md.bak
+
+# git worktree 隔离目录（SDD 流程）
+.worktrees/
