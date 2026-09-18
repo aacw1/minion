@@ -273,7 +273,7 @@
 .log-subagent { -fx-text-fill: #4dd0e1; } /* 子代理边界 青（仅「子任务开始/完成」行；子代理消息配色与主代理同类型一致） */
 .log-error { -fx-text-fill: #f85149; } /* 错误 红 */
 .log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
-.log-sys { -fx-text-fill: #16C60C; }   /* 系统/占位 灰 */
+.log-sys { -fx-text-fill: #16C60C; }   /* 系统/占位 绿 */
 
 /* ===== 消息区控制台样式：彩色加粗标签 + 浅色调正文 =====
    标签：.log-tag 叠加 log-* 场景色类（深色）；正文 .log-body 默认白 + log-body-* 浅色调类
