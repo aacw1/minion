@@ -16,6 +16,8 @@ public final class MarkdownTable {
     public static final int CHAR_BUDGET = 30000;
     /** 单元格默认截断长度（防长文本列把表格撑爆）；截断处追加省略号 + 真实长度标注，见 {@link #cell(Object, int)} */
     public static final int CELL_MAX = 120;
+    /** 导出标记：附在截断标注后，提示完整内容在表尾导出清单的文件里 */
+    static final String EXPORT_MARK = " → 见下方导出清单";
 
     private MarkdownTable() { }
 
@@ -28,10 +30,13 @@ public final class MarkdownTable {
     }
 
     /** null → 字面量 NULL；竖线转义；换行转 &lt;br&gt;；超 120 截断并标注真实长度 */
-    public static String cell(Object v) { return cell(v, CELL_MAX); }
+    public static String cell(Object v) { return cell(v, CELL_MAX, false); }
 
     /** null → 字面量 NULL；竖线转义；换行转 &lt;br&gt;；超 cellMax 截断：省略号 + 真实长度标注 */
-    public static String cell(Object v, int cellMax) {
+    public static String cell(Object v, int cellMax) { return cell(v, cellMax, false); }
+
+    /** 超 cellMax 截断：省略号 + 真实长度标注；exported=true 时追加「→ 见下方导出清单」 */
+    public static String cell(Object v, int cellMax, boolean exported) {
         if (v == null) return "NULL";
         int rawLen = String.valueOf(v).length();   // 标注口径：转义（<br> 膨胀）前的真实长度
         String s = escape(v);
@@ -39,7 +44,7 @@ public final class MarkdownTable {
             int cut = cellMax;
             // 截断点可能切在代理对（如 emoji）中间：丢弃尾部孤立高代理（对齐 TruncatedOutput 口径）
             if (Character.isHighSurrogate(s.charAt(cut - 1))) cut--;
-            s = s.substring(0, cut) + "…[完整 " + rawLen + " 字符]";
+            s = s.substring(0, cut) + "…[完整 " + rawLen + " 字符" + (exported ? EXPORT_MARK : "") + "]";
         }
         return s;
     }
@@ -78,23 +83,29 @@ public final class MarkdownTable {
     /**
      * 字符预算处理（旧口径，等价于 display == complete）：≤30000 原样返回；超出则全量落盘并返回头部 + 路径提示。
      */
-    public static String fit(String full, Path tmpDir) { return fit(full, full, tmpDir); }
+    public static String fit(String full, Path tmpDir) { return fit(full, full, tmpDir, null); }
+
+    /** 旧签名：等价于 extraHint=null（行为不变） */
+    public static String fit(String display, String complete, Path tmpDir) {
+        return fit(display, complete, tmpDir, null);
+    }
 
     /**
-     * 字符预算 + 截断落盘统一入口：
+     * 字符预算 + 截断落盘统一入口（extraHint = 大字段原样导出清单，附加在落盘提示之前）：
      * - display 是展示文本（单元格可能已按 cellMax 截断、含「…[完整 N 字符]」标注）；
-     * - complete 是未截断全量文本，落盘内容永远是它（"完整内容已落盘"名副其实）。
-     * 触发条件：display 超 CHAR_BUDGET **或** display 与 complete 不一致（存在被截断的单元格——
-     * 修此前的漏洞：单值超 cellMax 但截断后总长不足 30000 时既截断又不落盘，全文无路径可取）。
-     * 返回文本总长恒 ≤ CHAR_BUDGET（为提示预留头部空间），保证过 ToolOutputGate 不再被二次截断（提示不被切掉）。
+     * - complete 是未截断全量文本，落盘内容永远是它（"完整内容已落盘"名副其实）；
+     * - extraHint 非 null 时一并附加，并从 headBudget 中扣除（返回总长恒 ≤ CHAR_BUDGET）。
+     * 触发器与既有口径不变：display 超 CHAR_BUDGET 或 display 与 complete 不一致。
      * tmpDir 为 null 或落盘失败 → 降级为纯内存截断。表格式数据头部比尾部有用（首行是表头），故不用 OutputDump.tail。
      */
-    public static String fit(String display, String complete, Path tmpDir) {
+    public static String fit(String display, String complete, Path tmpDir, String extraHint) {
         if (display == null) return "";
         if (complete == null) complete = display;
+        String extra = extraHint == null ? "" : extraHint;
         boolean overBudget = display.length() > CHAR_BUDGET;
         boolean cellCut = !display.equals(complete);
-        if (!overBudget && !cellCut) return display;
+        // 无截断即无导出（extra 非空必伴随单元格截断），防御分支保持最简
+        if (!overBudget && !cellCut) return display + extra;
 
         Path dumped = OutputDump.write(tmpDir, "db", complete);
         String hint;
@@ -107,16 +118,16 @@ public final class MarkdownTable {
         } else if (cellCut && !overBudget) {
             hint = "\n\n…（单元格超长已截断：完整内容共 " + complete.length() + " 字符已落盘："
                     + dumped.toAbsolutePath()
-                    + "。需要全文可用 Read 分页查看；也可加 WHERE/LIMIT 限定到需要的行）";
+                    + "。需要全文可用 Read（full=true 一次读回或分页）查看；也可加 WHERE/LIMIT 限定到需要的行）";
         } else {
             hint = "\n\n…（结果过大：共 " + complete.length() + " 字符，完整内容已落盘："
                     + dumped.toAbsolutePath()
-                    + "。请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询；需要全文可用 Read 分页查看）";
+                    + "。请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询；需要全文可用 Read（full=true 一次读回或分页）查看）";
         }
-        int headBudget = CHAR_BUDGET - hint.length();
+        int headBudget = CHAR_BUDGET - hint.length() - extra.length();
         if (headBudget < 0) headBudget = 0;
         String head = display.length() <= headBudget ? display : truncateAt(display, headBudget);
-        return head + hint;
+        return head + extra + hint;
     }
 
     /** 截断到 max 字符：落在代理对中间时回退一位（对齐 ToolOutputGate 口径） */

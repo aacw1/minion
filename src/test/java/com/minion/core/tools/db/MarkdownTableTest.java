@@ -186,10 +186,48 @@ public class MarkdownTableTest {
         String out = MarkdownTable.fit(sb.toString(), tmp);
         assertTrue(out.contains("结果过大：共 31000 字符，完整内容已落盘："));
         assertTrue("引导拆分查询", out.contains("请拆分查询：加 WHERE/LIMIT 缩小范围、分页或分列查询"));
-        assertTrue("全文可 Read 分页查看", out.contains("需要全文可用 Read 分页查看"));
+        assertTrue("全文可用 Read（full=true 一次读回或分页）查看",
+                out.contains("需要全文可用 Read（full=true 一次读回或分页）查看"));   // Task 2 文案变更同步（旧字样「Read 分页查看」已废弃）
         // 落盘文件确实存在且是全量
         String path = out.substring(out.indexOf("已落盘：") + 4, out.indexOf("。请拆分查询"));
         assertEquals(31000, new String(Files.readAllBytes(new java.io.File(path).toPath()),
                 "UTF-8").length());
+    }
+
+    /** exported=true 的截断标注追加导出清单指引；exported=false 文案与现状逐字符一致 */
+    @Test
+    public void cellExportedMarker() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 130; i++) sb.append('x');
+        assertTrue(MarkdownTable.cell(sb.toString(), MarkdownTable.CELL_MAX, true)
+                .endsWith("…[完整 130 字符 → 见下方导出清单]"));
+        assertTrue(MarkdownTable.cell(sb.toString(), MarkdownTable.CELL_MAX, false)
+                .endsWith("…[完整 130 字符]"));
+    }
+
+    /** extraHint 附加在落盘提示之前，返回总长仍 ≤ CHAR_BUDGET */
+    @Test
+    public void fitAppendsExtraHintWithinBudget() throws Exception {
+        Path tmp = Files.createTempDirectory("md-table-extra");
+        StringBuilder display = new StringBuilder();
+        for (int i = 0; i < 25000; i++) display.append('z');
+        String complete = display.toString() + "TAIL";
+        String extra = "\n\n…（以下单元格完整内容已原样导出（未转义、未截断），"
+                + "可用 Read full=true 一次读回，或用 Bash 直接处理）：\n  · 第 1 行 · c（25004 字符）→ /abs/f.txt";
+        String out = MarkdownTable.fit(display.toString(), complete, tmp, extra);
+        assertTrue(out, out.contains("已原样导出"));
+        assertTrue(out, out.contains("已落盘："));
+        assertTrue("清单在落盘提示之前", out.indexOf("已原样导出") < out.indexOf("已落盘："));
+        assertTrue("总长受预算约束: " + out.length(), out.length() <= MarkdownTable.CHAR_BUDGET);
+    }
+
+    /** extraHint=null（旧签名）：行为与现状一致（回归） */
+    @Test
+    public void fitNullExtraHintKeepsLegacyBehavior() throws Exception {
+        Path tmp = Files.createTempDirectory("md-table-extra-null");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 31000; i++) sb.append('w');
+        String out = MarkdownTable.fit(sb.toString(), sb.toString(), tmp, null);
+        assertTrue(out, out.contains("已落盘："));
     }
 }
