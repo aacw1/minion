@@ -143,7 +143,15 @@ public class ReadTool implements Tool {
             String body = full ? clipLineFull(raw) : clipLine(raw);
             String chunk = (lineNumbers ? (i + 1) + ": " : "") + body + '\n';
             if (sb.length() + chunk.length() > maxChars) {
-                charLimited = true; // 本行及之后未显示：提示 offset 续读（不丢行、可无限分页推进）
+                if (shown == 0) {
+                    // 兜底（防无进展循环）：首个可见行就装不下时（预留空间被 GBK 标注/行号等开销吃掉），
+                    // 强制输出裁剪后的本行（clipLineFull 自带「请用 Bash」指引），
+                    // 绝不给 offset 不推进的「请用 offset=」自指提示（模型重发会得到逐字相同结果）。
+                    sb.append(body).append('\n');
+                    shown++;
+                } else {
+                    charLimited = true; // 本行及之后未显示：提示 offset 续读（不丢行、可无限分页推进）
+                }
                 break;
             }
             sb.append(chunk);
@@ -162,10 +170,12 @@ public class ReadTool implements Tool {
         return ToolResult.success(sb.toString());
     }
 
-    /** full 模式单行上限 = 单次输出上限：超过则截断并说明该行无法用 offset 续读（交 Bash 处理） */
+    /** full 模式单行上限：切点左移到预留区内，保证「行 + 提示 + 换行」必然装进单次输出上限
+     *  （若按 FULL_MAX_OUTPUT_CHARS 判定，恰好等于上限的单行会整行装不下 → 零输出 + offset 自指死循环）；
+     *  截断时说明该行无法用 offset 续读（交 Bash 处理） */
     private static String clipLineFull(String line) {
-        if (line.length() <= FULL_MAX_OUTPUT_CHARS) return line;
-        int cut = FULL_MAX_OUTPUT_CHARS - 100;   // 预留提示文本空间
+        int cut = FULL_MAX_OUTPUT_CHARS - 100;   // 预留提示文本空间（本提示约 70 字符，另留行号/GBK 标注余量）
+        if (line.length() <= cut) return line;
         if (Character.isHighSurrogate(line.charAt(cut - 1))) cut--;
         return line.substring(0, cut) + "…[本行超长，共 " + line.length()
                 + " 字符，超过单次上限；该行无法用 offset 续读，请用 Bash 处理（如 split/head -c）]";

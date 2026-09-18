@@ -142,6 +142,7 @@ public class FileToolsTest {
         ToolResult r = read.execute(args("{\"path\":\"hugefield.txt\",\"limit\":6000,\"full\":true}"));
         assertTrue(r.output, r.ok);
         assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("确为 full 生效（超出默认上限）", r.output.length() > ReadTool.MAX_OUTPUT_CHARS + 200);
         assertTrue("截断提示", r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
     }
 
@@ -156,7 +157,36 @@ public class FileToolsTest {
         assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
         assertTrue("该行无法续读、提示交 Bash",
                 r.output.contains("无法用 offset 续读") && r.output.contains("请用 Bash 处理"));
-        assertFalse("不误导 offset 续读", r.output.contains("请用 offset="));
+        assertFalse("未走字符上限截断分支（提示行特征）", r.output.contains("单次输出上限"));
+    }
+
+    /** 边界回归：单行恰好 100000 字符（75000 字节 base64 编码后正为此长度）——曾返回零内容 +
+     *  「请用 offset=0 继续读取」自指提示，模型按提示重发得到相同结果，形成无进展循环 */
+    @Test
+    public void read_full_singleLineExactlyAtLimit_exportsContentAndBashHint() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < ReadTool.FULL_MAX_OUTPUT_CHARS; i++) line.append('q');
+        Files.write(p("exact-limit.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"exact-limit.txt\",\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("输出受上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("必须含真实内容（非空输出），实际输出: " + r.output, r.output.startsWith("qqqq"));
+        assertTrue("须指引交 Bash", r.output.contains("请用 Bash 处理"));
+        assertFalse("不得 offset 自指（offset 不推进）", r.output.contains("请用 offset="));
+    }
+
+    /** 边界回归：full + 行号时 99999 字符行（行号前缀 + 换行把首行挤出上限的组合）同样须输出内容与 Bash 指引 */
+    @Test
+    public void read_full_lineNumbers_justBelowLimit_exportsContentAndBashHint() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < ReadTool.FULL_MAX_OUTPUT_CHARS - 1; i++) line.append('w');
+        Files.write(p("exact-limit-num.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"exact-limit-num.txt\",\"lineNumbers\":true,\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("输出受上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("必须含真实内容（含行号前缀）", r.output.startsWith("1: wwww"));
+        assertTrue("须指引交 Bash", r.output.contains("请用 Bash 处理"));
+        assertFalse("不得 offset 自指", r.output.contains("请用 offset="));
     }
 
     /** 工具提示行剥离（测试辅助）：提示统一以 "... " 开头 */
