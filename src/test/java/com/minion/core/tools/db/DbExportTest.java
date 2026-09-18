@@ -44,6 +44,59 @@ public class DbExportTest {
         assertTrue(DbExport.shouldExport(repeat('a', 20001)));
     }
 
+    /** 修复波 Important 2：CLOB（Oracle CLOB 经 getObject 返回句柄，String.valueOf 只得对象描述串）
+     *  须显式读出内容，才能参与阈值判定与原样导出 */
+    @Test
+    public void stringOf_readsClobContent() throws Exception {
+        String content = repeat('c', 20001);
+        javax.sql.rowset.serial.SerialClob clob =
+                new javax.sql.rowset.serial.SerialClob(content.toCharArray());
+        String raw = DbExport.stringOf(clob);
+        assertEquals("CLOB 须读出实际内容（长度）", content.length(), raw.length());
+        assertEquals(content, raw);
+        assertTrue("CLOB 内容须能触发原样导出阈值", DbExport.shouldExport(raw));
+    }
+
+    /** 空 Clob：内容即空串（不得回退成对象描述串） */
+    @Test
+    public void stringOf_emptyClob_returnsEmpty() throws Exception {
+        assertEquals("", DbExport.stringOf(new javax.sql.rowset.serial.SerialClob(new char[0])));
+    }
+
+    /** Clob 读取失败（驱动不支持/游标已关）：降级为 String.valueOf(v)，不抛异常 */
+    @Test
+    public void stringOf_clobReadFailure_degradesToValueOf() {
+        java.sql.Clob broken = new BrokenClob();
+        assertEquals(String.valueOf((Object) broken), DbExport.stringOf(broken));
+    }
+
+    /** 非 Clob 类型：与 String.valueOf 逐字符等价（含 null → "null"） */
+    @Test
+    public void stringOf_nonClob_matchesStringValueOf() {
+        assertEquals(String.valueOf("abc"), DbExport.stringOf("abc"));
+        assertEquals(String.valueOf(123), DbExport.stringOf(123));
+        assertEquals(String.valueOf((Object) null), DbExport.stringOf(null));
+    }
+
+    /** 读取失败的 Clob 桩：所有方法抛 SQLException（模拟驱动不支持/已关闭） */
+    private static final class BrokenClob implements java.sql.Clob {
+        private static java.sql.SQLException boom() { return new java.sql.SQLException("boom"); }
+
+        @Override public long length() throws java.sql.SQLException { throw boom(); }
+        @Override public String getSubString(long pos, int length) throws java.sql.SQLException { throw boom(); }
+        @Override public java.io.Reader getCharacterStream() throws java.sql.SQLException { throw boom(); }
+        @Override public java.io.InputStream getAsciiStream() throws java.sql.SQLException { throw boom(); }
+        @Override public long position(String searchstr, long start) throws java.sql.SQLException { throw boom(); }
+        @Override public long position(java.sql.Clob searchstr, long start) throws java.sql.SQLException { throw boom(); }
+        @Override public int setString(long pos, String str) throws java.sql.SQLException { throw boom(); }
+        @Override public int setString(long pos, String str, int offset, int len) throws java.sql.SQLException { throw boom(); }
+        @Override public java.io.OutputStream setAsciiStream(long pos) throws java.sql.SQLException { throw boom(); }
+        @Override public java.io.Writer setCharacterStream(long pos) throws java.sql.SQLException { throw boom(); }
+        @Override public void truncate(long len) throws java.sql.SQLException { throw boom(); }
+        @Override public void free() throws java.sql.SQLException { throw boom(); }
+        @Override public java.io.Reader getCharacterStream(long pos, long length) throws java.sql.SQLException { throw boom(); }
+    }
+
     @Test
     public void prefix_cleansIllegalCharsAndFallsBack() {
         assertEquals("db-r2-c3-payload", DbExport.prefix(2, 3, "payload"));

@@ -102,11 +102,13 @@ public class DbExecutor {
                 int rowNum = rows.size() + 1;   // 1-based，与清单/文件名一致
                 for (int i = 1; i <= cols; i++) {
                     Object v = rs.getObject(i);
-                    boolean exported = DbExport.shouldExport(v);
-                    row.add(MarkdownTable.cell(v, cellMax, exported));
-                    fullRow.add(MarkdownTable.escape(v));
+                    // 一次转换出字符串口径（CLOB 显式读内容）；null 保持 null，既有「NULL」文案逐字符不变
+                    String raw = v == null ? null : DbExport.stringOf(v);
+                    boolean exported = DbExport.shouldExport(raw);
+                    row.add(MarkdownTable.cell(raw, cellMax, exported));
+                    fullRow.add(MarkdownTable.escape(raw));
                     if (exported) {
-                        pending.add(new DbExport.Entry(rowNum, i, names.get(i - 1), String.valueOf(v), null));
+                        pending.add(new DbExport.Entry(rowNum, i, names.get(i - 1), raw, null));
                     }
                 }
                 rows.add(row);

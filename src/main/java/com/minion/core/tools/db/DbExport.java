@@ -3,11 +3,14 @@ package com.minion.core.tools.db;
 import com.minion.core.tools.OutputDump;
 
 import java.nio.file.Path;
+import java.sql.Clob;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 大字段原样导出（纯函数，无 JDBC 依赖）：阈值判定 / 文件名前缀 / 写盘 / 表尾清单文案。
+ * 大字段原样导出（纯函数，无 JDBC 连接依赖——只用 java.sql 类型做值判定）：阈值判定 / 值转字符串 /
+ * 文件名前缀 / 写盘 / 表尾清单文案。
  * 逐字节原样落盘（不做 Markdown 转义、不做截断），供解析/解码场景避免转义污染与分页拼接错位。
  * 生命周期随会话临时目录（SessionManager 删会话递归删除）。
  */
@@ -42,6 +45,26 @@ public final class DbExport {
     /** 原始值是否需要原样导出（null 与 ≤ 阈值不导出；恰为 20000 不导出） */
     public static boolean shouldExport(Object rawValue) {
         return rawValue != null && String.valueOf(rawValue).length() > EXPORT_MIN_CHARS;
+    }
+
+    /** JDBC 列值 → 字符串：CLOB（Oracle 的 CLOB 经 getObject 返回句柄，直接 String.valueOf 只得
+     *  ~20 字符的对象描述串，永远到不了导出阈值 → 表格与导出都拿不到内容）显式读内容；
+     *  读取失败（SQLException/RuntimeException：驱动不支持、游标/连接已关）保守降级为 String.valueOf(v)，
+     *  绝不抛异常；其它对象与 String.valueOf(v) 等价（null → "null"，列值是否为 NULL 由调用方另行判定）。 */
+    public static String stringOf(Object v) {
+        if (v instanceof Clob) {
+            Clob c = (Clob) v;
+            try {
+                long len = c.length();
+                if (len <= 0) return "";   // 空 CLOB 的内容就是空串（比对象描述串更接近真实内容）
+                return c.getSubString(1, (int) Math.min((long) Integer.MAX_VALUE, len));
+            } catch (SQLException e) {
+                return String.valueOf(v);
+            } catch (RuntimeException e) {
+                return String.valueOf(v);
+            }
+        }
+        return String.valueOf(v);
     }
 
     /** 文件名前缀：db-r<行>-c<列>-<清洗列名>；列名仅保留 [A-Za-z0-9_-]，空名兜底 col<列序号> */
