@@ -121,6 +121,64 @@ public class MarkdownTableTest {
     }
 
     @Test
+    public void escapeKeepsLongContentUncut() {
+        assertEquals("NULL", MarkdownTable.escape(null));
+        assertEquals("a\\|b", MarkdownTable.escape("a|b"));
+        assertEquals("a<br>b", MarkdownTable.escape("a\nb"));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 25000; i++) sb.append('q');
+        assertEquals("落盘口径：只转义不截断", 25000, MarkdownTable.escape(sb.toString()).length());
+    }
+
+    /** full=true 单值超 20000：展示被截断（[完整 N 字符]）时，必须落盘未截断全量并给出路径（本次修复的回归用例） */
+    @Test
+    public void fitDumpsUncutCompleteWhenCellTruncated() throws Exception {
+        Path tmp = Files.createTempDirectory("md-table-cellcut");
+        StringBuilder raw = new StringBuilder();
+        for (int i = 0; i < 37457; i++) raw.append('x');
+        String head = "数据源: prod · 耗时: 0.12s · 行数: 1\n\n| body |\n| --- |\n| ";
+        String display = head + MarkdownTable.cell(raw.toString(), 20000) + " |";
+        String complete = head + MarkdownTable.escape(raw.toString()) + " |";
+        String out = MarkdownTable.fit(display, complete, tmp);
+
+        assertTrue("单元格截断必须落盘", out.contains("已落盘："));
+        assertTrue("引导 Read 取全文", out.contains("Read"));
+        assertTrue("返回总长不得超闸门口径，防提示被 ToolOutputGate 二次截断",
+                out.length() <= MarkdownTable.CHAR_BUDGET);
+
+        Path dumped;
+        try (java.util.stream.Stream<Path> s = Files.list(tmp)) {
+            dumped = s.findFirst().get();
+        }
+        String dumpedText = new String(Files.readAllBytes(dumped), "UTF-8");
+        assertEquals("落盘内容必须是未截断全量（长度 = complete）", complete, dumpedText);
+    }
+
+    /** 超预算 + 单元格截断：返回头部 + 路径提示，总长同样不得超闸门口径 */
+    @Test
+    public void fitCapsTotalLengthWhenOverBudgetAndCellCut() throws Exception {
+        Path tmp = Files.createTempDirectory("md-table-cellcut-over");
+        StringBuilder raw = new StringBuilder();
+        for (int i = 0; i < 50000; i++) raw.append('w');
+        String head = "数据源: prod · 耗时: 0.12s · 行数: 1\n\n| a | b |\n| --- | --- |\n| ";
+        // 两格各截断到 20000 → display 超 30000 预算，同时存在单元格截断
+        String display = head + MarkdownTable.cell(raw.toString(), 20000)
+                + " | " + MarkdownTable.cell(raw.toString(), 20000) + " |";
+        String complete = head + MarkdownTable.escape(raw.toString())
+                + " | " + MarkdownTable.escape(raw.toString()) + " |";
+        String out = MarkdownTable.fit(display, complete, tmp);
+        assertTrue(out.contains("已落盘："));
+        assertTrue(out.length() <= MarkdownTable.CHAR_BUDGET);
+        assertTrue("超预算时保留拆分查询引导", out.contains("请拆分查询"));
+    }
+
+    /** 展示与全量一致（无截断）且不超预算：原样返回，不落盘 */
+    @Test
+    public void fitReturnsUnchangedWhenNoCutAndWithinBudget() {
+        assertEquals("abc", MarkdownTable.fit("abc", "abc", null));
+    }
+
+    @Test
     public void fitDumpsToTmpDirWhenOverBudget() throws Exception {
         Path tmp = Files.createTempDirectory("md-table-test");
         StringBuilder sb = new StringBuilder();

@@ -69,7 +69,8 @@ public class DbExecutor {
         }
     }
 
-    /** 执行只读 SQL，结果渲染成 Markdown 表格（超 30000 字符落盘）；full=true 时截断线放宽到 FULL_CELL_MAX */
+    /** 执行只读 SQL，结果渲染成 Markdown 表格；单元格被截断（超 cellMax）或总长超 30000 时，
+     *  整表**未截断全量**落盘并附路径；full=true 时单元格截断线放宽到 FULL_CELL_MAX */
     public ToolResult query(DataSourceConfig ds, DbType type, String sql, boolean full) {
         Opened opened = open(ds, type);
         if (opened.conn == null) return opened.error;
@@ -88,21 +89,28 @@ public class DbExecutor {
                 String label = md.getColumnLabel(i);
                 names.add(label == null || label.isEmpty() ? md.getColumnName(i) : label);
             }
-            List<List<String>> rows = new ArrayList<List<String>>();
+            int cellMax = full ? FULL_CELL_MAX : MarkdownTable.CELL_MAX;
+            List<List<String>> rows = new ArrayList<List<String>>();      // 展示（单元格可能含截断标注）
+            List<List<String>> fullRows = new ArrayList<List<String>>();  // 未截断全量（落盘口径）
             boolean truncated = false;
             while (rs.next()) {
                 if (rows.size() == MAX_ROWS) { truncated = true; break; }
                 List<String> row = new ArrayList<String>();
+                List<String> fullRow = new ArrayList<String>();
                 for (int i = 1; i <= cols; i++) {
-                    row.add(MarkdownTable.cell(rs.getObject(i), full ? FULL_CELL_MAX : MarkdownTable.CELL_MAX));
+                    Object v = rs.getObject(i);
+                    row.add(MarkdownTable.cell(v, cellMax));
+                    fullRow.add(MarkdownTable.escape(v));
                 }
                 rows.add(row);
+                fullRows.add(fullRow);
             }
             long elapsed = System.currentTimeMillis() - t0;
             String head = MarkdownTable.header(ds.name, elapsed, rows.size(), truncated, MAX_ROWS);
             if (rows.isEmpty()) return ToolResult.success(head + "\n\n查询成功，0 行结果");
             return ToolResult.success(MarkdownTable.fit(
-                    head + "\n\n" + MarkdownTable.render(names, rows), tmpDir));
+                    head + "\n\n" + MarkdownTable.render(names, rows),
+                    head + "\n\n" + MarkdownTable.render(names, fullRows), tmpDir));
         } catch (SQLException e) {
             return ToolResult.error(sqlError(e));
         } finally {
