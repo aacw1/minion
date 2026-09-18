@@ -115,6 +115,50 @@ public class FileToolsTest {
         assertTrue("本行截断后长度受控", r.output.length() <= ReadTool.MAX_LINE_CHARS + 200);
     }
 
+    /** full=true：单行 50000 字符一次读回、无截断（大字段解析场景） */
+    @Test
+    public void read_full_readsLongSingleLineInOneCall() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 50000; i++) line.append('x');
+        Files.write(p("bigfield.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"bigfield.txt\",\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertEquals("输出 = 原文 + 行尾换行", line.length() + 1, r.output.length());
+        assertTrue(r.output.startsWith(line.toString()));
+        assertFalse("full 模式无截断提示", r.output.contains("截断"));
+    }
+
+    /** full=true 超 100000：截断 + offset 分页提示（读取类仍不落盘） */
+    @Test
+    public void read_fullOverLimit_truncatesAndHintsOffset() throws Exception {
+        StringBuilder src = new StringBuilder();
+        for (int i = 0; i < 6000; i++) {
+            src.append("行").append(i);
+            for (int j = 0; j < 12; j++) src.append('y');
+            src.append('\n');
+        }
+        Files.write(p("hugefield.txt"), src.toString().getBytes(StandardCharsets.UTF_8));
+        // 全文 106890 字符：须放开默认 2000 行窗口（2000 行仅 34890 字符）才能触及 full 的 100000 字符上限
+        ToolResult r = read.execute(args("{\"path\":\"hugefield.txt\",\"limit\":6000,\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("截断提示", r.output.contains("单次输出上限") && r.output.contains("请用 offset="));
+    }
+
+    /** full=true 且单行超 100000：截断并提示交 Bash（不支持行内续读，设计 4.2 非目标） */
+    @Test
+    public void read_full_singleLineOverFullLimit_hintsBash() throws Exception {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 150000; i++) line.append('z');
+        Files.write(p("overfull.txt"), line.toString().getBytes(StandardCharsets.UTF_8));
+        ToolResult r = read.execute(args("{\"path\":\"overfull.txt\",\"full\":true}"));
+        assertTrue(r.output, r.ok);
+        assertTrue("受 full 上限约束", r.output.length() <= ReadTool.FULL_MAX_OUTPUT_CHARS + 200);
+        assertTrue("该行无法续读、提示交 Bash",
+                r.output.contains("无法用 offset 续读") && r.output.contains("请用 Bash 处理"));
+        assertFalse("不误导 offset 续读", r.output.contains("请用 offset="));
+    }
+
     /** 工具提示行剥离（测试辅助）：提示统一以 "... " 开头 */
     private static String stripHints(String out) {
         StringBuilder sb = new StringBuilder();
