@@ -85,8 +85,9 @@ public class SettingsDialog {
         // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
         final ListView<String> nav = new ListView<String>();
         nav.getItems().addAll("基础设置", "模型", "MCP", "工具", "关于");
-        nav.setPrefWidth(120);
+        nav.setPrefWidth(120); // 实际宽度由 CSS .settings-nav-list 的 -fx-pref-width(172) 覆盖；此处保留为无样式表时的回退
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
+        nav.getStyleClass().add("settings-nav-list"); // 导航专用暖石样式（选中态左侧主色条 + 圆角行）
         final Node model = modelPane(models, manager);
         final Node mcpNode = mcpPane(mcp, owner);
         final Node toolsNode = ToolsPane.build(plugins, owner);
@@ -104,8 +105,8 @@ public class SettingsDialog {
         HBox box = new HBox(0);
         box.getChildren().addAll(nav, content);
         HBox.setHgrow(content, Priority.ALWAYS);
-        // 需求：右侧内容区宽为原 1.5 倍（导航 120 不变：500 → 750，总宽 620 → 870）
-        box.setPrefSize(870, 500);
+        // 暖石主题：导航列 172（CSS）+ 右侧内容区 748 = 920；高度 560（自绘标题栏 44 由 DialogPane 额外占用）
+        box.setPrefSize(920, 560);
         d.getDialogPane().setContent(box);
         // 无边框深色弹窗：自绘标题栏（拖动 + 关闭），去掉 Windows 浅色系统标题栏（样式类 dark-dialog）
         DarkDialogs.decorate(d, "设置");
@@ -722,11 +723,14 @@ public class SettingsDialog {
         }
     }
 
-    /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */
+    /** 表单行：标签固定宽 146 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用）；多行标签向右上对齐，
+     *  输入控件铺满剩余宽度 */
     private static HBox row(String labelText, Region control) {
         Label l = new Label(labelText);
-        l.setMinWidth(160);
-        l.setPrefWidth(160);
+        l.setMinWidth(146);
+        l.setPrefWidth(146);
+        l.setAlignment(javafx.geometry.Pos.TOP_RIGHT);
+        l.getStyleClass().add("form-label");
         l.setWrapText(true);
         control.setMaxWidth(Double.MAX_VALUE);
         HBox box = new HBox(8);

@@ -627,3 +627,39 @@
     -fx-background-radius: 0 0 12 12;
 }
 .dark-dialog > .content { -fx-padding: 0; }
+
+/* ===== 设置窗（暖石：左列导航 172px 独立底，右侧内容 748px；表单标签右上对齐） =====
+   放在文件末尾：.settings-nav-list 与 .settings-nav-list .list-cell 的 cell 规则特异度
+   与 .list-view .list-cell(:filled:hover/:filled:selected) 相同，靠后置覆盖主列表胶囊样式。 */
+.settings-nav-list { -fx-pref-width: 172px; -fx-background-color: #1b1a18; -fx-padding: 13 10 13 10; -fx-border-color: transparent rgba(255,255,255,0.07) transparent transparent; -fx-border-width: 0 1 0 0; }
+.settings-nav-list .list-cell { -fx-background-color: transparent; -fx-background-insets: 0 0 3 0; -fx-background-radius: 7; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.settings-nav-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
+/* 选中态：底 #2f2723 + 1px 边框（补 -fx-border-width：不写会继承 .list-view .list-cell:filled:selected
+   的 0 0 0 2，变成主列表同款左侧粗条；设计稿为四边 1px 描边） */
+.settings-nav-list .list-cell:filled:selected { -fx-background-color: #2f2723; -fx-text-fill: #d97757; -fx-border-color: #5d4034; -fx-border-width: 1; -fx-border-radius: 7; }
+.dark-dialog .text-field, .dark-dialog .text-area {
+    -fx-background-color: #1b1a18; -fx-text-fill: #f4efe7; -fx-prompt-text-fill: #857f74;
+    -fx-border-color: #3a362f; -fx-border-radius: 7; -fx-background-radius: 7;
+    -fx-control-inner-background: #1b1a18; -fx-font-size: 12.5px; -fx-padding: 5 8 5 8;
+}
+.dark-dialog .check-box { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .check-box .box { -fx-background-color: #1b1a18; -fx-border-color: #4a453c; -fx-border-radius: 4; -fx-background-radius: 4; }
+.dark-dialog .check-box:selected .box { -fx-background-color: #d97757; -fx-border-color: #d97757; }
+.dark-dialog .check-box:selected .mark { -fx-background-color: #23130d; }
+.dark-dialog .button { -fx-background-color: transparent; -fx-text-fill: #b6afa2; -fx-border-color: #3a362f; -fx-border-radius: 7; -fx-background-radius: 7; -fx-padding: 6 13 6 13; -fx-font-size: 12px; }
+.dark-dialog .button:hover { -fx-text-fill: #f4efe7; -fx-border-color: #4a453c; }
+/* 默认按钮（「应用」）：旧 .dialog-pane .button:default 为 3 个类的特异度，单靠 .dark-dialog .button:default
+   会被其蓝底压回；并列写上 .dialog-pane.dark-dialog 前缀（4 类）确保暖石橙底生效 */
+.dark-dialog .button:default, .dialog-pane.dark-dialog .button:default { -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757); -fx-text-fill: #23130d; -fx-font-weight: bold; -fx-border-color: transparent; }
+.form-label { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.plugin-row {
+    -fx-background-color: #1b1a18;
+    -fx-background-radius: 9;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 9;
+    -fx-padding: 10 12 10 12;
+}
+.plugin-name { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; -fx-font-weight: bold; }
+/* 状态行沿用 .msg-thinking 类（取灰字，但该类自带 #13161c 胶囊底）：在 plugin-row 内应为纯文字，
+   这里清掉底色；text-fill/font-size 后置覆盖 .msg-thinking 的 14px 蓝色调灰 */
+.plugin-status { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-background-color: transparent; }
