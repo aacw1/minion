@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>minion · UI 优化方案预览</title>
+<style>
+/* ============================================================
+   minion UI 原型：同一套结构，三套设计令牌
+   A 暖石 clay / B 深空 aurora / C 石墨 graphite
+   ============================================================ */
+
+/* ---------- 设计令牌 ---------- */
+body[data-theme="clay"] {
+  --bg:            #1b1a18;
+  --bg-panel:      #201e1b;
+  --bg-title:      #24221f;
+  --surface:       #262320;
+  --surface-hover: #2c2925;
+  --surface-active:#332f2a;
+  --border:        #3a362f;
+  --border-soft:   rgba(255,255,255,.07);
+  --border-strong: #4a453c;
+  --text:          #f4efe7;
+  --text-2:        #b6afa2;
+  --text-3:        #857f74;
+  --accent:        #d97757;
+  --accent-2:      #e3a06b;
+  --accent-soft:   rgba(217,119,87,.14);
+  --accent-line:   rgba(217,119,87,.38);
+  --accent-ink:    #23130d;
+  --user-bg:       #332a22;
+  --user-border:   #45382c;
+  --user-text:     #f7f0e6;
+  --code-bg:       #151412;
+  --code-head:     #1c1a17;
+  --ok:            #8fbb7f;
+  --ok-soft:       rgba(143,187,127,.13);
+  --warn:          #d8ab5f;
+  --danger:        #e08272;
+  --danger-soft:   rgba(224,130,114,.12);
+  --syn-kw:        #d9a066;
+  --syn-str:       #a3bf86;
+  --syn-num:       #d8ab5f;
+  --syn-com:       #6f6a60;
+  --syn-fn:        #e3c08a;
+  --shadow:        0 18px 50px rgba(0,0,0,.45);
+  --shadow-sm:     0 2px 10px rgba(0,0,0,.30);
+  --radius-lg:     14px;
+  --radius-md:     9px;
+  --radius-sm:     6px;
+  --win-shadow:    0 40px 100px rgba(0,0,0,.65), 0 2px 0 rgba(255,255,255,.04) inset;
+  --page-bg:       #0b0a09;
+  --send-bg:       #d97757;
+  --send-fg:       #23130d;
+  --btn-bg:        #d97757;
+  --btn-fg:        #23130d;
+  --check-mark:    #23130d;
+}
+
+body[data-theme="aurora"] {
+  --bg:            #0a0d13;
+  --bg-panel:      #0f131b;
+  --bg-title:      #121722;
+  --surface:       #161b26;
+  --surface-hover: #1b2130;
+  --surface-active:#202839;
+  --border:        #242b3a;
+  --border-soft:   rgba(255,255,255,.06);
+  --border-strong: #33405a;
+  --text:          #e9eef8;
+  --text-2:        #a1abbf;
+  --text-3:        #6f7a90;
+  --accent:        #6f8cff;
+  --accent-2:      #9d7bff;
+  --accent-soft:   rgba(111,140,255,.14);
+  --accent-line:   rgba(111,140,255,.40);
+  --accent-ink:    #0a0d13;
+  --user-bg:       rgba(111,140,255,.13);
+  --user-border:   rgba(111,140,255,.30);
+  --user-text:     #eaf0ff;
+  --code-bg:       #080b10;
+  --code-head:     #0e1219;
+  --ok:            #4ade80;
+  --ok-soft:       rgba(74,222,128,.12);
+  --warn:          #f0b45e;
+  --danger:        #f87171;
+  --danger-soft:   rgba(248,113,113,.12);
+  --syn-kw:        #b692ff;
+  --syn-str:       #7ddba3;
+  --syn-num:       #f0b45e;
+  --syn-com:       #5b6579;
+  --syn-fn:        #82b1ff;
+  --shadow:        0 18px 50px rgba(0,0,0,.55);
+  --shadow-sm:     0 2px 12px rgba(0,0,0,.35);
+  --radius-lg:     14px;
+  --radius-md:     9px;
+  --radius-sm:     6px;
+  --win-shadow:    0 40px 100px rgba(0,0,0,.75), 0 0 0 1px rgba(120,150,255,.06);
+  --page-bg:       #06070a;
+  --send-bg:       linear-gradient(135deg,#5f7bf5,#8a63f2);
+  --send-fg:       #ffffff;
+  --btn-bg:        linear-gradient(135deg,#5f7bf5,#8a63f2);
+  --btn-fg:        #ffffff;
+  --check-mark:    #ffffff;
+}
+
+body[data-theme="graphite"] {
+  --bg:            #090909;
+  --bg-panel:      #0d0d0d;
+  --bg-title:      #101010;
+  --surface:       #141414;
+  --surface-hover: #1a1a1a;
+  --surface-active:#202020;
+  --border:        #242424;
+  --border-soft:   rgba(255,255,255,.06);
+  --border-strong: #383838;
+  --text:          #fafafa;
+  --text-2:        #a1a1a1;
+  --text-3:        #6f6f6f;
+  --accent:        #f5f5f5;
+  --accent-2:      #d4d4d4;
+  --accent-soft:   rgba(255,255,255,.08);
+  --accent-line:   rgba(255,255,255,.35);
+  --accent-ink:    #111111;
+  --user-bg:       #1d1d1d;
+  --user-border:   #2c2c2c;
+  --user-text:     #f5f5f5;
+  --code-bg:       #0c0c0c;
+  --code-head:     #121212;
+  --ok:            #4ade80;
+  --ok-soft:       rgba(74,222,128,.12);
+  --warn:          #fbbf24;
+  --danger:        #f87171;
+  --danger-soft:   rgba(248,113,113,.12);
+  --syn-kw:        #e5e5e5;
+  --syn-str:       #8fd694;
+  --syn-num:       #fbbf24;
+  --syn-com:       #5c5c5c;
+  --syn-fn:        #a5b4fc;
+  --shadow:        0 18px 50px rgba(0,0,0,.6);
+  --shadow-sm:     0 2px 10px rgba(0,0,0,.4);
+  --radius-lg:     12px;
+  --radius-md:     8px;
+  --radius-sm:     5px;
+  --win-shadow:    0 40px 100px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.05);
+  --page-bg:       #050505;
+  --send-bg:       #f5f5f5;
+  --send-fg:       #111111;
+  --btn-bg:        #f5f5f5;
+  --btn-fg:        #111111;
+  --check-mark:    #111111;
+}
+
+/* ---------- 基础 ---------- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  transition: background .25s ease, color .25s ease;
+}
+svg { display: block; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; }
+
+/* ---------- 原型外壳 ---------- */
+.proto {
+  min-height: 100%;
+  padding: 22px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.proto-bar {
+  width: 100%;
+  max-width: 1340px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.proto-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.proto-title span { color: var(--text-3); font-weight: 400; margin-left: 8px; }
+.switcher { display: flex; gap: 4px; padding: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; }
+.sw {
+  padding: 6px 13px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  transition: background .15s ease, color .15s ease;
+}
+.sw:hover { color: var(--text); background: var(--surface-hover); }
+.sw.active { background: var(--surface-active); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-soft); }
+.proto-hint { margin-left: auto; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.proto-note { width: 100%; max-width: 1340px; font-size: 12.5px; color: var(--text-2); }
+.proto-note b { color: var(--text); font-weight: 600; }
+
+/* 应用窗口 */
+.app {
+  width: 100%;
+  max-width: 1340px;
+  height: 812px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  overflow: hidden;
+  box-shadow: var(--win-shadow);
+  transition: background .25s ease, border-color .25s ease;
+}
+
+/* ---------- 标题栏 ---------- */
+.titlebar {
+  flex: 0 0 46px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 14px;
+  background: var(--bg-title);
+  border-bottom: 1px solid var(--border-soft);
+}
+.brand { display: flex; align-items: center; gap: 9px; }
+.logo {
+  width: 18px; height: 18px; border-radius: 5px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+.logo::after {
+  content: ""; position: absolute; left: 5px; top: 5px;
+  width: 8px; height: 8px; border-radius: 2px;
+  background: rgba(255,255,255,.9);
+  opacity: .9;
+}
+.brand-name { font-size: 14.5px; font-weight: 650; letter-spacing: .02em; }
+.model-pill {
+  display: flex; align-items: center; gap: 7px;
+  height: 26px; padding: 0 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11.5px;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.model-pill:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-hover); }
+.model-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.model-pill svg { width: 12px; height: 12px; opacity: .7; }
+.tb-spacer { flex: 1; }
+.icon-btn {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  color: var(--text-2);
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.icon-btn.sm { width: 24px; height: 24px; }
+.icon-btn.sm svg { width: 14px; height: 14px; }
+.win-actions { display: flex; align-items: center; gap: 2px; margin-left: 4px; }
+.win-actions .icon-btn { border-radius: 6px; }
+.win-actions .close:hover { background: #c4433a; color: #fff; }
+
+/* ---------- 主体 ---------- */
+.shell { flex: 1; display: flex; min-height: 0; }
+
+/* ---------- 侧栏 ---------- */
+.sidebar {
+  flex: 0 0 25%;
+  max-width: 336px;
+  min-width: 248px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px 12px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-soft);
+}
+.side-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 6px 4px;
+}
+.side-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .10em;
+  color: var(--text-3);
+}
+.count {
+  min-width: 17px; height: 17px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--border-soft);
+  font-size: 10.5px; color: var(--text-3);
+}
+.side-head .icon-btn { margin-left: auto; }
+.side-list { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.side-list.sessions { flex: 1 1 auto; min-height: 90px; }
+.side-list.ws { flex: 0 0 auto; }
+
+.session {
+  position: relative;
+  padding: 8px 10px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.session:hover { background: var(--surface-hover); }
+.session.active { background: var(--surface-active); box-shadow: inset 2px 0 0 var(--accent); }
+.session .line1 { display: flex; align-items: center; gap: 7px; }
+.s-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); flex: none; }
+.session.running .s-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.s-name {
+  flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 550; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session.active .s-name { color: var(--text); }
+.s-time { font-size: 11px; color: var(--text-3); flex: none; }
+.session.active .s-time { color: var(--text-2); }
+.s-sub {
+  margin: 3px 0 0 13px;
+  font-size: 11.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; color: var(--text-2); font-size: 12.5px; cursor: pointer; transition: background .15s ease; }
+.ws-item svg { width: 14px; height: 14px; opacity: .7; }
+.ws-item:hover { background: var(--surface-hover); }
+.ws-item.current { color: var(--text); background: var(--surface); }
+.ws-item .ws-check { margin-left: auto; color: var(--accent); }
+.ws-item .ws-check svg { width: 13px; height: 13px; }
+.side-foot { margin-top: auto; padding: 8px 8px 2px; font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 7px; border-top: 1px solid var(--border-soft); }
+.foot-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+
+/* ---------- 右侧 ---------- */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+
+/* 页签 */
+.tabs {
+  flex: 0 0 40px;
+  display: flex; align-items: stretch; gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  overflow: hidden;
+}
+.tab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s ease, background .15s ease;
+}
+.tab:hover { color: var(--text-2); background: var(--surface-hover); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab .x { width: 16px; height: 16px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; opacity: .55; }
+.tab .x:hover { opacity: 1; background: var(--surface-active); }
+.tab .x svg { width: 11px; height: 11px; }
+
+/* 消息区 */
+.chat-wrap { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 24px 0 18px; }
+.chat { width: 100%; max-width: 828px; margin: 0 auto; padding: 0 26px; display: flex; flex-direction: column; gap: 22px; }
+
+/* 用户消息 */
+.msg-user { display: flex; justify-content: flex-end; }
+.bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  background: var(--user-bg);
+  border: 1px solid var(--user-border);
+  color: var(--user-text);
+  border-radius: 13px 13px 4px 13px;
+  font-size: 14px;
+  line-height: 1.7;
+  box-shadow: var(--shadow-sm);
+}
+
+/* AI 消息 */
+.msg-ai { display: flex; flex-direction: column; gap: 12px; }
+.ai-head { display: flex; align-items: center; gap: 8px; }
+.avatar {
+  width: 19px; height: 19px; border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-ink);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+.ai-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.ai-model { font-size: 11.5px; color: var(--text-3); }
+.ai-time { font-size: 11px; color: var(--text-3); margin-left: 2px; }
+
+/* 思考折叠 */
+.think {
+  display: flex; gap: 8px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.65;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.think:hover { color: var(--text-2); border-left-color: var(--border-strong); }
+.think .chev { flex: none; margin-top: 2px; transition: transform .15s ease; }
+.think svg { width: 11px; height: 11px; }
+
+/* 正文 */
+.content { font-size: 14px; line-height: 1.78; color: var(--text); }
+.content p { margin: 0 0 11px; }
+.content p:last-child { margin-bottom: 0; }
+.content ul { margin: 0 0 12px; padding-left: 19px; }
+.content li { margin: 3px 0; }
+.content li::marker { color: var(--accent); }
+.content strong { font-weight: 600; }
+.content code {
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--border-soft);
+  font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--syn-fn);
+}
+.content a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-line); }
+
+/* 工具调用卡片 */
+.tool {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color .15s ease;
+}
+.tool:hover { border-color: var(--border-strong); }
+.tool-row { display: flex; align-items: center; gap: 9px; padding: 9px 12px; cursor: pointer; }
+.tool-ico {
+  width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ok-soft); color: var(--ok); flex: none;
+}
+.tool-ico svg { width: 11px; height: 11px; }
+.tool-ico.run { background: var(--accent-soft); color: var(--accent); }
+.tool-name { font-size: 12.5px; color: var(--text); font-weight: 550; }
+.tool-meta { font-size: 11.5px; color: var(--text-3); }
+.tool-diffstat { margin-left: auto; display: flex; gap: 6px; font-size: 11.5px; font-family: Consolas, monospace; }
+.add-n { color: var(--ok); }
+.del-n { color: var(--danger); }
+.tool .chev { color: var(--text-3); display: flex; }
+.tool .chev svg { width: 12px; height: 12px; }
+.diff { border-top: 1px solid var(--border-soft); background: var(--code-bg); padding: 7px 0 9px; font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; line-height: 1.65; }
+.diff-file { padding: 3px 14px 5px; color: var(--text-3); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
+.diff-file svg { width: 11px; height: 11px; }
+.dline { padding: 1px 14px; white-space: pre; overflow-x: auto; color: var(--text-2); }
+.dline.add { background: var(--ok-soft); color: var(--ok); }
+.dline.del { background: var(--danger-soft); color: var(--danger); }
+
+/* 代码块 */
+.code {
+  margin: 2px 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+.code-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--code-head); border-bottom: 1px solid var(--border-soft); }
+.code-lang { font-family: Consolas, monospace; font-size: 11.5px; color: var(--text-3); }
+.code-copy { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-3); padding: 2px 6px; border-radius: 5px; transition: color .15s, background .15s; }
+.code-copy:hover { color: var(--text); background: var(--surface-hover); }
+.code-copy svg { width: 12px; height: 12px; }
+.code pre { margin: 0; padding: 11px 14px 13px; overflow-x: auto; }
+.code code { font-family: Consolas, "Cascadia Code", monospace; font-size: 12.5px; line-height: 1.72; color: var(--text-2); }
+.tok-kw { color: var(--syn-kw); }
+.tok-str { color: var(--syn-str); }
+.tok-num { color: var(--syn-num); }
+.tok-com { color: var(--syn-com); font-style: italic; }
+.tok-fn { color: var(--syn-fn); }
+
+/* 运行状态胶囊 */
+.run-pill {
+  position: absolute; left: 26px; bottom: 12px;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 12px;
+  border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 11.5px; color: var(--text-2);
+  backdrop-filter: blur(8px);
+}
+.run-pill .gear { width: 13px; height: 13px; color: var(--accent); animation: spin 3.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.run-pill .elapsed { color: var(--text-3); }
+
+/* 输入区 */
+.composer {
+  flex: 0 0 auto;
+  padding: 6px 0 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.composer-inner { width: 62%; min-width: 420px; max-width: 700px; }
+.input-frame {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 9px 10px 8px;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.input-frame.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 2px 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 23px; padding: 0 5px 0 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--text);
+  font-size: 11.5px;
+}
+.chip .chip-k { color: var(--accent); font-weight: 600; }
+.chip .chip-x { width: 15px; height: 15px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.chip .chip-x:hover { background: rgba(248,113,113,.15); color: var(--danger); }
+.chip .chip-x svg { width: 9px; height: 9px; }
+.editor {
+  min-height: 46px;
+  padding: 2px 4px 0;
+  font-size: 14px; line-height: 1.7;
+  color: var(--text);
+}
+.editor .caret { display: inline-block; width: 1.5px; height: 17px; background: var(--accent); vertical-align: -3px; margin-left: 1px; animation: blink 1.1s step-end infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+.editor .placeholder { color: var(--text-3); }
+.composer-foot { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+.foot-spacer { flex: 1; }
+.ctx { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); cursor: pointer; }
+.ctx-ring {
+  width: 15px; height: 15px; border-radius: 50%;
+  background: conic-gradient(var(--accent) 0 62%, var(--border) 62% 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+}
+.ctx:hover { color: var(--text-2); }
+.send {
+  width: 30px; height: 30px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--send-bg);
+  color: var(--send-fg);
+  box-shadow: 0 2px 10px var(--accent-soft);
+  transition: transform .12s ease, filter .15s ease;
+}
+.send:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.send:active { transform: translateY(0); }
+.send svg { width: 15px; height: 15px; }
+.composer-hint { font-size: 11px; color: var(--text-3); }
+.composer-hint kbd {
+  font-family: inherit; font-size: 10.5px;
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+/* ============================================================
+   通用窗口 / 对话框规范（设置窗、表单弹窗、确认卡片共用）
+   ============================================================ */
+.win {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.win-title {
+  height: 44px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 10px 0 16px;
+  background: var(--bg-title);
+  border-bottom: 1px solid var(--border-soft);
+}
+.win-title h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+.win-title .wtitle-sub { font-size: 11.5px; color: var(--text-3); }
+.win-title .icon-btn { margin-left: auto; }
+.win-body { padding: 18px 20px; }
+.win-footer {
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  padding: 12px 20px;
+  background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+}
+.win-footer .left { margin-right: auto; }
+
+/* 按钮 */
+.btn {
+  height: 30px; padding: 0 13px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: 7px;
+  font-size: 12px;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, filter .15s ease;
+}
+.btn svg { width: 13px; height: 13px; }
+.btn-primary { background: var(--btn-bg); color: var(--btn-fg); font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.07); }
+.btn-ghost { border: 1px solid var(--border); color: var(--text-2); }
+.btn-ghost:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-hover); }
+.btn-soft { background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-2); }
+.btn-soft:hover { background: var(--surface-hover); color: var(--text); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(1.07); }
+.btn:disabled { opacity: .45; cursor: default; filter: none; }
+.btn-sm { height: 26px; padding: 0 10px; font-size: 11.5px; border-radius: 6px; }
+
+/* 表单 */
+.form-row { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 13px; }
+.form-label {
+  flex: 0 0 146px; width: 146px;
+  padding-top: 8px;
+  text-align: right;
+  font-size: 12.5px; line-height: 1.45;
+  color: var(--text-2);
+}
+.form-label.req::after { content: " *"; color: var(--danger); }
+.form-field { flex: 1; min-width: 0; }
+.input {
+  width: 100%; height: 32px;
+  padding: 0 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font: inherit; font-size: 12.5px;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea.input { height: 58px; padding: 7px 10px; resize: none; line-height: 1.65; }
+.field-hint { margin-top: 5px; font-size: 11px; color: var(--text-3); }
+.field-error { margin-top: 5px; font-size: 11px; color: var(--danger); }
+.with-btn { display: flex; gap: 7px; }
+.with-btn .input { flex: 1; }
+.input-group { display: flex; gap: 7px; align-items: center; }
+
+/* 复选框 / 单选 */
+.cbx { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cbx input { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); position: relative; margin: 0; transition: background .12s, border-color .12s; }
+.cbx input:checked { background: var(--accent); border-color: var(--accent); }
+.cbx input:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: solid var(--check-mark); border-width: 0 1.8px 1.8px 0; transform: rotate(43deg); }
+.cbx input:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
+.cbx:hover { color: var(--text); }
+.radio-row { display: flex; align-items: center; gap: 16px; padding-top: 6px; }
+.rdo { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.rdo input { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--bg); margin: 0; position: relative; transition: border-color .12s; }
+.rdo input:checked { border-color: var(--accent); }
+.rdo input:checked::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); }
+.rdo:hover { color: var(--text); }
+
+/* 列表（模型 / MCP / 数据源 / SSH） */
+.data-list { border: 1px solid var(--border); border-radius: 9px; background: var(--bg); overflow: hidden; }
+.data-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px;
+  font-size: 12.5px; color: var(--text-2);
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.data-row:last-child { border-bottom: 0; }
+.data-row:hover { background: var(--surface-hover); }
+.data-row.sel { background: var(--surface-active); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.data-row .row-name { font-weight: 550; }
+.data-row .meta { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-3); }
+.state { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.state.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.state.off { background: var(--border-strong); }
+.state.err { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.badge { padding: 1px 6px; border-radius: 999px; font-size: 10.5px; background: var(--accent-soft); color: var(--accent); }
+.badge.gray { background: var(--surface); color: var(--text-3); border: 1px solid var(--border-soft); }
+
+/* 设置窗 */
+.settings-win { width: min(920px, 100%); }
+.settings-body { display: flex; min-height: 486px; }
+.settings-nav {
+  flex: 0 0 172px;
+  padding: 13px 10px;
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--bg);
+  border-right: 1px solid var(--border-soft);
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  font-size: 12.5px; color: var(--text-2);
+  cursor: pointer;
+  transition: background .13s ease, color .13s ease;
+}
+.nav-item svg { width: 14px; height: 14px; opacity: .8; }
+.nav-item:hover { background: var(--surface-hover); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent-line); }
+.nav-foot { margin-top: auto; padding: 8px 11px 2px; font-size: 10.5px; color: var(--text-3); border-top: 1px solid var(--border-soft); }
+.settings-content { flex: 1; min-width: 0; padding: 20px 22px; overflow: auto; }
+.pane-title { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+.pane-sub { margin: 0 0 16px; font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
+.pane { display: none; }
+.pane.active { display: block; }
+
+/* 工具页 */
+.plugin-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin-bottom: 8px;
+}
+.plugin-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.plugin-ico svg { width: 14px; height: 14px; }
+.plugin-name { font-size: 12.5px; font-weight: 550; color: var(--text); }
+.plugin-status { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.plugin-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.select {
+  height: 26px; padding: 0 26px 0 9px;
+  background: var(--bg) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23857f74' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>") no-repeat right 7px center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  font: inherit; font-size: 11.5px;
+  appearance: none;
+  outline: none;
+}
+.select:focus { border-color: var(--accent); }
+
+/* 关于页 */
+.about-card { display: flex; gap: 16px; align-items: center; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.about-logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); position: relative; flex: none; }
+.about-logo::after { content: ""; position: absolute; left: 12px; top: 12px; width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,.9); }
+.about-name { font-size: 15px; font-weight: 650; }
+.about-desc { margin-top: 5px; font-size: 11.5px; color: var(--text-3); line-height: 1.7; }
+
+/* 弹窗 / 浮层画廊 */
+.gallery { width: 100%; max-width: 1340px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.demo-cell { display: flex; flex-direction: column; gap: 8px; }
+.demo-label { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-3); }
+.demo-label b { color: var(--text-2); font-weight: 550; }
+.demo-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.mini-stage { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.mini-stage.center { display: flex; justify-content: center; }
+
+/* 数据源管理 */
+.ds-win { width: 100%; }
+.ds-list { max-height: 176px; overflow: auto; }
+.ds-actions { display: flex; gap: 7px; margin-top: 10px; }
+.ds-detail { margin-top: 10px; padding: 8px 10px; background: var(--bg); border: 1px dashed var(--border); border-radius: 7px; font-size: 11.5px; color: var(--text-3); }
+
+/* 补全弹层 */
+.completion { width: 100%; max-width: 540px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+.comp-head { padding: 7px 12px; font-size: 10.5px; color: var(--text-3); border-bottom: 1px solid var(--border-soft); background: var(--code-head); }
+.comp-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; }
+.comp-row:hover { background: var(--surface-hover); }
+.comp-row.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.comp-k { font-family: Consolas, monospace; font-size: 12.5px; color: var(--accent); min-width: 92px; }
+.comp-desc { font-size: 11.5px; color: var(--text-2); }
+.comp-type { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+.comp-anchor { margin-top: 10px; display: flex; justify-content: center; font-size: 10.5px; color: var(--text-3); }
+
+/* 确认卡片 */
+.confirm-stage { position: relative; height: 372px; border-radius: 10px; overflow: hidden; background: linear-gradient(180deg, var(--bg), var(--bg-panel)); border: 1px solid var(--border); }
+.confirm-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.confirm-card { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(480px, 92%); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.confirm-accent { height: 3px; background: var(--warn); }
+.confirm-body { padding: 13px 15px 12px; }
+.confirm-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); }
+.confirm-title svg { width: 15px; height: 15px; color: var(--warn); }
+.confirm-tag { margin-left: auto; font-size: 10.5px; color: var(--warn); background: rgba(216,171,95,.12); border: 1px solid rgba(216,171,95,.25); padding: 1px 7px; border-radius: 999px; }
+.confirm-msg { margin-top: 9px; padding: 9px 11px; background: var(--code-bg); border: 1px solid var(--border-soft); border-radius: 8px; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.65; color: var(--text-2); white-space: pre-wrap; }
+.confirm-hint { margin-top: 7px; font-size: 10.5px; color: var(--text-3); }
+.confirm-actions { display: flex; gap: 7px; margin-top: 12px; }
+.confirm-actions .btn { height: 28px; font-size: 11.5px; }
+.confirm-actions .btn-primary { margin-left: auto; }
+
+/* 小弹窗（重命名 / 删除确认） */
+.tiny-win { width: 100%; max-width: 380px; }
+.tiny-win .win-body { padding: 15px 18px 14px; }
+.tiny-label { font-size: 12.5px; color: var(--text-2); margin-bottom: 8px; }
+.tiny-msg { font-size: 12px; color: var(--text-2); line-height: 1.7; }
+.tiny-actions { display: flex; gap: 7px; justify-content: flex-end; margin-top: 14px; }
+
+/* 说明条 */
+.stage-label {
+  width: 100%; max-width: 1340px;
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px;
+  font-size: 11.5px; color: var(--text-3);
+}
+.stage-label b { color: var(--text); font-size: 12.5px; font-weight: 600; }
+.stage-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.proto-hint a { color: var(--text-2); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+.proto-hint a:hover { color: var(--text); border-bottom-color: var(--accent); }
+.notes { width: 100%; max-width: 1340px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); }
+.notes summary {
+  list-style: none; cursor: pointer;
+  padding: 11px 15px;
+  font-size: 12.5px; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px;
+}
+.notes summary::-webkit-details-marker { display: none; }
+.notes summary b { color: var(--text); font-weight: 600; }
+.notes summary::after { content: "展开"; margin-left: auto; font-size: 11.5px; color: var(--text-3); }
+.notes[open] summary::after { content: "收起"; }
+.notes-body { padding: 0 15px 14px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 26px; }
+.note-item { font-size: 12px; color: var(--text-2); line-height: 1.6; display: flex; gap: 8px; }
+.note-item i { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-style: normal; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+.note-item b { color: var(--text); font-weight: 600; }
+
+@media (max-width: 1100px) {
+  .sidebar { flex-basis: 30%; }
+  .composer-inner { width: 76%; }
+}
+</style>
+</head>
+<body data-theme="clay">
+
+<div class="proto">
+  <header class="proto-bar">
+    <div class="proto-title">minion · UI 优化预览<span>纯静态原型</span></div>
+    <div class="switcher">
+      <button class="sw active" data-set="clay">A · 暖石</button>
+      <button class="sw" data-set="aurora">B · 深空</button>
+      <button class="sw" data-set="graphite">C · 石墨</button>
+    </div>
+    <div class="proto-hint"><a href="#settings">设置窗 ↓</a> · <a href="#gallery">弹窗与浮层 ↓</a></div>
+  </header>
+
+  <div class="proto-note" id="themeNote"><b>A · 暖石</b>：暖中性色 + 陶土橙强调。本页包含 ① 主界面、② 设置窗、③ 全部弹窗与浮层，共用同一套设计令牌。</div>
+
+  <div class="app">
+    <!-- 标题栏 -->
+    <div class="titlebar">
+      <div class="brand"><span class="logo"></span><span class="brand-name">minion</span></div>
+      <button class="model-pill">
+        <span class="model-dot"></span>deepseek-chat
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="tb-spacer"></div>
+      <button class="icon-btn" title="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="win-actions">
+        <button class="icon-btn" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+        <button class="icon-btn" title="最大化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
+        <button class="icon-btn close" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+
+    <div class="shell">
+      <!-- 侧栏 -->
+      <aside class="sidebar">
+        <div class="side-head">
+          <span class="side-title">会话</span><span class="count">6</span>
+          <button class="icon-btn sm" title="新建会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+
+        <div class="side-list sessions">
+          <div class="session active running">
+            <div class="line1"><span class="s-dot"></span><span class="s-name">侧栏时间显示优化</span><span class="s-time">5m</span></div>
+            <div class="s-sub">已补 TimeFormatterTest，覆盖跨天边界</div>
+          </div>
+          <div class="session">
+            <div class="line1"><span class="s-dot"></span><span class="s-name">重构 MCP 客户端连接状态机</span><span class="s-time">3h</span></div>
+            <div class="s-sub">惰性连接与三传输路由跑通</div>
+          </div>
+          <div class="session">
+            <div class="line1"><span class="s-dot"></span><span class="s-name">修复工具调用 400 报错</span><span class="s-time">1d</span></div>
+            <div class="s-sub">tool_call 与 tool 消息配对补全</div>
+          </div>
+          <div class="session">
+            <div class="line1"><span class="s-dot"></span><span class="s-name">上下文压缩阈值验证</span><span class="s-time">2d</span></div>
+            <div class="s-sub">30% 触发压缩，实测 token 下降 41%</div>
+          </div>
+          <div class="session">
+            <div class="line1"><span class="s-dot"></span><span class="s-name">数据库只读工具联调</span><span class="s-time">4d</span></div>
+            <div class="s-sub">mysql / pg / oracle 三驱动验证</div>
+          </div>
+        </div>
+
+        <div class="side-head">
+          <span class="side-title">工作空间</span>
+          <button class="icon-btn sm" title="新建工作空间"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="side-list ws">
+          <div class="ws-item current">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h5l2 2.5h8A1.5 1.5 0 0 1 21 10v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>
+            minion
+            <span class="ws-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>
+          </div>
+          <div class="ws-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h5l2 2.5h8A1.5 1.5 0 0 1 21 10v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>
+            minion-web
+          </div>
+          <div class="ws-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h5l2 2.5h8A1.5 1.5 0 0 1 21 10v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>
+            notes
+          </div>
+        </div>
+
+        <div class="side-foot"><span class="foot-dot"></span>空闲 · 上下文 62%</div>
+      </aside>
+
+      <!-- 右侧 -->
+      <main class="main">
+        <div class="tabs">
+          <div class="tab active">侧栏时间显示优化
+            <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+          </div>
+          <div class="tab">重构 MCP 客户端
+            <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+          </div>
+        </div>
+
+        <div class="chat-wrap">
+          <div class="chat">
+            <!-- 用户 -->
+            <div class="msg-user">
+              <div class="bubble">帮我看看侧栏会话时间的显示逻辑，5 分钟以内显示 5m 这种。另外标题太长时的省略号也顺手处理一下。</div>
+            </div>
+
+            <!-- AI -->
+            <div class="msg-ai">
+              <div class="ai-head">
+                <span class="avatar">m</span>
+                <span class="ai-name">minion</span>
+                <span class="ai-model">deepseek-chat</span>
+                <span class="ai-time">14:32</span>
+              </div>
+
+              <div class="think">
+                <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+                已阅读 TimeFormatter 与 SessionListView，时间格式化集中在 format(long, long)，省略号由 OverrunStyle.ELLIPSIS 控制，不需要额外处理。
+              </div>
+
+              <div class="content">
+                <p>时间格式集中在 <code>TimeFormatter.format(long, long)</code>，省略号由列表项的 <code>OverrunStyle.ELLIPSIS</code> 控制。我把时间粒度收敛成三段：</p>
+                <ul>
+                  <li>小于 1 分钟 → <strong>刚刚</strong></li>
+                  <li>小于 1 小时 → <strong>5m</strong></li>
+                  <li>小于 1 天 → <strong>3h</strong>，其余 → <strong>2d</strong></li>
+                </ul>
+              </div>
+
+              <div class="tool">
+                <div class="tool-row">
+                  <span class="tool-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>
+                  <span class="tool-name">编辑 2 个文件</span>
+                  <span class="tool-meta">TimeFormatter.java · SessionListView.java</span>
+                  <span class="tool-diffstat"><span class="add-n">+18</span><span class="del-n">−6</span></span>
+                  <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+                </div>
+                <div class="diff">
+                  <div class="diff-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>TimeFormatter.java</div>
+                  <div class="dline add">+    if (diff &lt; 60_000L) return "刚刚";</div>
+                  <div class="dline add">+    long min = diff / 60_000L;</div>
+                  <div class="dline add">+    if (min &lt; 60) return min + "m";</div>
+                  <div class="dline del">-    return diff / 3_600_000L + "h";</div>
+                  <div class="dline add">+    long hour = min / 60;</div>
+                  <div class="dline add">+    return hour &lt; 24 ? hour + "h" : (hour / 24) + "d";</div>
+                </div>
+              </div>
+
+              <div class="content">
+                <p>补了跨天与边界值用例，0 和负数时间戳回退为空字符串：</p>
+              </div>
+
+              <div class="code">
+                <div class="code-head">
+                  <span class="code-lang">TimeFormatterTest.java</span>
+                  <button class="code-copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>复制</button>
+                </div>
+                <pre><code><span class="tok-com">// 跨天：24h 之后按天显示</span>
+<span class="tok-kw">@Test</span>
+<span class="tok-kw">public void</span> <span class="tok-fn">crossDay</span>() {
+    <span class="tok-kw">long</span> now = <span class="tok-num">1_700_000_000_000L</span>;
+    assertEquals(<span class="tok-str">"2d"</span>, TimeFormatter.<span class="tok-fn">format</span>(now - <span class="tok-num">50</span> * <span class="tok-num">3_600_000L</span>, now));
+    assertEquals(<span class="tok-str">"刚刚"</span>, TimeFormatter.<span class="tok-fn">format</span>(now - <span class="tok-num">30_000L</span>, now));
+}</code></pre>
+              </div>
+
+              <div class="content">
+                <p>已补 <code>TimeFormatterTest</code>，覆盖跨天与边界值，<code>mvn test -Dtest=TimeFormatterTest</code> 通过。</p>
+              </div>
+            </div>
+
+            <!-- 用户 -->
+            <div class="msg-user">
+              <div class="bubble">再补一个单测，覆盖跨天的情况</div>
+            </div>
+
+            <!-- AI 运行中 -->
+            <div class="msg-ai">
+              <div class="ai-head">
+                <span class="avatar">m</span>
+                <span class="ai-name">minion</span>
+                <span class="ai-model">deepseek-chat</span>
+                <span class="ai-time">14:35</span>
+              </div>
+              <div class="think">
+                <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+                用例已存在，先确认跨天分支的断言，再检查 lastMessageTs 为 0 时的回退行为。
+              </div>
+              <div class="content">
+                <p>我来补一个跨天用例，同时检查 <code>lastMessageTs</code> 为 0 时的回退行为。</p>
+              </div>
+              <div class="tool">
+                <div class="tool-row">
+                  <span class="tool-ico run"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span>
+                  <span class="tool-name">运行测试</span>
+                  <span class="tool-meta">mvn test -Dtest=TimeFormatterTest</span>
+                  <span class="tool-meta" style="margin-left:auto">运行中…</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="run-pill">
+            <svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            正在运行测试 <span class="elapsed">· 12s</span>
+          </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="composer">
+          <div class="composer-inner">
+            <div class="input-frame focused">
+              <div class="chips">
+                <span class="chip"><span class="chip-k">@</span>src/main/java/com/minion/gui/sidebar/TimeFormatter.java<span class="chip-x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+                <span class="chip"><span class="chip-k">/</span>test<span class="chip-x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+              </div>
+              <div class="editor">再补一个边界用例，时间戳为 0 时不要显示“刚刚”<span class="caret"></span></div>
+              <div class="composer-foot">
+                <button class="icon-btn sm" title="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11.5-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.8 3.8 0 0 1 5.4 5.4l-8.5 8.5a2.1 2.1 0 0 1-3-3l7.8-7.8"/></svg></button>
+                <div class="ctx" title="上下文占用 62%"><span class="ctx-ring"></span>62%</div>
+                <div class="foot-spacer"></div>
+                <button class="send" title="发送">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="composer-hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>@</kbd> 引用文件 · <kbd>/</kbd> 命令</div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ ② 设置窗 ============ -->
+  <div class="stage-label" id="settings"><b>② 设置窗</b> 左侧导航 + 右侧内容，底部固定按钮栏；5 个页签全部沿用同一规范</div>
+  <div class="win settings-win">
+    <div class="win-title">
+      <h3>设置</h3><span class="wtitle-sub">修改后点「应用」，窗口不关闭</span>
+      <button class="icon-btn" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="settings-body">
+      <nav class="settings-nav">
+        <div class="nav-item active" data-pane="basic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg)"/><circle cx="15" cy="12" r="2" fill="var(--bg)"/><circle cx="7" cy="18" r="2" fill="var(--bg)"/></svg>基础设置</div>
+        <div class="nav-item" data-pane="models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>模型</div>
+        <div class="nav-item" data-pane="mcp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M12 15v6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M3 12h6M15 12h6"/></svg>MCP</div>
+        <div class="nav-item" data-pane="tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 1 5 5L9 22H2v-7z"/><path d="m6 16 2 2"/></svg>工具</div>
+        <div class="nav-item" data-pane="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>关于</div>
+        <div class="nav-foot">minion v0.1.0<br>JDK 8 · JavaFX</div>
+      </nav>
+
+      <div class="settings-content">
+        <!-- 基础设置 -->
+        <div class="pane active" data-pane="basic">
+          <h4 class="pane-title">基础设置</h4>
+          <p class="pane-sub">路径、确认白名单与输入习惯。勾选项即时生效，其余点「应用」保存。</p>
+
+          <div class="form-row">
+            <div class="form-label">技能目录</div>
+            <div class="form-field">
+              <div class="with-btn">
+                <input class="input" value="E:\javame\code\code2\minion\run\skills">
+                <button class="btn btn-ghost">浏览…</button>
+              </div>
+              <div class="field-hint">skills.dir · 内置技能与项目级技能合并在运行时快照</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">确认白名单<br>（工具，逗号分隔）</div>
+            <div class="form-field">
+              <textarea class="input">read_file, grep, glob, list_dir</textarea>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">确认白名单<br>（命令，逗号分隔）</div>
+            <div class="form-field">
+              <textarea class="input">mvn test, git status, git diff</textarea>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">空间外读</div>
+            <div class="form-field" style="padding-top:5px">
+              <label class="cbx"><input type="checkbox" checked>允许读取工作区外文件（Read / Grep / Glob）</label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-label">空间外写</div>
+            <div class="form-field" style="padding-top:5px">
+              <label class="cbx"><input type="checkbox">允许写入工作区外文件（Write / Edit）</label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-label">确认开关</div>
+            <div class="form-field" style="padding-top:5px">
+              <label class="cbx"><input type="checkbox">跳过高危操作确认（不建议开启）</label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-label">发送键</div>
+            <div class="form-field" style="padding-top:5px">
+              <label class="cbx"><input type="checkbox" checked>Enter 发送消息（Ctrl+Enter 换行）</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 模型 -->
+        <div class="pane" data-pane="models">
+          <h4 class="pane-title">模型</h4>
+          <p class="pane-sub">模型来自 model.json；切换后对当前所有会话下一轮生效。</p>
+          <div class="data-list">
+            <div class="data-row sel"><span class="state ok"></span><span class="row-name">deepseek-chat</span><span class="meta">DeepSeek · deepseek-chat <span class="badge">当前</span></span></div>
+            <div class="data-row"><span class="state off"></span><span class="row-name">qwen-max</span><span class="meta">Qwen · qwen-max</span></div>
+            <div class="data-row"><span class="state off"></span><span class="row-name">deepseek-reasoner</span><span class="meta">DeepSeek · reasoner</span></div>
+          </div>
+          <div class="ds-actions">
+            <button class="btn btn-primary btn-sm">激活</button>
+            <button class="btn btn-ghost btn-sm">新建</button>
+            <button class="btn btn-ghost btn-sm">修改</button>
+            <button class="btn btn-ghost btn-sm">删除</button>
+          </div>
+          <div class="ds-detail">当前激活：deepseek-chat · 上下文窗口 64K · 输入 ¥0.5 / 百万 tokens</div>
+        </div>
+
+        <!-- MCP -->
+        <div class="pane" data-pane="mcp">
+          <h4 class="pane-title">MCP 服务器</h4>
+          <p class="pane-sub">惰性连接：首次调用工具时才建立连接；断线自动重连一次。</p>
+          <div class="data-list">
+            <div class="data-row sel"><span class="state ok"></span><span class="row-name">filesystem</span><span class="meta">stdio · 12 个工具</span></div>
+            <div class="data-row"><span class="state off"></span><span class="row-name">sqlite</span><span class="meta">stdio · 未连接</span></div>
+            <div class="data-row"><span class="state err"></span><span class="row-name">browser-mcp</span><span class="meta">sse · 连接失败</span></div>
+          </div>
+          <div class="ds-actions">
+            <button class="btn btn-primary btn-sm">新建</button>
+            <button class="btn btn-ghost btn-sm">编辑</button>
+            <button class="btn btn-ghost btn-sm">删除</button>
+            <button class="btn btn-ghost btn-sm">重连</button>
+          </div>
+          <div class="ds-detail">失败原因：connect timed out after 10000ms（点击可复制完整堆栈）</div>
+        </div>
+
+        <!-- 工具 -->
+        <div class="pane" data-pane="tools">
+          <h4 class="pane-title">工具</h4>
+          <p class="pane-sub">开关只控制描述是否注入模型；未启用的工具不会出现在工具列表里。</p>
+
+          <div class="plugin-row">
+            <label class="cbx"><input type="checkbox" checked></label>
+            <span class="plugin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"/></svg></span>
+            <div>
+              <div class="plugin-name">浏览器操作</div>
+              <div class="plugin-status">CDP · 已就绪 · 端口 9222</div>
+            </div>
+            <div class="plugin-actions"><button class="btn btn-soft btn-sm">配置</button></div>
+          </div>
+
+          <div class="plugin-row">
+            <label class="cbx"><input type="checkbox" checked></label>
+            <span class="plugin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>
+            <div>
+              <div class="plugin-name">MySQL 只读查询</div>
+              <div class="plugin-status">已启用 · 2 个数据源</div>
+            </div>
+            <div class="plugin-actions">
+              <select class="select"><option>本地开发库</option><option>测试库</option></select>
+              <button class="btn btn-soft btn-sm">数据源</button>
+            </div>
+          </div>
+
+          <div class="plugin-row">
+            <label class="cbx"><input type="checkbox"></label>
+            <span class="plugin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>
+            <div>
+              <div class="plugin-name">PostgreSQL 只读查询</div>
+              <div class="plugin-status">未启用</div>
+            </div>
+            <div class="plugin-actions">
+              <select class="select"><option>未配置</option></select>
+              <button class="btn btn-soft btn-sm">数据源</button>
+            </div>
+          </div>
+
+          <div class="plugin-row">
+            <label class="cbx"><input type="checkbox" checked></label>
+            <span class="plugin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></svg></span>
+            <div>
+              <div class="plugin-name">SSH 连接</div>
+              <div class="plugin-status">已启用 · 1 个连接</div>
+            </div>
+            <div class="plugin-actions">
+              <select class="select"><option>dev-server</option></select>
+              <button class="btn btn-soft btn-sm">连接管理</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关于 -->
+        <div class="pane" data-pane="about">
+          <h4 class="pane-title">关于</h4>
+          <p class="pane-sub">minion — 兼容 Win7 的代码开发助手</p>
+          <div class="about-card">
+            <div class="about-logo"></div>
+            <div>
+              <div class="about-name">minion <span class="badge gray">v0.1.0</span></div>
+              <div class="about-desc">作者：尹承　联系方式：258915527@qq.com<br>开发语言：Java 8 + JavaFX　构建：Maven</div>
+            </div>
+          </div>
+          <div class="ds-detail" style="margin-top:14px">提示：配置文件与模型列表分别位于 config.properties、model.json，均可直接编辑后重启。</div>
+        </div>
+      </div>
+    </div>
+    <div class="win-footer">
+      <span class="left" style="font-size:11px;color:var(--text-3)">配置写入 config.properties</span>
+      <button class="btn btn-ghost">关闭</button>
+      <button class="btn btn-primary">应用</button>
+    </div>
+  </div>
+
+  <!-- ============ ③ 弹窗与浮层 ============ -->
+  <div class="stage-label" id="gallery"><b>③ 弹窗与浮层</b> 列表类、表单类、补全弹层、高危确认共用同一套规范</div>
+  <div class="gallery">
+
+    <!-- 数据源管理 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>列表类弹窗</b>数据源管理 / SSH 连接 / MCP 列表</div>
+      <div class="mini-stage center">
+        <div class="win ds-win">
+          <div class="win-title"><h3>MySQL 数据源管理</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:14px 16px">
+            <div class="data-list ds-list">
+              <div class="data-row sel"><span class="state ok"></span><span class="row-name">本地开发库</span><span class="meta">127.0.0.1:3306 / dev</span></div>
+              <div class="data-row"><span class="state off"></span><span class="row-name">测试库</span><span class="meta">10.0.8.12:3306 / test</span></div>
+              <div class="data-row"><span class="state err"></span><span class="row-name">报表只读</span><span class="meta">连接失败</span></div>
+            </div>
+            <div class="ds-actions">
+              <button class="btn btn-primary btn-sm">新建</button>
+              <button class="btn btn-ghost btn-sm">修改</button>
+              <button class="btn btn-ghost btn-sm">删除</button>
+              <button class="btn btn-ghost btn-sm">测试连接</button>
+            </div>
+            <div class="ds-detail">连接成功 · MySQL 8.0.33 · 只读账户 · 3 个库可见</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 表单类弹窗 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>表单类弹窗</b>数据源 / 模型 / MCP / SSH / 浏览器配置</div>
+      <div class="mini-stage center">
+        <div class="win" style="width:100%;max-width:520px">
+          <div class="win-title"><h3>新建数据源</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:16px 18px">
+            <div class="form-row">
+              <div class="form-label req">名称</div>
+              <div class="form-field"><input class="input" value="本地开发库"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label req">JDBC URL</div>
+              <div class="form-field">
+                <input class="input" value="jdbc:mysql://127.0.0.1:3306/dev?useSSL=false">
+                <div class="field-hint">仅支持只读查询；连接不落池，每次查询新建。</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">用户名</div>
+              <div class="form-field"><input class="input" value="readonly"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">密码</div>
+              <div class="form-field"><input class="input" type="password" value="password"></div>
+            </div>
+            <div class="form-row" style="margin-bottom:2px">
+              <div class="form-label"></div>
+              <div class="form-field"><button class="btn btn-soft btn-sm">测试连接</button><span style="font-size:11px;color:var(--ok);margin-left:9px">✓ 连接成功 · 28ms</span></div>
+            </div>
+          </div>
+          <div class="win-footer"><button class="btn btn-ghost">取消</button><button class="btn btn-primary">确定</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新建工作空间 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>表单类弹窗</b>新建 / 修改工作空间（带路径校验）</div>
+      <div class="mini-stage center">
+        <div class="win" style="width:100%;max-width:560px">
+          <div class="win-title"><h3>新建工作空间</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:16px 18px">
+            <div class="form-row">
+              <div class="form-label req">名称</div>
+              <div class="form-field"><input class="input" value="minion-web"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label req">项目路径</div>
+              <div class="form-field">
+                <div class="with-btn"><input class="input" value="E:\workspace\minion-web"><button class="btn btn-ghost">浏览…</button></div>
+                <div class="field-error">目录不存在，请重新选择</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">项目主说明文件</div>
+              <div class="form-field">
+                <div class="with-btn"><input class="input" value="CLAUDE.md"><button class="btn btn-ghost">浏览…</button></div>
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom:2px">
+              <div class="form-label">项目级技能路径</div>
+              <div class="form-field">
+                <div class="with-btn"><input class="input" placeholder="（可选）留空则只用内置技能"><button class="btn btn-ghost">浏览…</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="win-footer"><button class="btn btn-ghost">取消</button><button class="btn btn-primary">确定</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 补全弹层 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>输入浮层</b>@ 文件 / / 命令补全（锚定输入框上方）</div>
+      <div class="mini-stage">
+        <div class="completion">
+          <div class="comp-head">输入 / 匹配 4 条命令 · ↑↓ 选择 · Enter 确认 · Esc 关闭</div>
+          <div class="comp-row sel"><span class="comp-k">/test</span><span class="comp-desc">运行当前项目测试</span><span class="comp-type">命令</span></div>
+          <div class="comp-row"><span class="comp-k">/compact</span><span class="comp-desc">立即压缩上下文</span><span class="comp-type">命令</span></div>
+          <div class="comp-row"><span class="comp-k">/model</span><span class="comp-desc">查看或切换模型</span><span class="comp-type">命令</span></div>
+          <div class="comp-row"><span class="comp-k">/clear</span><span class="comp-desc">清空当前会话消息</span><span class="comp-type">命令</span></div>
+        </div>
+        <div class="comp-anchor">↓ 弹层紧贴输入大框上沿，宽度与输入框一致</div>
+      </div>
+    </div>
+
+    <!-- 确认卡片 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>高危确认</b>底部卡片 + 右侧面板遮罩</div>
+      <div class="mini-stage" style="padding:0;overflow:hidden">
+        <div class="confirm-stage">
+          <div class="confirm-scrim"></div>
+          <div class="confirm-card">
+            <div class="confirm-accent"></div>
+            <div class="confirm-body">
+              <div class="confirm-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 21h20L12 3z"/><path d="M12 9v5M12 18h.01"/></svg>
+                需要确认：执行命令
+                <span class="confirm-tag">高危</span>
+              </div>
+              <div class="confirm-msg">rm -rf target/ &amp;&amp; mvn package -DskipTests</div>
+              <div class="confirm-hint">该操作会删除构建产物并重新打包，无法撤销。</div>
+              <div class="confirm-actions">
+                <button class="btn btn-ghost">拒绝</button>
+                <button class="btn btn-ghost">本次会话批准</button>
+                <button class="btn btn-ghost">批准并记住</button>
+                <button class="btn btn-primary">同意</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 小弹窗 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>通用小弹窗</b>重命名 / 删除确认 / 错误提示</div>
+      <div class="mini-stage center">
+        <div class="win tiny-win">
+          <div class="win-title"><h3>重命名会话</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body">
+            <div class="tiny-label">输入新标题</div>
+            <input class="input" value="侧栏时间显示优化">
+            <div class="tiny-actions"><button class="btn btn-ghost">取消</button><button class="btn btn-primary">确定</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MCP 编辑表单 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>条件表单</b>MCP 服务器编辑（传输类型联动字段）</div>
+      <div class="mini-stage center">
+        <div class="win" style="width:100%;max-width:560px">
+          <div class="win-title"><h3>编辑 MCP 服务器</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:16px 18px">
+            <div class="form-row">
+              <div class="form-label req">名称</div>
+              <div class="form-field"><input class="input" value="filesystem"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">传输方式</div>
+              <div class="form-field radio-row">
+                <label class="rdo"><input type="radio" name="mcp-t" checked>stdio</label>
+                <label class="rdo"><input type="radio" name="mcp-t">SSE</label>
+                <label class="rdo"><input type="radio" name="mcp-t">WebSocket</label>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-label req">命令</div>
+              <div class="form-field"><input class="input" value="npx"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">参数</div>
+              <div class="form-field"><textarea class="input" style="height:44px">-y @modelcontextprotocol/server-filesystem E:\workspace</textarea></div>
+            </div>
+            <div class="form-row" style="margin-bottom:2px">
+              <div class="form-label">环境变量</div>
+              <div class="form-field"><textarea class="input" style="height:44px">KEY=value</textarea><div class="field-hint">每行一条 KEY=VALUE；切换到 SSE / WebSocket 时命令、参数、环境变量行自动隐藏并清空。</div></div>
+            </div>
+          </div>
+          <div class="win-footer"><button class="btn btn-ghost">取消</button><button class="btn btn-primary">保存</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SSH 连接管理 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>列表 + 认证表单</b>SSH 连接管理（密码 / 私钥联动）</div>
+      <div class="mini-stage">
+        <div class="win">
+          <div class="win-title"><h3>SSH 连接管理</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:14px 16px">
+            <div class="data-list ds-list">
+              <div class="data-row sel"><span class="state ok"></span><span class="row-name">dev-server</span><span class="meta">10.0.8.12:22 · root</span></div>
+              <div class="data-row"><span class="state off"></span><span class="row-name">prod-jump</span><span class="meta">跳板机 · 私钥认证</span></div>
+            </div>
+            <div class="ds-actions">
+              <button class="btn btn-primary btn-sm">新建</button>
+              <button class="btn btn-ghost btn-sm">修改</button>
+              <button class="btn btn-ghost btn-sm">删除</button>
+              <button class="btn btn-ghost btn-sm">测试连接</button>
+            </div>
+            <div style="border-top:1px solid var(--border-soft);margin:12px 0 10px"></div>
+            <div class="form-row" style="margin-bottom:9px">
+              <div class="form-label" style="flex-basis:78px;width:78px;padding-top:7px">主机</div>
+              <div class="form-field" style="display:flex;gap:7px"><input class="input" value="10.0.8.12" style="flex:2"><input class="input" value="22" style="flex:1"></div>
+            </div>
+            <div class="form-row" style="margin-bottom:9px">
+              <div class="form-label" style="flex-basis:78px;width:78px;padding-top:7px">认证方式</div>
+              <div class="form-field radio-row" style="padding-top:6px">
+                <label class="rdo"><input type="radio" name="ssh-a" checked>密码</label>
+                <label class="rdo"><input type="radio" name="ssh-a">私钥</label>
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom:2px">
+              <div class="form-label" style="flex-basis:78px;width:78px;padding-top:7px">密码</div>
+              <div class="form-field"><input class="input" type="password" value="password"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 浏览器配置 -->
+    <div class="demo-cell">
+      <div class="demo-label"><b>表单类弹窗</b>浏览器操作配置（路径 + 端口 + 无头）</div>
+      <div class="mini-stage center">
+        <div class="win" style="width:100%;max-width:540px">
+          <div class="win-title"><h3>浏览器操作 配置</h3><button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="win-body" style="padding:16px 18px">
+            <div class="form-row">
+              <div class="form-label req">浏览器程序</div>
+              <div class="form-field"><div class="with-btn"><input class="input" value="C:\Program Files\Google\Chrome\Application\chrome.exe"><button class="btn btn-ghost">浏览…</button></div></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">调试端口</div>
+              <div class="form-field"><input class="input" value="9222" style="max-width:140px"><div class="field-hint">需与已启动的 Chrome 端口一致，被占用时自动 +1 探测。</div></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">用户数据目录</div>
+              <div class="form-field"><input class="input" value="E:\javame\code\code2\minion\run\.chrome-profile"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">运行模式</div>
+              <div class="form-field" style="padding-top:5px"><label class="cbx"><input type="checkbox">无头模式（不显示浏览器窗口）</label></div>
+            </div>
+            <div class="form-row" style="margin-bottom:2px">
+              <div class="form-label">操作超时</div>
+              <div class="form-field"><input class="input" value="15000" style="max-width:140px"><div class="field-hint">毫秒；保存立即生效，已打开的页面会被关闭。</div></div>
+            </div>
+          </div>
+          <div class="win-footer"><button class="btn btn-ghost">取消</button><button class="btn btn-primary">保存</button></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <details class="notes">
+    <summary>本次优化点（9 项） —— <b>想看细节就展开</b></summary>
+    <div class="notes-body">
+      <div class="note-item"><i>1</i><div><b>背景层次统一</b>：正文 / 面板 / 浮层三级抬升，边框降为半透明，去掉纯黑与蓝紫边框的割裂感。</div></div>
+      <div class="note-item"><i>2</i><div><b>文字层级</b>：14px 正文 / 12.5px 次级 / 11px 辅助，行高 1.78；不再全界面 16px 一片。</div></div>
+      <div class="note-item"><i>3</i><div><b>强调色收敛</b>：单一主色 + 成功 / 警告 / 错误三个语义色，去掉高饱和紫、青、绿混用。</div></div>
+      <div class="note-item"><i>4</i><div><b>阅读宽度</b>：消息正文限宽 828px 居中，长文不再横跨 1000px 以上。</div></div>
+      <div class="note-item"><i>5</i><div><b>消息形态</b>：用户消息右对齐气泡；AI 消息带身份行；思考折叠改为左侧细线。</div></div>
+      <div class="note-item"><i>6</i><div><b>工具调用卡片化</b>：状态图标 + 摘要 + 增删统计 + 展开 diff，信息一眼可读。</div></div>
+      <div class="note-item"><i>7</i><div><b>输入区</b>：圆角 14、聚焦光晕、chip 统一、圆形发送键、上下文环回到输入框内。</div></div>
+      <div class="note-item"><i>8</i><div><b>细节</b>：4px 间距网格、8px 滚动条、页签下划线、hover / focus 过渡、关闭键红底。</div></div>
+      <div class="note-item"><i>9</i><div><b>弹窗统一</b>：设置窗 5 页 + 列表类 / 表单类 / 小弹窗 / 补全弹层 / 确认卡片共用一套窗口、表单、按钮规范。</div></div>
+    </div>
+  </details>
+</div>
+
+<script>
+  var notes = {
+    clay: "<b>A · 暖石</b>：暖中性色 + 陶土橙强调。本页包含 ① 主界面、② 设置窗、③ 全部弹窗与浮层，共用同一套设计令牌。",
+    aurora: "<b>B · 深空</b>：深蓝黑分层 + 蓝紫渐变强调，光泽感最强，科技感最足。",
+    graphite: "<b>C · 石墨</b>：纯灰阶 + 白色主按钮，去掉装饰，信息密度最高、最克制。"
+  };
+  var buttons = document.querySelectorAll(".sw");
+  var note = document.getElementById("themeNote");
+  buttons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.body.dataset.theme = btn.dataset.set;
+      buttons.forEach(function (b) { b.classList.toggle("active", b === btn); });
+      note.innerHTML = notes[btn.dataset.set];
+    });
+  });
+
+  /* 设置窗左侧导航 */
+  var navItems = document.querySelectorAll(".nav-item");
+  navItems.forEach(function (item) {
+    item.addEventListener("click", function () {
+      navItems.forEach(function (n) { n.classList.toggle("active", n === item); });
+      var pane = item.dataset.pane;
+      document.querySelectorAll(".settings-content .pane").forEach(function (p) {
+        p.classList.toggle("active", p.dataset.pane === pane);
+      });
+    });
+  });
+</script>
+</body>
+</html>
