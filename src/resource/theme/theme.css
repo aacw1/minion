@@ -577,3 +577,36 @@
 .subagent-card .log-summary-text { -fx-text-fill: #b3e5fc; -fx-font-size: 12px; }
 .subagent-card .content { -fx-background-color: #20242a; }
 .empty-hint { -fx-text-fill: #857f74; -fx-font-size: 13px; }
+
+/* ===== 无边框深色弹窗（DarkDialogs：自绘 .dark-titlebar，DialogPane 内容区 padding 归零） =====
+   Dialog 不继承主界面 Scene 样式表，仍由 Theme.style(d) 挂载本文件；.dialog-pane.dark-dialog
+   特异度高于 .dialog-pane，覆盖旧弹窗底色/边框。ButtonBar 的 .container 用后代选择器（对应
+   modena 的 .dialog-pane > .button-bar > .container）。内容区 padding 用直接子选择器（对应
+   modena 的 .dialog-pane > .content）：不能写成 .dark-dialog .content——那会命中 TextArea 内部
+   的 .content（modena 给 3 7 的内边距），把弹窗内文本框文字压到边框上。
+   标题/副标题选择器带上 .dialog-pane.dark-dialog 前缀：既有 .dialog-pane .label（2 个类）特异度
+   高于单类 .dark-title/.dark-subtitle，否则文字色会被旧弹窗灰 #e6e8ee 接管（副标题失去层级）。 */
+.dialog-pane.dark-dialog {
+    -fx-background-color: #201e1b;
+    -fx-background-radius: 12;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 12;
+    -fx-padding: 0;
+}
+.dark-titlebar {
+    -fx-background-color: #24221f;
+    -fx-background-radius: 12 12 0 0;
+    -fx-border-color: transparent transparent rgba(255,255,255,0.07) transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 10 0 16;
+    -fx-pref-height: 44;
+}
+.dialog-pane.dark-dialog .dark-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
+.dialog-pane.dark-dialog .dark-subtitle { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .button-bar .container {
+    -fx-background-color: #1b1a18;
+    -fx-padding: 12 20 12 20;
+    -fx-border-color: rgba(255,255,255,0.07) transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+.dark-dialog > .content { -fx-padding: 0; }

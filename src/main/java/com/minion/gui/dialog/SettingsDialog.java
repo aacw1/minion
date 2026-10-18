@@ -107,6 +107,8 @@ public class SettingsDialog {
         // 需求：右侧内容区宽为原 1.5 倍（导航 120 不变：500 → 750，总宽 620 → 870）
         box.setPrefSize(870, 500);
         d.getDialogPane().setContent(box);
+        // 无边框深色弹窗：自绘标题栏（拖动 + 关闭），去掉 Windows 浅色系统标题栏（样式类 dark-dialog）
+        DarkDialogs.decorate(d, "设置");
         d.showAndWait();
     }
 
