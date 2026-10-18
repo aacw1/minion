@@ -242,6 +242,12 @@ public class DeepSeekClient implements LlmClient {
         if (usage == null) {
             usage = Usage.estimate(messages, content.toString());
         }
+        // 协议归一：有工具参数即视为工具调用（流截断时 finish 保持默认 "stop"；
+        // 部分 OpenAI 兼容网关对工具调用返回 stop/function_call）。主循环以 toolCalls 为执行依据，
+        // 此处同时把对外契约修正为 tool_calls，防上层依赖 finish 的实现再次丢调用。
+        if (!acc.isEmpty() && !"tool_calls".equals(finish)) {
+            finish = "tool_calls";
+        }
         if (finish.equals("tool_calls") && acc.isEmpty()) {
             throw new LlmException(LlmException.Type.BAD_REQUEST,
                     "模型声明工具调用但未返回工具参数", false);

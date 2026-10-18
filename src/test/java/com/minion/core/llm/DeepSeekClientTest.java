@@ -552,4 +552,44 @@ public class DeepSeekClientTest {
             client.close();
         }
     }
+
+    /** 有工具参数但 finish_reason 为 stop（兼容网关/代理）：归一为 tool_calls，防主循环丢弃工具调用 */
+    @Test
+    public void streamChat_toolCallsWithStopFinish_normalized() throws Exception {
+        String sse = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\","
+                + "\"type\":\"function\",\"function\":{\"name\":\"Read\",\"arguments\":\"{}\"}}]}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                + "data: [DONE]\n\n";
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody(sse, 1));
+        final List<Object> out = new ArrayList<Object>();
+        newClient().streamChat(Collections.<Message>singletonList(Message.user("读文件")),
+                null, new StreamHandler() {
+                    @Override public void onFinish(String finishReason, Usage usage, List<ToolCall> tcs) {
+                        out.add(finishReason);
+                        out.add(tcs);
+                    }
+                });
+        assertEquals("tool_calls", out.get(0));
+        assertEquals(1, ((List<?>) out.get(1)).size());
+    }
+
+    /** 流被截断（无 finish chunk）：默认 stop 同样归一，避免带半轮 tool_calls 静默结束 */
+    @Test
+    public void streamChat_truncatedStreamWithToolCalls_normalized() throws Exception {
+        String sse = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c2\","
+                + "\"type\":\"function\",\"function\":{\"name\":\"Read\",\"arguments\":\"{}\"}}]}}]}\n\n";
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setChunkedBody(sse, 1));
+        final List<Object> out = new ArrayList<Object>();
+        newClient().streamChat(Collections.<Message>singletonList(Message.user("读文件")),
+                null, new StreamHandler() {
+                    @Override public void onFinish(String finishReason, Usage usage, List<ToolCall> tcs) {
+                        out.add(finishReason);
+                    }
+                });
+        assertEquals("tool_calls", out.get(0));
+    }
 }
