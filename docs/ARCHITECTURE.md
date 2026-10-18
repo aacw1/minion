@@ -34,7 +34,7 @@ com.minion
 |---|---|
 | MinionApp | JavaFX 启动（Application），静态注入 Config/WorkspaceManager/ModelManager/SessionManager |
 | MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ GridPane 25%/75% 固定比例（无分隔线、不可拖拽，左侧会话/工作空间，右侧页签栏+消息区+输入区（外包 StackPane 承载 ConfirmSheet））；关闭确认 confirmClose 由关闭按钮与系统关闭共用；右侧顶部页签栏（tabs-bar，空页签整行隐藏）selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy |
-| TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮，设置入口齿轮图标） |
+| TitleBar | 自绘标题栏（拖动移动/双击最大化，最小化/最大化/关闭按钮与设置入口齿轮均为 IconFactory 描边图标 `.icon-stroke`，14px 显示、hover 变亮） |
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停重命名/删除、工作空间项悬停修改/删除（重命名并入修改弹窗）；当前工作空间名称右侧主色圆点标记（SVG）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
@@ -43,9 +43,10 @@ com.minion
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标 cell 级确认）+ 触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间全量文件遍历：跳过点目录与 .gitignore 忽略、字典序、每工作空间独立 5 分钟缓存，会话绑定预热/过期先用旧缓存异步刷新）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
-| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点（SVG 圆点）绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；模型页已激活模型名称右侧主色圆点标记（SVG）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点（SVG 圆点）绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/修改/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；模型页已激活模型名称右侧主色圆点标记（SVG）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/DarkDialogs | 无边框深色弹窗外壳（替代直接 new Dialog/Alert）：`create(owner,title,content,buttons...)` 与 `decorate(dialog,title)`；Stage 用 `StageStyle.TRANSPARENT`（JavaFX 8 下 UNDECORATED 不支持透明场景填充，12px 圆角四角会露系统方块）+ 自绘标题栏（标题 + 弹性空白 + 关闭，标题栏可拖动）+ 内容区顶部副标题；ESC/关闭语义同取消；本类不挂样式表，调用方仍须先 `Theme.style(dialog)` |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
-| icon/IconFactory | SVG 图标工厂：21 个 Material Symbols Outlined 24×24 path 常量 + 工厂方法（每图标带 .icon-* 样式类）+ size() 等比缩放；全部界面图标集中于此，颜色/尺寸由 theme.css 控制，不依赖系统字体（Win7 缺字形环境不再显示方块）；RunningIndicator 齿轮亦经此迁移（IconFactory.gear + .running-indicator-gear） |
+| icon/IconFactory | SVG 图标工厂：27 个 24×24 path 常量 + 29 个工厂方法（填充图标带 .icon-* 样式类；描边图标另带 .icon-stroke）+ size() 等比缩放；全部界面图标集中于此，颜色/尺寸由 theme.css 控制，不依赖系统字体（Win7 缺字形环境不再显示方块）；描边系列（strokeClose/strokeMinus/strokeMaximize/strokeRestore/strokeSend/strokePlus/strokeSettings）用于标题栏窗口按钮、设置齿轮、新建加号与发送箭头；RunningIndicator 齿轮亦经此迁移（IconFactory.gear + .running-indicator-gear） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
 | session/SessionManager | 会话外壳与装配中枢（见 §3） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
