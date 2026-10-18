@@ -59,7 +59,7 @@ public class MessageTextArea extends TextArea {
     private int correctAttempts = 0;
 
     public MessageTextArea(String text) {
-        super(text);
+        super(ChatText.sanitize(text));
         setEditable(false);
         setWrapText(true);
         getStyleClass().add("msg-textarea");
@@ -74,7 +74,13 @@ public class MessageTextArea extends TextArea {
 
     /** 流式增量更新：就地 setText，不重建节点（不打断用户操作/选中态） */
     public void setStreamText(String text) {
-        setText(text);
+        setText(ChatText.sanitize(text));
+    }
+
+    /** 所有写文本路径统一入口（setText 为 final 无法覆盖）：清洗不可解码替换字符，
+     *  详见 {@link ChatText}（U+FFFD 在 JavaFX 8 会触发文本布局越界并中断整场景布局） */
+    public void setDisplayText(String text) {
+        setText(ChatText.sanitize(text));
     }
 
     /** 高度自适应：保守测量（按滚动条槽位窄 wrap）→ 高度恒 ≥ 内容 → 内部滚动条不出现；布局后精校消除空隙 */

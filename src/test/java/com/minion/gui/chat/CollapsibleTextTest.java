@@ -24,4 +24,22 @@ public class CollapsibleTextTest {
     public void null_notCollapsed() {
         assertFalse(CollapsibleText.shouldCollapse(null));
     }
+
+    /** 折叠态不得把文本交给 TextArea：宽度 0 的 TextArea 仍会被 JavaFX 皮肤布局，
+     *  特定文本会让 PrismTextLayout 越界并中断整个 Scene 布局 pass（线上整页错乱根因） */
+    @Test
+    public void collapsed_contentTextIsEmpty() {
+        assertEquals("", CollapsibleText.contentText(false, true, "很长的工具输出"));
+    }
+
+    @Test
+    public void expanded_contentTextIsFullText() {
+        assertEquals("很长的工具输出", CollapsibleText.contentText(true, true, "很长的工具输出"));
+    }
+
+    @Test
+    public void emptyContent_contentTextIsEmpty() {
+        assertEquals("", CollapsibleText.contentText(true, false, ""));
+        assertEquals("", CollapsibleText.contentText(false, false, null));
+    }
 }

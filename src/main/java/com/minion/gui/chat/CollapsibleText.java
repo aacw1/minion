@@ -47,7 +47,7 @@ public class CollapsibleText extends VBox {
             if (text != null && !text.trim().isEmpty()) setExpanded(!expanded);
         });
 
-        content = new MessageTextArea(this.text);
+        content = new MessageTextArea("");
         content.getStyleClass().add("log-body");
 
         getChildren().addAll(toggle, content);
@@ -68,8 +68,7 @@ public class CollapsibleText extends VBox {
      *  折叠会遮挡实时输出；定稿折叠由 finalizeLength 按最终长度决定 */
     public void setStreamText(String t) {
         this.text = t == null ? "" : t;
-        content.setStreamText(this.text);
-        setExpanded(true);
+        setExpanded(true); // 先展开：update() 把最新全文写入内容体（折叠态不得持有文本）
     }
 
     /** 内容定稿：按最终长度决定折叠态（≥阈值折叠、短内容展开），流式结束后调用一次 */
@@ -79,7 +78,10 @@ public class CollapsibleText extends VBox {
 
     private void update() {
         boolean hasText = text != null && !text.trim().isEmpty();
-        // 空正文（统计行/子任务行等纯摘要段）：无内容可展开，不渲染展开按钮，直接展示摘要行
+        // 折叠态内容体不参与布局（managed=false）但会被 JavaFX 皮肤布局（宽度 0）；
+        // 折叠期间绝不能持有文本，否则宽 0 换行会让 JavaFX 8 文本引擎越界（详见类说明与设计文档）
+        String want = contentText(expanded, hasText, text);
+        if (!want.equals(content.getText())) content.setDisplayText(want);
         chevron.setVisible(hasText);
         chevron.setManaged(hasText);
         state.setVisible(hasText);
@@ -90,6 +92,15 @@ public class CollapsibleText extends VBox {
             chevron.setContent(expanded ? IconFactory.CHEVRON_DOWN_PATH : IconFactory.CHEVRON_RIGHT_PATH);
             state.setText(expanded ? "收起" : "展开（" + text.length() + " 字符）");
         }
+    }
+
+    /** 内容体应持有的文本（纯逻辑可单测）：只有展开且确有内容时才交给 TextArea，否则一律空串。
+     *  折叠态 TextArea 宽度为 0，JavaFX 8 仍对其执行皮肤布局；含特定字符组合的文本会在
+     *  PrismTextLayout/TextRun.getWrapIndex 越界，异常发生在 Scene 布局 pass 中会中断整场景布局
+     *  （线上实证：点击历史会话后消息区/侧栏不显示、输入框按钮重叠）。空文本不触发换行，天然免疫。 */
+    static String contentText(boolean expanded, boolean hasText, String text) {
+        if (!expanded || !hasText || text == null) return "";
+        return text;
     }
 
     /** 默认折叠判定（纯逻辑可单测）：null/空不折叠 */
