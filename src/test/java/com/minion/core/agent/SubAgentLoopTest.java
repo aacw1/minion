@@ -664,9 +664,12 @@ public class SubAgentLoopTest {
         sub.retryPolicy = new RetryPolicy(10, 10, 60000); // 测试短退避
         String result = sub.run();
         assertEquals(2, llm.requests.size()); // 原始请求 + 1 次重试
-        // 成功路径静默恢复（主通道无警告/错误/重试进度事件），onError 回调已把错误发到子代理通道
-        assertTrue("末条含连接中断: " + ui.subNotices,
-                !ui.subNotices.isEmpty() && ui.subNotices.get(ui.subNotices.size() - 1).contains("连接中断"));
+        // 成功路径静默恢复（主通道无警告/错误/重试进度事件），onError 回调已把错误发到子代理通道；
+        // Task 6 起该流中断且无正文 → 视为空报告按失败返回（不得按成功返回、不得发 DONE）
+        assertTrue("已提示连接中断: " + ui.subNotices,
+                ui.subNotices.stream().anyMatch(n -> n.contains("连接中断")));
+        assertTrue("空报告应报失败: " + result, result.startsWith("子代理失败"));
+        assertTrue("不得发 DONE: " + ui.subDones, ui.subDones.isEmpty());
         assertTrue("主通道零调用", ui.warnings.isEmpty() && ui.errors.isEmpty() && ui.retryProgress.isEmpty()
                 && ui.thinking.isEmpty() && ui.contentParts.isEmpty());
     }
@@ -847,7 +850,7 @@ public class SubAgentLoopTest {
         assertEquals("短报告", sub.run());
     }
 
-    /** 空报告不落盘（不产生空文件） */
+    /** 空报告不落盘（不产生空文件）；Task 6 起空报告按失败返回，不再按成功返回空串 */
     @Test
     public void report_empty_notDumped() throws Exception {
         Config config = Config.load(tmp.getRoot().toPath());
@@ -863,7 +866,8 @@ public class SubAgentLoopTest {
                 llm, registry, confirm, ui, reportDir.toString(), 2);
         String result = sub.run();
 
-        assertEquals("", result);
+        assertEquals("子代理失败: 模型返回空报告（任务未完成）", result);
+        assertTrue("空报告不得发 DONE: " + ui.subDones, ui.subDones.isEmpty());
         try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(reportDir)) {
             assertFalse("空报告不得落盘", s.findAny().isPresent());
         }
@@ -1184,5 +1188,43 @@ public class SubAgentLoopTest {
                 Character.isHighSurrogate(head.charAt(head.length() - 1)));
         assertTrue("完整长度说明（8001 字符 = 7999 + 代理对 2）",
                 result.contains("完整报告 8001 字符已落盘："));
+    }
+
+    /** 有 toolCalls 但 finish 非 tool_calls：工具必须执行（子代理此前会直接把半截正文当报告） */
+    @Test
+    public void subAgent_nonToolFinish_executesTool() {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ToolCall tc = new ToolCall();
+        tc.id = "s1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"x\"}";
+        llm.addTurnWithToolsAndFinish(Collections.singletonList(tc), null, "stop");
+        llm.addTurn("完成");
+        SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(),
+                llm, registry, new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)),
+                ui, null, 1);
+        assertEquals("完成", sub.run());
+        assertTrue("工具应执行: " + ui.subToolCalls, ui.subToolCalls.contains("1:example"));
+    }
+
+    /** 空报告不得按成功返回（否则主代理误判子任务完成） */
+    @Test
+    public void subAgent_emptyReport_returnsFailure() {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        RecordingUi ui = new RecordingUi();
+        llm.addTurn("");
+        SubAgentLoop sub = new SubAgentLoop("sys", "任务", tmp.getRoot().getPath(),
+                llm, registry, new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE)),
+                ui, null, 1);
+        String r = sub.run();
+        assertTrue("空报告应报失败: " + r, r.startsWith("子代理失败"));
+        assertTrue("不得发 DONE: " + ui.subDones, ui.subDones.isEmpty());
+        assertTrue(ui.subNotices.stream().anyMatch(n -> n.contains("空报告")));
     }
 }

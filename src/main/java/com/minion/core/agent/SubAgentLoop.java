@@ -210,9 +210,16 @@ public class SubAgentLoop {
                         return "子 agent 失败: " + e.getMessage();
                     }
                 }
-                if (toolCalls[0] == null || toolCalls[0].isEmpty()
-                        || !"tool_calls".equals(finish[0])) {
+                // 执行依据只看 toolCalls：finish_reason 可能被网关/截断流写成 stop
+                // （客户端已归一，此处再兜一层），绝不因 finish 丢弃工具调用（与主循环同构）
+                if (toolCalls[0] == null || toolCalls[0].isEmpty()) {
                     String report = content.toString();
+                    if (report.trim().isEmpty()) {
+                        // 空报告 = 任务未完成：不得让主代理误判成功（旧实现返回 "" 并 DONE）
+                        String msg = "子代理失败: 模型返回空报告（任务未完成）";
+                        ui.onSubAgentNotice(no, msg);
+                        return msg;
+                    }
                     String ret = persistReport(report);
                     ui.onSubAgentDone(no, ret);
                     return ret;
