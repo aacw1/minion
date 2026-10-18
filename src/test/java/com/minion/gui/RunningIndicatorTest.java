@@ -155,6 +155,16 @@ public class RunningIndicatorTest {
                 RunningIndicator.retryText(p, RunningIndicator.COMPRESSING_TEXT));
     }
 
+    /** 状态优先级：等待用户（隐藏）> 正在停止 > 压缩 > 轮换 */
+    @Test
+    public void statusText_stoppingOverridesCompressing() {
+        assertEquals("正在停止...", RunningIndicator.STOPPING_TEXT);
+        assertEquals("正在停止...", RunningIndicator.statusText(true, true, "正在加载中..."));
+        assertEquals("正在停止...", RunningIndicator.statusText(true, false, "可随时补充信息..."));
+        assertEquals("上下文压缩中...", RunningIndicator.statusText(false, true, "正在加载中..."));
+        assertEquals("正在加载中...", RunningIndicator.statusText(false, false, "正在加载中..."));
+    }
+
     /** 点击复制：返回完整 body 原文（超 200 字符不截断，与展示截断口径区分） */
     @Test
     public void copyText_returnsFullBody() {
