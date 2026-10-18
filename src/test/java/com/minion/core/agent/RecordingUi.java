@@ -12,6 +12,8 @@ public class RecordingUi implements AgentUi {
     public final List<String> thinking = new ArrayList<String>();
     public final List<String> toolCalls = new ArrayList<String>();
     public final List<String> toolResults = new ArrayList<String>();
+    /** 与 toolResults 一一对应的结果对象（成功/错误行可区分，供契约断言用） */
+    public final List<ToolResult> toolResultObjects = new ArrayList<ToolResult>();
     public final List<String> warnings = new ArrayList<String>();
     public final List<String> errors = new ArrayList<String>();
     public final List<Usage> usages = new ArrayList<Usage>();
@@ -26,7 +28,10 @@ public class RecordingUi implements AgentUi {
     @Override public synchronized void onThinking(String delta) { thinking.add(delta); }
     @Override public synchronized void onContent(String delta) { contentParts.add(delta); }
     @Override public synchronized void onToolCall(String name, JsonObject args) { toolCalls.add(name); }
-    @Override public synchronized void onToolResult(String name, ToolResult result) { toolResults.add(name); }
+    @Override public synchronized void onToolResult(String name, ToolResult result) {
+        toolResults.add(name);
+        toolResultObjects.add(result); // 保留对象，便于断言成功/「已取消」错误行
+    }
     @Override public synchronized void onWarning(String message) { warnings.add(message); }
     @Override public synchronized void onError(String message) { errors.add(message); }
     @Override public synchronized void onStatsLine(String line) { statsLines.add(line); }

@@ -772,14 +772,17 @@ public class AgentLoop {
     }
 
     /** 可中断等待工具结果：200ms 分段轮询停止标志（用户停止只置标志，不中断工作线程）；
-     *  返回 null = 已停止/已取消，调用方负责取消剩余 future 并补发「已取消」结果。
+     *  返回 null 只表示「已停止/已取消」，调用方据此取消剩余 future 并补发「已取消」结果。
+     *  Future 正常完成但值为 null 时兜底为错误结果（沿用旧文案），不得被误读为「已停止」。
      *  ExecutionException 统一转错误结果（与旧路径一致），不向上抛。 */
     static ToolResult awaitToolResult(Future<ToolResult> future,
                                       java.util.function.BooleanSupplier stopped,
                                       long sliceMs) throws InterruptedException {
         while (true) {
             try {
-                return future.get(sliceMs, TimeUnit.MILLISECONDS);
+                ToolResult result = future.get(sliceMs, TimeUnit.MILLISECONDS);
+                // 正常完成但无结果：按失败返回，让模型自调（旧实现的兜底语义）
+                return result != null ? result : ToolResult.error("工具执行失败");
             } catch (java.util.concurrent.TimeoutException e) {
                 if (stopped.getAsBoolean()) return null;
             } catch (ExecutionException e) {

@@ -1816,6 +1816,19 @@ public class AgentLoopTest {
         assertEquals("ok", AgentLoop.awaitToolResult(ft, () -> false, 50).output);
     }
 
+    /** 可中断等待：Future 正常完成但结果为 null 时兜底为错误结果，不得被当成「已停止」 */
+    @Test
+    public void awaitToolResult_nullResult_returnsErrorNotStopped() throws Exception {
+        java.util.concurrent.FutureTask<ToolResult> ft =
+                new java.util.concurrent.FutureTask<ToolResult>(
+                        () -> null);
+        ft.run();
+        ToolResult r = AgentLoop.awaitToolResult(ft, () -> false, 50);
+        assertNotNull("null 只应保留给已停止/已取消：", r);
+        assertFalse(r.ok);
+        assertEquals("工具执行失败", r.output);
+    }
+
     /** 中断时未完成工具补发「已取消」结果行（聊天区不留无结果的工具行） */
     @Test
     public void interruptDuringTools_emitsCancelledResult() throws Exception {
@@ -1835,5 +1848,14 @@ public class AgentLoopTest {
         assertFalse(t.isAlive());
         assertTrue("应补发已取消结果: " + ui.toolResults,
                 ui.toolResults.contains("blocker"));
+        // 契约：只补 1 行，且是「已取消」错误行（不是工具成功行）；历史不留未配对的 TOOL 消息
+        assertEquals(1, ui.toolResults.size());
+        ToolResult cancelled = ui.toolResultObjects.get(0);
+        assertFalse("应为错误行: " + cancelled.output, cancelled.ok);
+        assertTrue("应含「已取消」: " + cancelled.output, cancelled.output.contains("已取消"));
+        for (Message m : loop.messages()) {
+            assertNotEquals("历史不应有 TOOL 消息: " + m.content,
+                    Message.Role.TOOL, m.role);
+        }
     }
 }
