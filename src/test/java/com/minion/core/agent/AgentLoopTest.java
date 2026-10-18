@@ -1858,4 +1858,14 @@ public class AgentLoopTest {
                     Message.Role.TOOL, m.role);
         }
     }
+
+    /** 异常 message 为 null 时用类名，不出现「异常: null」 */
+    @Test
+    public void errorText_nullMessage_usesClassName() {
+        assertEquals("异常: NullPointerException",
+                AgentLoop.errorText("异常: ", new NullPointerException()));
+        assertEquals("异常: boom", AgentLoop.errorText("异常: ", new RuntimeException("boom")));
+        assertEquals("工具执行异常: IllegalStateException",
+                AgentLoop.errorText("工具执行异常: ", new IllegalStateException()));
+    }
 }

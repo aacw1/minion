@@ -751,7 +751,7 @@ public class AgentLoop {
             Thread.currentThread().interrupt();
             ui.onWarning("已中断");
         } catch (Exception e) {
-            ui.onError("异常: " + e.getMessage());
+            ui.onError(errorText("异常: ", e));
         }
         if (interrupted) {
             ui.onWarning("本轮已被中断");
@@ -786,11 +786,17 @@ public class AgentLoop {
             } catch (java.util.concurrent.TimeoutException e) {
                 if (stopped.getAsBoolean()) return null;
             } catch (ExecutionException e) {
-                return ToolResult.error("工具执行异常: " + e.getMessage());
+                return ToolResult.error(errorText("工具执行异常: ", e));
             } catch (CancellationException e) {
                 return null;
             }
         }
+    }
+
+    /** 异常文案：message 为空时退回类名（NPE 等无消息异常不再显示「异常: null」） */
+    static String errorText(String prefix, Exception e) {
+        String m = e.getMessage();
+        return prefix + (m == null || m.trim().isEmpty() ? e.getClass().getSimpleName() : m);
     }
 
     /** 零增量闸门：本次请求是否还没吐出任何可见内容。tool_calls 不参与判定——
@@ -869,11 +875,11 @@ public class AgentLoop {
             try {
                 return tool.execute(args);
             } catch (Exception e) {
-                return ToolResult.error("工具执行异常: " + e.getMessage());
+                return ToolResult.error(errorText("工具执行异常: ", e));
             }
         } catch (RuntimeException e) {
             // 防御：参数类型非法等 unchecked 异常不得穿透执行线程
-            return ToolResult.error("工具执行异常: " + e.getMessage());
+            return ToolResult.error(errorText("工具执行异常: ", e));
         }
     }
 
