@@ -211,11 +211,11 @@ public class ChatView extends VBox {
         return Math.max(MIN_SIDE_PADDING, (width - MAX_CONTENT_WIDTH) / 2.0);
     }
 
-    /** 用户气泡宽度（package-private 供单测）：按字符数估算（中英混排取均值 13px/字），
+    /** 用户气泡宽度（package-private 供单测）：按字符数估算（中英混排取均值 14.5px/字，对应正文 15px），
      *  下限 120px 防短消息被压成窄条，上限 620px 防长消息铺满整行（失去气泡形态） */
     static double bubbleWidth(String text) {
         int len = text == null ? 0 : text.length();
-        return Math.min(620, Math.max(120, 40 + len * 13.0));
+        return Math.min(620, Math.max(120, 40 + len * 14.5));
     }
 
     /** 同步内边距：两端对称留白（取整避免半像素导致正文发虚），顶部 16px，底部 40px 为左下角运行状态指示器让位 */

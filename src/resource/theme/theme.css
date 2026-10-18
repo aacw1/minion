@@ -159,7 +159,7 @@
 .log-collapse-toggle:hover .icon-chevron { -fx-fill: #f0f2f6; }
 
 /* 正文摘要行文本（图标+文字组合） */
-.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 13px; }
+.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 12.5px; }
 
 /* 窗口关闭按钮（无边框窗口） */
 .btn-close {
@@ -324,6 +324,7 @@
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
     -fx-font-smoothing-type: lcd;
+    -fx-font-size: 15px;
 }
 .msg-textarea:focused { -fx-highlight-fill: #3b6fe0; } /* 聚焦选区亮蓝（现状色） */
 .msg-textarea .scroll-pane { -fx-background-color: transparent; }
@@ -507,7 +508,7 @@
 
 /* ===== 折叠文本（CollapsibleText）：摘要行可点击切换，hover 提亮 ===== */
 .log-collapsible { -fx-padding: 0; }
-.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; }
+.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; -fx-font-size: 12.5px; }
 .log-collapse-toggle:hover { -fx-text-fill: #f0f2f6; }
 
 /* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽）=====
@@ -553,7 +554,7 @@
     -fx-border-radius: 13 13 4 13;
     -fx-padding: 10 14 10 14;
     -fx-text-fill: #f7f0e6;
-    -fx-font-size: 14px;
+    -fx-font-size: 15px;
 }
 .msg-user-bubble .content { -fx-background-color: #332a22; }
 .msg-user-bubble .scroll-pane, .msg-user-bubble .viewport { -fx-background-color: transparent; }
@@ -582,12 +583,12 @@
     -fx-border-radius: 9;
     -fx-padding: 2 0 2 0;
 }
-.tool-card .log-collapse-toggle { -fx-padding: 7 12 7 12; }
+.tool-card .log-collapse-toggle { -fx-padding: 3 10 3 10; }
 .tool-body { -fx-font-family: "Consolas", "Courier New", monospace; -fx-font-size: 12px; }
 .tool-body .content { -fx-background-color: #151412; }
 .tool-diffstat { -fx-text-fill: #857f74; -fx-font-family: "Consolas", monospace; -fx-font-size: 11.5px; }
 .think-block { -fx-border-color: transparent transparent transparent #3a362f; -fx-border-width: 0 0 0 2; -fx-padding: 2 0 2 12; }
-.think-block .log-collapse-toggle { -fx-text-fill: #857f74; }
+.think-block .log-collapse-toggle { -fx-text-fill: #857f74; -fx-padding: 1 0 1 0; }
 .think-block .log-body, .think-block .msg-textarea { -fx-text-fill: #857f74; }
 .think-block .content { -fx-background-color: #1b1a18; }
 .notice-error {
