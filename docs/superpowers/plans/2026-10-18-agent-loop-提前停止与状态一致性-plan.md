@@ -724,6 +724,9 @@ Expected: 编译失败（常量/方法不存在）。
             waitingUser = false;
 ```
 
+`setRunning(true)` 分支改为 `setVisible(!waitingUser);`（先刷新运行态、后刷新等待态的调用顺序下，
+避免 `setRunning(true)` 把等待用户态误显示出来）。
+
 `setVisible` 的可见性监听保持不变（`resume` 语义由 `setWaitingUser(false)` 取代）。
 
 - [ ] **Step 4: 运行确认通过**
@@ -842,9 +845,9 @@ Expected: 编译失败（`indicatorAllowed` 不存在）。
     private void syncIndicator(SessionHandle h) {
         if (chatView == null || chatView.handle() != h) return;
         boolean allowed = indicatorAllowed(h.running, h.askPending, ConfirmSheet.isShowing());
+        runningIndicator.setRunning(h.running);           // 先刷运行态
         runningIndicator.setStopping(h.running && h.stopRequested);
-        runningIndicator.setWaitingUser(h.running && !allowed);
-        runningIndicator.setRunning(h.running);
+        runningIndicator.setWaitingUser(h.running && !allowed); // 再刷等待/停止态（可覆盖可见性）
     }
 ```
 

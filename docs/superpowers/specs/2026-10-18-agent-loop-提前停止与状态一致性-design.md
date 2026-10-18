@@ -169,9 +169,9 @@ scrubHalfTurn(); // 所有退出路径无条件执行
 ```java
 boolean active = h != null && h.running;
 boolean allowed = active && !h.askPending && !ConfirmSheet.isShowing();
+runningIndicator.setRunning(active);                  // 先刷运行态
 runningIndicator.setStopping(active && h.stopRequested);
-runningIndicator.setWaitingUser(active && !allowed);
-runningIndicator.setRunning(active);
+runningIndicator.setWaitingUser(active && !allowed);  // 再刷等待/停止态（可覆盖可见性）
 ```
 
 调用点：`onSessionRunningChanged`、`onSessionAskChanged`、`onSessionStopping`、
