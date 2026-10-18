@@ -8,6 +8,7 @@ import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -39,6 +40,11 @@ public class ChatView extends VBox {
 
     /** 截断保活上限：段数超限即移除头部旧段（200 段 ≈ 2000+ 行，长会话滚动不卡） */
     private static final int MAX_SEGS = 200;
+
+    /** 正文最大宽度（px）：超宽窗口下正文居中限宽，避免长行难以扫读 */
+    static final double MAX_CONTENT_WIDTH = 828;
+    /** 侧边最小内边距（px）：窄窗口至少留白，正文不贴边 */
+    static final double MIN_SIDE_PADDING = 20;
 
     private final EventList events;
     private final SessionHandle handle;
@@ -113,6 +119,7 @@ public class ChatView extends VBox {
         final StreamKind kind;
         /** 段主人：0=主代理，>0=子代理编号（流式就地更新只在同主人同 kind 的活跃段进行，见 ActiveStreams） */
         final int subAgentId;
+        Node row; // 该段在 ChatView 中的行节点（trimHead 依赖 getChildren 与 segs 一一对应）
         boolean thinkFinalized; // THINK 段已按最终长度定稿（防 CONTENT 增量重复折叠覆盖手动展开）
         Seg(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
             this(tagText, tagColorClass, (Node) null, text, false, kind, subAgentId);
@@ -149,8 +156,21 @@ public class ChatView extends VBox {
         this.handle = handle;
         getStyleClass().add("panel-dark"); // 背景 rgb(18,19,20)，随 ScrollPane fitToHeight 铺满正文窗口
         setSpacing(0); // 段间无缝紧贴（控制台连续输出）
-        setStyle("-fx-padding: 16 16 40 16;"); // 底部 40px：为左下角运行状态指示器让位（覆盖距底 10~27px），滚动到底不遮挡最后一行
+        // 正文限宽居中：窗口变宽时侧边留白把正文压到 MAX_CONTENT_WIDTH，窄窗口回到 MIN_SIDE_PADDING
+        widthProperty().addListener((obs, ov, nv) -> updateContentPadding());
+        updateContentPadding();
         clear();
+    }
+
+    /** 侧边留白（package-private 供单测）：正文按 828px 居中；窗口装不下 828+2×20 时贴最小留白 */
+    static double contentPadding(double width) {
+        return Math.max(MIN_SIDE_PADDING, (width - MAX_CONTENT_WIDTH) / 2.0);
+    }
+
+    /** 同步内边距：两端对称留白（取整避免半像素导致正文发虚），顶部 16px，底部 40px 为左下角运行状态指示器让位 */
+    private void updateContentPadding() {
+        double pad = Math.round(contentPadding(getWidth()));
+        setPadding(new Insets(16, pad, 40, pad));
     }
 
     /**
@@ -381,7 +401,8 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, text, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        getChildren().add(new HBox(seg.tag, seg.node()));
+        seg.row = new HBox(seg.tag, seg.node());
+        getChildren().add(seg.row);
         trimHead();
         return seg;
     }
@@ -426,7 +447,8 @@ public class ChatView extends VBox {
             Seg seg = new Seg(tagText, tagColorClass, summary, "", false, kind, subAgentId);
             attachFocusGovernance(seg);
             segs.add(seg);
-            getChildren().add(new HBox(seg.tag, seg.node()));
+            seg.row = new HBox(seg.tag, seg.node());
+            getChildren().add(seg.row);
             trimHead();
             return seg;
         }
@@ -438,7 +460,8 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, summary, text, expanded, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        getChildren().add(new HBox(seg.tag, seg.node()));
+        seg.row = new HBox(seg.tag, seg.node());
+        getChildren().add(seg.row);
         trimHead();
         return seg;
     }
