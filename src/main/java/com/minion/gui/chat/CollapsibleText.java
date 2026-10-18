@@ -50,7 +50,9 @@ public class CollapsibleText extends VBox {
         content = new MessageTextArea("");
         content.getStyleClass().add("log-body");
 
-        getChildren().addAll(toggle, content);
+        // 折叠态内容体不挂载（懒挂载）：折叠段占长会话多数，每段 TextArea skin 约 3ms，
+        // 挂载即创建 skin → 首次布局 200 段可达 800ms。展开时才 add（见 update）。
+        getChildren().add(toggle);
         update();
     }
 
@@ -82,12 +84,21 @@ public class CollapsibleText extends VBox {
         // 折叠期间绝不能持有文本，否则宽 0 换行会让 JavaFX 8 文本引擎越界（详见类说明与设计文档）
         String want = contentText(expanded, hasText, text);
         if (!want.equals(content.getText())) content.setDisplayText(want);
+        // 折叠懒挂载：不展开就不进场景图（不创建 skin，不参与布局/渲染）；展开时按需挂到摘要行之后
+        boolean attach = shouldAttachContent(expanded, hasText);
+        if (attach) {
+            content.setVisible(true);
+            content.setManaged(true);
+            if (!getChildren().contains(content)) getChildren().add(content);
+        } else {
+            content.setVisible(false);
+            content.setManaged(false);
+            getChildren().remove(content);
+        }
         chevron.setVisible(hasText);
         chevron.setManaged(hasText);
         state.setVisible(hasText);
         state.setManaged(hasText);
-        content.setVisible(hasText && expanded);
-        content.setManaged(hasText && expanded);
         if (hasText) {
             chevron.setContent(expanded ? IconFactory.CHEVRON_DOWN_PATH : IconFactory.CHEVRON_RIGHT_PATH);
             state.setText(expanded ? "收起" : "展开（" + text.length() + " 字符）");
@@ -106,5 +117,12 @@ public class CollapsibleText extends VBox {
     /** 默认折叠判定（纯逻辑可单测）：null/空不折叠 */
     public static boolean shouldCollapse(String text) {
         return text != null && text.length() >= COLLAPSE_THRESHOLD;
+    }
+
+    /** 内容体是否进入场景图（纯逻辑可单测）：仅展开且有内容时挂载——折叠态不创建 TextArea skin，
+     *  长会话大量折叠段的首次布局成本从每段约 3ms 降到接近 0。折叠期间内容体文本仍保持空串
+     *  （contentText 保证），不会触发 JavaFX 8 文本引擎越界。 */
+    public static boolean shouldAttachContent(boolean expanded, boolean hasText) {
+        return expanded && hasText;
     }
 }

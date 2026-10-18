@@ -72,9 +72,12 @@ public class MessageTextArea extends TextArea {
         relayout();
     }
 
-    /** 流式增量更新：就地 setText，不重建节点（不打断用户操作/选中态） */
+    /** 流式增量更新：就地 setText，不重建节点（不打断用户操作/选中态）。
+     *  合并窗口内文本未变时直接跳过——避免同一窗口的重复 flush 触发无谓的全量重排。 */
     public void setStreamText(String text) {
-        setText(ChatText.sanitize(text));
+        String s = ChatText.sanitize(text);
+        if (s.equals(getText())) return;
+        setText(s);
     }
 
     /** 所有写文本路径统一入口（setText 为 final 无法覆盖）：清洗不可解码替换字符，

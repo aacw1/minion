@@ -7,6 +7,7 @@ import com.minion.gui.session.EventList;
 import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
+import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -14,6 +15,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +65,26 @@ public class ChatView extends VBox {
 
     /** 上次展示结束时的滚动位置（MainWindow 切走时记、切回恢复；缓存视图内容连续，vvalue 语义保留） */
     private double savedVvalue = 1.0;
+
+    /** 视图清理代数：clear() 递增，使清空前排队的 runLater 事件失效（事件仍在 EventList，重建时重放） */
+    private int clearGen = 0;
+
+    /** 重放分批闸门：首次绑定/切回时历史按批渲染，期间直通事件入队，重放完再按序处理（见 ReplayGate） */
+    private final ReplayGate replayGate = new ReplayGate();
+
+    /** 每批渲染的历史事件条数：16 条/帧可把长会话首屏从"冻结数百 ms"摊到多帧，界面保持可响应 */
+    private static final int REPLAY_BATCH = 12;
+
+    /** 流式合并刷新时间窗（THINKING/CONTENT 增量按 80ms 合并，见 StreamFlushPolicy） */
+    private final StreamFlushPolicy flushPolicy = new StreamFlushPolicy();
+
+    /** 待渲染的流主人（只记录最新缓冲；flush 时每主人每流只做一次全量转换/一次 setText） */
+    private final java.util.Set<Integer> dirtyThinkOwners = new java.util.HashSet<Integer>();
+    private final java.util.Set<Integer> dirtyReplyOwners = new java.util.HashSet<Integer>();
+
+    /** 合并窗口定时器（到点统一 flush；延迟取 flushPolicy.remainingMillis） */
+    private PauseTransition flushTimer;
+    private boolean flushScheduled = false;
 
     public void rememberVvalue(double v) { this.savedVvalue = v; }
 
@@ -150,30 +172,70 @@ public class ChatView extends VBox {
     /** 本视图绑定的会话句柄（MainWindow 判断「删除的是当前展示会话」用） */
     public SessionHandle handle() { return handle; }
 
-    /** 直通监听器：渲染完成才推进游标（下次 bind 不重复渲染直通过的事件） */
+    /** 直通监听器：渲染完成才推进游标（下次 bind 不重复渲染直通过的事件）。
+     *  重放分批期间新到的直通事件先入队（不能插到未重放的历史之前），由最后一批统一处理。 */
     private final EventList.Listener fxListener = new EventList.Listener() {
         @Override public void onEvent(Ev e) {
-            Platform.runLater(() -> { replayed++; onEventFx(e); });
+            final int gen = clearGen;
+            Platform.runLater(() -> {
+                if (gen != clearGen) return; // 视图已清空：事件仍在 EventList，切回时按游标重放
+                if (replayGate.enqueueIfReplaying(e)) return; // 重放中：按序入队
+                replayed++;
+                onEventFx(e);
+            });
         }
     };
 
     /**
      * 绑定/解绑事件流：active=true 增量重放自上次游标起的新事件 + 后续直通（视图缓存场景不 clear，
      * 流式合并状态与 segs 连续，切走再切回输出无缝）；active=false 解绑直通，事件只入缓冲。
-     * 首次绑定游标=0 全量重放（语义与旧 clear+重放一致）。
+     * 首次绑定游标=0 全量重放（语义与旧 clear+重放一致）；重放按 REPLAY_BATCH 分批，
+     * 长会话首屏不再冻结 FX 线程（P1：切会话卡顿）。
      */
     public void bind(boolean active) {
         if (active) {
             // rebind 锁内原子：快照 [replayed, size) + 注册直通；间隙 add 既不丢也不重复
             List<Ev> tail = events.rebind(fxListener, replayed);
-            replayed = events.size(); // rebind 后已渲染位置；此后的直通事件在渲染完成时 replayed++
-            for (Ev e : tail) onEventFx(e); // FX 线程同步渲染，先于队列中直通事件执行
+            // 游标随"实际渲染"逐条推进（不预先设到快照末尾）：分批重放中途切走时，
+            // 切回从已渲染位置继续，未渲染的历史不会丢（原同步重放可一次设到末尾）
+            int gen = replayGate.begin();
+            replayBatch(tail, 0, gen); // 分批同步/异步渲染，批次间让出 FX 线程
         } else {
+            replayGate.abort(); // 未完成的批次立即失效；队列事件由 EventList 保存，切回重放
             events.setActive(false, null);
         }
     }
 
+    /** 分批重放：每批 REPLAY_BATCH 条同步渲染后 runLater 下一批（让出 FX 线程使界面可响应）。
+     *  gen 用于识别重放已被 bind(false)/新的 bind/clear 作废，旧批次立即停止。
+     *  replayed 逐条推进（与逐事件直通同一语义），中途切走/清理时游标只落在已渲染位置。 */
+    private void replayBatch(final List<Ev> tail, final int from, final int gen) {
+        if (!replayGate.isCurrent(gen)) return;
+        int to = Math.min(tail.size(), from + REPLAY_BATCH);
+        for (int i = from; i < to; i++) {
+            replayed++;
+            onEventFx(tail.get(i));
+        }
+        if (to < tail.size()) {
+            Platform.runLater(() -> replayBatch(tail, to, gen));
+            return;
+        }
+        // 重放完成：按到达顺序处理重放期间入队的直通事件（游标在这里推进）
+        for (Ev e : replayGate.finish()) {
+            replayed++;
+            onEventFx(e);
+        }
+        flushStreams(); // 历史末尾的流式增量立即落地，不等合并窗口（首屏不应有 80ms 空白）
+    }
+
     public void clear() {
+        clearGen++;              // 作废清空前排队的 runLater 事件（防止 replayed 游标错位）
+        replayGate.abort();      // 作废未完成的重放批次
+        if (flushTimer != null) flushTimer.stop();
+        flushScheduled = false;
+        dirtyThinkOwners.clear();
+        dirtyReplyOwners.clear();
+        flushPolicy.reset();
         getChildren().clear();
         segs.clear();
         streams.clear();
@@ -185,6 +247,14 @@ public class ChatView extends VBox {
 
     private void onEventFx(Ev e) {
         int id = e.subAgentId; // 0=主代理，>0=子代理编号
+        // 任何非流式事件到达前先落地待渲染的流式增量：保证思考定稿（finalizeThinking 需要段已存在）、
+        // 轮次边界清缓冲、工具/统计行与回复段的先后顺序，与逐事件渲染时代完全一致。
+        // CONTENT 只落地思考（到达即思考结束，需先建段再定稿）；回复增量继续在合并窗口内累积。
+        if (e.kind == EventList.Kind.CONTENT) {
+            flushThinking();
+        } else if (e.kind != EventList.Kind.THINKING) {
+            flushStreams();
+        }
         // 轮次边界（用户消息/补充/工具调用到达）先行重置该主人的流式缓冲：AgentLoop 一轮 runUserTurn 内
         // 多轮 agent 回合间无 USER_MESSAGE，若不清零则多轮回复文本跨轮累积进同一段，
         // 每轮内容越滚越长，表现为"一直在回复同一段内容"（线上实证，用户误判上下文错乱）；
@@ -212,18 +282,15 @@ public class ChatView extends VBox {
                 if (e.text == null || e.text.isEmpty()) break;
                 StreamBuffer buf = streams.of(id);
                 buf.onThinking(e.text);
-                stream(tagOf(id, "【思考】"), "log-think", buf.thinking(), StreamKind.THINK, id);
+                markStreamDirty(id, StreamKind.THINK);
                 break;
             }
             case CONTENT: {
                 StreamBuffer buf = streams.of(id);
                 buf.onContent(e.text);
-                // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
-                String plain = MarkdownRenderer.toPlainText(buf.content());
-                // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
-                // 不打印【回复】标签——空标签+空白正文的"幽灵段"；缓冲只追加不会中途变空
-                if (plain.trim().isEmpty()) break;
-                stream(tagOf(id, "【回复】"), "log-reply", plain, StreamKind.REPLY, id);
+                // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号——
+                // 转换延迟到合并窗口 flush：每主人每窗口只转换/渲染一次（原先每 chunk 一次全量 parse）
+                markStreamDirty(id, StreamKind.REPLY);
                 break;
             }
             case TOOL_CALL: {
@@ -436,6 +503,77 @@ public class ChatView extends VBox {
             seg = append(tagText, tagColorClass, text, kind, subAgentId);
         }
         activeStreams.put(kind, subAgentId, seg);
+    }
+
+    /** 流式增量标记脏：leading——距上次刷新超过窗口立即渲染（首段/稀疏流不延迟）；
+     *  窗口内则合并到定时器（trailing），后续增量只更新缓冲、不再逐 chunk 全量重排界面。 */
+    private void markStreamDirty(int subAgentId, StreamKind kind) {
+        if (kind == StreamKind.THINK) dirtyThinkOwners.add(subAgentId);
+        else dirtyReplyOwners.add(subAgentId);
+        long now = System.nanoTime();
+        if (flushPolicy.shouldFlushNow(now)) {
+            flushStreams();
+        } else {
+            scheduleFlush(flushPolicy.remainingMillis(now));
+        }
+    }
+
+    /** 调度合并窗口刷新（已在调度中则不重复；延迟取剩余窗口，到点统一覆盖最新缓冲） */
+    private void scheduleFlush(long delayMs) {
+        if (flushScheduled) return;
+        flushScheduled = true;
+        if (flushTimer == null) {
+            flushTimer = new PauseTransition();
+            flushTimer.setOnFinished(ev -> {
+                flushScheduled = false;
+                flushStreams();
+            });
+        }
+        flushTimer.stop();
+        flushTimer.setDuration(Duration.millis(Math.max(1, delayMs)));
+        flushTimer.playFromStart();
+    }
+
+    /** 只落地思考增量（CONTENT 到达 = 该主人思考结束）：finalizeThinking 依赖段已创建，
+     *  否则长思考段错过定稿折叠；回复增量不在此落地，继续在合并窗口内累积。 */
+    private void flushThinking() {
+        if (dirtyThinkOwners.isEmpty()) return;
+        flushPolicy.markFlushed(System.nanoTime());
+        List<Integer> think = new ArrayList<Integer>(dirtyThinkOwners);
+        dirtyThinkOwners.clear();
+        for (Integer id : think) {
+            String text = streams.of(id).thinking();
+            if (text.isEmpty()) continue;
+            stream(tagOf(id, "【思考】"), "log-think", text, StreamKind.THINK, id);
+        }
+    }
+
+    /** 落地窗口内累积的流式增量：每个脏主人每流只渲染一次（思考先于正文，保持段出现顺序）。
+     *  非流式事件到达/重放结束/思考定稿/轮次边界前调用，保证事件顺序与段顺序一致。 */
+    private void flushStreams() {
+        if (flushScheduled && flushTimer != null) {
+            flushTimer.stop();
+            flushScheduled = false;
+        }
+        if (dirtyThinkOwners.isEmpty() && dirtyReplyOwners.isEmpty()) return;
+        flushPolicy.markFlushed(System.nanoTime());
+        List<Integer> think = new ArrayList<Integer>(dirtyThinkOwners);
+        List<Integer> reply = new ArrayList<Integer>(dirtyReplyOwners);
+        dirtyThinkOwners.clear();
+        dirtyReplyOwners.clear();
+        for (Integer id : think) {
+            String text = streams.of(id).thinking();
+            if (text.isEmpty()) continue;
+            stream(tagOf(id, "【思考】"), "log-think", text, StreamKind.THINK, id);
+        }
+        for (Integer id : reply) {
+            // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
+            String plain = MarkdownRenderer.toPlainText(streams.of(id).content());
+            // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
+            // 不打印【回复】标签——空标签+空白正文的"幽灵段"
+            if (plain.trim().isEmpty()) continue;
+            stream(tagOf(id, "【回复】"), "log-reply", plain, StreamKind.REPLY, id);
+        }
     }
 
     /** 工具调用参数 → 展示正文：Edit/Write 生成行级 diff（仅变更行），其余完整参数 JSON；
@@ -668,5 +806,88 @@ public class ChatView extends VBox {
      *  即「看不见提问内容」的第二类成因），仅超 ASK_FORCE_EXPAND_MAX 才折叠（package-private 供单测） */
     static boolean askExpanded(String body) {
         return body == null || body.length() < ASK_FORCE_EXPAND_MAX;
+    }
+
+    /** 流式渲染合并时间窗（纯逻辑、无 JavaFX 依赖，可单测）：leading + trailing——
+     *  距上次刷新超过窗口（或从未刷新）立即渲染（首段/稀疏流不延迟），窗口内的增量只累积，
+     *  由 ChatView 的定时器到点统一渲染一次（高频 SSE 不再逐 chunk 全量重排）。 */
+    static class StreamFlushPolicy {
+        /** 合并窗口（ms）：低端机软件渲染下 80ms 约 2~3 帧，肉眼无感 */
+        static final long INTERVAL_MILLIS = 80;
+        static final long INTERVAL_NANOS = INTERVAL_MILLIS * 1000000L;
+
+        private boolean flushed;
+        private long lastFlushNanos;
+
+        /** 现在是否可以立即刷新 */
+        boolean shouldFlushNow(long nowNanos) {
+            return !flushed || nowNanos - lastFlushNanos >= INTERVAL_NANOS;
+        }
+
+        /** 记录一次刷新（窗口从这里重新计时） */
+        void markFlushed(long nowNanos) {
+            flushed = true;
+            lastFlushNanos = nowNanos;
+        }
+
+        /** 距下次可刷新的剩余毫秒（向上取整至少 1ms，防 0ms 定时器忙转；可刷新时返回 0） */
+        long remainingMillis(long nowNanos) {
+            if (!flushed) return 0;
+            long remain = INTERVAL_NANOS - (nowNanos - lastFlushNanos);
+            if (remain <= 0) return 0;
+            long ms = (remain + 999999L) / 1000000L;
+            return Math.max(1, ms);
+        }
+
+        /** 重置（clear 后新会话首段立即渲染，不继承上个会话的窗口状态） */
+        void reset() {
+            flushed = false;
+            lastFlushNanos = 0;
+        }
+    }
+
+    /** 重放分批闸门（纯逻辑、无 JavaFX 依赖，可单测）：bind 全量重放期间，
+     *  新到的直通事件不能插队渲染（否则会排在未重放的历史之前），先按序入队，
+     *  最后一批重放完成后再统一处理。解绑/清理 abort 使旧批次代数失效，
+     *  旧批次回调不得再向已切换/已清空的视图渲染。 */
+    static class ReplayGate {
+        private boolean replaying;
+        private int generation;
+        private final java.util.ArrayDeque<Ev> pending = new java.util.ArrayDeque<Ev>();
+
+        /** 开始一轮重放，返回本轮代数（批次回调凭代数判断是否仍然有效） */
+        int begin() {
+            replaying = true;
+            pending.clear();
+            return ++generation;
+        }
+
+        /** 中止本轮重放（解绑/清理）：旧代数立即失效，队列事件丢弃（EventList 仍保存，切回重放） */
+        void abort() {
+            replaying = false;
+            pending.clear();
+            generation++;
+        }
+
+        /** 该代数是否仍是当前有效重放（旧批次回调据此停止） */
+        boolean isCurrent(int gen) {
+            return replaying && gen == generation;
+        }
+
+        /** 重放期间直通事件入队；非重放期返回 false（调用方立即渲染） */
+        boolean enqueueIfReplaying(Ev e) {
+            if (!replaying) return false;
+            pending.add(e);
+            return true;
+        }
+
+        /** 重放结束：返回按到达顺序排队的直通事件（调用方逐条渲染），并复位状态 */
+        java.util.List<Ev> finish() {
+            replaying = false;
+            if (pending.isEmpty()) return new java.util.ArrayList<Ev>();
+            java.util.List<Ev> out = new java.util.ArrayList<Ev>(pending);
+            pending.clear();
+            return out;
+        }
     }
 }

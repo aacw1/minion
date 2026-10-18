@@ -64,15 +64,25 @@ public class MarkdownRenderer {
         public Block(Type type) { this.type = type; }
     }
 
+    /** 解析器复用（ThreadLocal）：`Parser.builder()...build()` 约 2ms/次，流式渲染原先每个增量都
+     *  新建一次（600 chunk ≈ 1.17s 纯构建开销）。flexmark Parser 设计上可重复 parse；
+     *  用 ThreadLocal 隔离（测试/后台线程各持一份），避免共享实例的线程安全争议。 */
+    private static final ThreadLocal<Parser> PARSER = new ThreadLocal<Parser>() {
+        @Override
+        protected Parser initialValue() {
+            return Parser.builder()
+                    .extensions(Arrays.asList(
+                            TablesExtension.create(),
+                            StrikethroughExtension.create()))
+                    .build();
+        }
+    };
+
     /** 解析 Markdown → 块列表（空/空白文本 → 空列表） */
     public static List<Block> parse(String md) {
         List<Block> out = new ArrayList<Block>();
         if (md == null || md.trim().isEmpty()) return out;
-        Parser parser = Parser.builder()
-                .extensions(Arrays.asList(
-                        TablesExtension.create(),
-                        StrikethroughExtension.create()))
-                .build();
+        Parser parser = PARSER.get();
         Document doc = parser.parse(md);
         for (Node n : doc.getChildren()) {
             convert(n, out);

@@ -42,4 +42,15 @@ public class CollapsibleTextTest {
         assertEquals("", CollapsibleText.contentText(true, false, ""));
         assertEquals("", CollapsibleText.contentText(false, false, null));
     }
+
+    /** 折叠懒挂载判定：折叠或空内容时内容体不进入场景图（不创建 TextArea skin，
+     *  长会话大量折叠段的首次布局成本从每段 ~3ms 降到接近 0） */
+    @Test
+    public void attachContent_onlyWhenExpandedAndHasText() {
+        assertTrue(CollapsibleText.shouldAttachContent(true, true));
+        assertFalse("折叠态不挂载（仍保持空文本，防 JavaFX 8 文本引擎越界）",
+                CollapsibleText.shouldAttachContent(false, true));
+        assertFalse(CollapsibleText.shouldAttachContent(true, false));
+        assertFalse(CollapsibleText.shouldAttachContent(false, false));
+    }
 }
