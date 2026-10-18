@@ -705,7 +705,7 @@ public class SettingsDialog {
             contentBox.getChildren().addAll(rows);
             contentBox.setPadding(new Insets(12));
             // 去 ScrollPane：JavaFX 8 裁剪内文字回退灰阶 AA 是整页发虚根因；
-            // 内容高约 453px，620x500 固定窗放得下，无需滚动
+            // 内容高约 453px，920x560 固定窗放得下，无需滚动
             this.root = contentBox;
         }
 
