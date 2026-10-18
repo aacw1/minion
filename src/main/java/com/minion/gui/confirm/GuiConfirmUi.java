@@ -4,7 +4,10 @@ import com.minion.core.tools.confirm.ConfirmUi;
 import com.minion.gui.dialog.ConfirmSheet;
 import javafx.application.Platform;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * GUI 确认交互：工具线程 ask → Platform.runLater 投递 ConfirmSheet 底部卡片 →
@@ -13,15 +16,21 @@ import java.util.concurrent.LinkedBlockingQueue;
  * IllegalStateException，捕获后安全默认 REJECT 不挂死。
  * 点击即送达、无限等待：工具线程一直等到用户点击（或会话关闭中断），
  * 杜绝「用户已点同意但超时被抢先判拒绝」的竞态。
+ * 中断（停止/关会话）时撤销自己的确认句柄：显示中的立即淡出关闭，排队中的直接出队。
  */
 public class GuiConfirmUi implements ConfirmUi {
 
     @Override
     public Decision ask(String message) {
         final LinkedBlockingQueue<Decision> q = new LinkedBlockingQueue<Decision>(1);
+        final AtomicReference<ConfirmSheet.Handle> ref = new AtomicReference<ConfirmSheet.Handle>();
+        final CountDownLatch posted = new CountDownLatch(1);
         try {
             Platform.runLater(new Runnable() {
-                @Override public void run() { ConfirmSheet.show(message, q::offer); }
+                @Override public void run() {
+                    ref.set(ConfirmSheet.show(message, q::offer));
+                    posted.countDown();
+                }
             });
         } catch (IllegalStateException e) {
             return Decision.REJECT; // FX toolkit 未启动（无 GUI 环境），防御性拒绝
@@ -30,6 +39,10 @@ public class GuiConfirmUi implements ConfirmUi {
             return q.take();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            try { posted.await(200, TimeUnit.MILLISECONDS); }
+            catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            final ConfirmSheet.Handle h = ref.get();
+            if (h != null) Platform.runLater(h::cancel); // 中断即关闭自己的卡片
             return Decision.REJECT;
         }
     }

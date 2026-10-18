@@ -37,7 +37,7 @@ public class ConfirmSheet {
 
     private static StackPane host;
     private static boolean showing;
-    private static final Queue<Runnable> pending = new ArrayDeque<Runnable>();
+    private static final Queue<Handle> pending = new ArrayDeque<Handle>();
     private static VBox currentCard;
     private static Region currentScrim;
     private static Consumer<ConfirmUi.Decision> currentCallback;
@@ -55,17 +55,46 @@ public class ConfirmSheet {
     /** 确认卡片是否可见（指示器同步用，与「遮挡/等待用户」单一刷新入口配套） */
     public static boolean isShowing() { return showing; }
 
-    public static void show(String message, Consumer<ConfirmUi.Decision> callback) {
+    public static Handle show(String message, Consumer<ConfirmUi.Decision> callback) {
+        Handle h = new Handle(message, callback);
         if (host == null) {
             System.err.println("[minion] ConfirmSheet host 未注册，确认请求自动拒绝");
             callback.accept(ConfirmUi.Decision.REJECT);
-            return;
+            return h;
         }
-        Runnable job = new Runnable() {
-            @Override public void run() { display(message, callback); }
-        };
-        if (showing) { pending.add(job); return; }
-        job.run();
+        if (showing) {
+            pending.add(h);
+            return h;
+        }
+        h.display();
+        return h;
+    }
+
+    /** 可取消句柄：中断/放弃时撤销自己的确认（FX 线程调用） */
+    public static final class Handle {
+        private final String message;
+        private final Consumer<ConfirmUi.Decision> callback;
+        private volatile boolean cancelled;
+
+        Handle(String message, Consumer<ConfirmUi.Decision> callback) {
+            this.message = message;
+            this.callback = callback;
+        }
+
+        void display() {
+            if (cancelled) return;
+            ConfirmSheet.display(message, callback);
+        }
+
+        public void cancel() {
+            if (cancelled) return;
+            cancelled = true;
+            if (currentCallback == callback) {
+                finish(ConfirmUi.Decision.REJECT); // 当前显示中：走淡出收尾
+            } else {
+                pending.remove(this); // 还在队首：撤销，防事后弹出已放弃的确认
+            }
+        }
     }
 
     /** 坐标落卡片外一律拦截：实现「点遮罩无反应 + 弹窗期间全窗点击拦截（含侧栏）」 */
@@ -189,8 +218,8 @@ public class ConfirmSheet {
                 showing = false;
                 if (visibilityListener != null) visibilityListener.accept(false);
                 callback.accept(d);
-                Runnable next = pending.poll();
-                if (next != null) next.run();
+                Handle next = pending.poll();
+                if (next != null) next.display();
             }
         });
         out.play();
