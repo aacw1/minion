@@ -479,6 +479,7 @@ public class AgentLoop {
         pushContextStats(); // 用户消息入历史：进度圈即时刷新
         int rounds = 0;
         int retries = 0;
+        int emptyReplies = 0; // 空回复重试计数（每回合归零）
         try {
             while (!interrupted) {
                 if (rounds >= roundLimit) {
@@ -651,6 +652,21 @@ public class AgentLoop {
                 }
 
                 if (interrupted) break;
+
+                // 空回复：既无正文也无工具调用（thinking 不单独成轮）。首次自动重发一次，
+                // 仍空则明确报错——旧实现直接 break，用户只看到统计行、不知道为何停止。
+                // 置于中断检查之后：中断优先，不误报空回复（已吐正文的回复仍按旧语义入历史）
+                boolean noContentNoTools = content.length() == 0
+                        && (toolCalls[0] == null || toolCalls[0].isEmpty());
+                if (noContentNoTools) {
+                    if (thinking.length() == 0 && emptyReplies == 0) {
+                        emptyReplies++;
+                        ui.onWarning("模型返回空回复，自动重试一次");
+                        continue; // 消息未变，直接重发本轮；空消息不入历史
+                    }
+                    ui.onError("模型返回空回复，本轮已停止，可重试或换模型");
+                    break;
+                }
 
                 // 执行依据只看 toolCalls：finish_reason 可能被网关/截断流写成 stop，
                 // 客户端已在 DeepSeekClient 归一，此处再兜一层，绝不因 finish 丢弃工具调用

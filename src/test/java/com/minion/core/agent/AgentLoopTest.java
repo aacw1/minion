@@ -1727,4 +1727,39 @@ public class AgentLoopTest {
         assertEquals(Message.Role.TOOL, loop.messages().get(2).role);
         assertEquals("处理完成", loop.messages().get(3).content);
     }
+
+    /** 空回复（无正文无思考无工具）→ 自动重发一次，第二次成功 */
+    @Test
+    public void emptyReply_retriesOnceThenSucceeds() {
+        llm.addTurn("");
+        llm.addTurn("好的");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("你好");
+        assertEquals(2, llm.requests.size()); // 首次 + 重试
+        assertTrue(ui.warnings.stream().anyMatch(w -> w.contains("空回复")));
+        assertEquals("好的", loop.messages().get(1).content);
+        assertTrue("空回复不得入历史", loop.messages().size() == 2);
+    }
+
+    /** 连续两次空回复 → 明确报错并结束，不静默 */
+    @Test
+    public void emptyReplyTwice_reportsError() {
+        llm.addTurn("");
+        llm.addTurn("");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("你好");
+        assertEquals(2, llm.requests.size());
+        assertTrue(ui.errors.stream().anyMatch(e -> e.contains("空回复")));
+        assertEquals(1, loop.messages().size()); // 只有 user
+    }
+
+    /** 仅思考无正文 → 不重试（重试会重复渲染思考），直接报错 */
+    @Test
+    public void thinkingOnlyReply_noRetry_reportsError() {
+        llm.addTurnWithTools(null, "", "只想了没写");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("你好");
+        assertEquals(1, llm.requests.size());
+        assertTrue(ui.errors.stream().anyMatch(e -> e.contains("空回复")));
+    }
 }
