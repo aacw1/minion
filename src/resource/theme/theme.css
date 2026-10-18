@@ -628,15 +628,36 @@
 }
 .dark-dialog > .content { -fx-padding: 0; }
 
+/* ===== 列表 / 表单弹窗（数据源、ssh、浏览器、模型、MCP、工作空间表单）=======
+   追加位置（不是文件末尾）：.dark-dialog .label 与 .form-label/.plugin-name/.plugin-status 同为
+   2 个类的特异度，靠后置覆盖——放末尾会把工具页插件名（#f4efe7）与状态行（#857f74 11px）压回
+   次要灰。列表 cell 规则（5 类）特异度高于设置窗导航列旧规则（4 类），故导航列选择器统一加
+   .dark-dialog 前缀补到 5 类并后置，保持 Task 10 的选中态配色不被这里的新规则串色。 */
+.dark-dialog .list-view { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-border-radius: 9; -fx-background-radius: 9; }
+.dark-dialog .list-view .list-cell { -fx-background-color: transparent; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .list-view .list-cell:filled:hover { -fx-background-color: #2c2925; }
+.dark-dialog .list-view .list-cell:filled:selected { -fx-background-color: #332f2a; -fx-text-fill: #f4efe7; }
+.dark-dialog .label { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .radio-button { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+/* 选中圆点：旧 .dialog-pane .radio-button:selected .radio .dot（5 类）比单靠 .dark-dialog 前缀的
+   3 类规则特异度高，并列写全路径（同为 5 类 + 后置）才能把蓝点改成陶土橙 */
+.dark-dialog .radio-button:selected .dot,
+.dialog-pane.dark-dialog .radio-button:selected .radio .dot { -fx-background-color: #d97757; }
+.dark-dialog .combo-box { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; }
+/* 下拉框显示区是 ListCell，不被 .dark-dialog .label 命中：旧规则（3 类）冷白，这里（4 类）改暖石主文字色 */
+.dialog-pane.dark-dialog .combo-box .list-cell { -fx-text-fill: #f4efe7; }
+
 /* ===== 设置窗（暖石：左列导航 172px 独立底，右侧内容 748px；表单标签右上对齐） =====
-   放在文件末尾：.settings-nav-list 与 .settings-nav-list .list-cell 的 cell 规则特异度
-   与 .list-view .list-cell(:filled:hover/:filled:selected) 相同，靠后置覆盖主列表胶囊样式。 */
-.settings-nav-list { -fx-pref-width: 172px; -fx-background-color: #1b1a18; -fx-padding: 13 10 13 10; -fx-border-color: transparent rgba(255,255,255,0.07) transparent transparent; -fx-border-width: 0 1 0 0; }
-.settings-nav-list .list-cell { -fx-background-color: transparent; -fx-background-insets: 0 0 3 0; -fx-background-radius: 7; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
-.settings-nav-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
+   选择器统一带 .dark-dialog 前缀：上方「列表 / 表单弹窗」的 .dark-dialog .list-view .list-cell
+   系列比旧写法（.settings-nav-list .list-cell，4 类）多一个类，不加前缀会被其串色；
+   加前缀后同为 5 类，靠后置覆盖主列表胶囊样式，保留导航选中块的橙字 + 1px 描边。
+   导航列容器自身压过 .dark-dialog .list-view 的通用描边/圆角：只留右边线，圆角归零。 */
+.dark-dialog .settings-nav-list { -fx-pref-width: 172px; -fx-background-color: #1b1a18; -fx-padding: 13 10 13 10; -fx-border-color: transparent rgba(255,255,255,0.07) transparent transparent; -fx-border-width: 0 1 0 0; -fx-border-radius: 0; -fx-background-radius: 0; }
+.dark-dialog .settings-nav-list .list-cell { -fx-background-color: transparent; -fx-background-insets: 0 0 3 0; -fx-background-radius: 7; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .settings-nav-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
 /* 选中态：底 #2f2723 + 1px 边框（补 -fx-border-width：不写会继承 .list-view .list-cell:filled:selected
    的 0 0 0 2，变成主列表同款左侧粗条；设计稿为四边 1px 描边） */
-.settings-nav-list .list-cell:filled:selected { -fx-background-color: #2f2723; -fx-background-insets: 0; -fx-text-fill: #d97757; -fx-border-color: #d97757; -fx-border-width: 1; -fx-border-radius: 7; }
+.dark-dialog .settings-nav-list .list-cell:filled:selected { -fx-background-color: #2f2723; -fx-background-insets: 0; -fx-text-fill: #d97757; -fx-border-color: #d97757; -fx-border-width: 1; -fx-border-radius: 7; }
 .dark-dialog .text-field, .dark-dialog .text-area {
     -fx-background-color: #1b1a18; -fx-text-fill: #f4efe7; -fx-prompt-text-fill: #857f74;
     -fx-border-color: #3a362f; -fx-border-radius: 7; -fx-background-radius: 7;

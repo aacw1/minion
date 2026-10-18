@@ -258,15 +258,16 @@ public class SettingsDialog {
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
         TextField maxCtx = new TextField(mc == null ? "200000" : String.valueOf(mc.maxContextTokens));
 
-        grid.addRow(0, new Label("标识名:"), displayName);
-        grid.addRow(1, new Label("URL:"), url);
-        grid.addRow(2, new Label("API Key:"), apiKey);
-        grid.addRow(3, new Label("模型名:"), modelName);
-        grid.addRow(4, new Label("provider:"), provider);
-        grid.addRow(5, new Label("思考:"), thinking);
-        grid.addRow(6, new Label("effort:"), effort);
-        grid.addRow(7, new Label("maxContextTokens:"), maxCtx);
+        grid.addRow(0, styledLabel("标识名:"), displayName);
+        grid.addRow(1, styledLabel("URL:"), url);
+        grid.addRow(2, styledLabel("API Key:"), apiKey);
+        grid.addRow(3, styledLabel("模型名:"), modelName);
+        grid.addRow(4, styledLabel("provider:"), provider);
+        grid.addRow(5, styledLabel("思考:"), thinking);
+        grid.addRow(6, styledLabel("effort:"), effort);
+        grid.addRow(7, styledLabel("maxContextTokens:"), maxCtx);
         d.getDialogPane().setContent(grid);
+        DarkDialogs.decorate(d, mc == null ? "新建模型" : "修改模型");
 
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
@@ -438,6 +439,14 @@ public class SettingsDialog {
         return l;
     }
 
+    /** 不固定列宽的标签（模型页 GridPane / 关于页正文）：加 form-label 类取暖石次要文字色，
+     *  否则裸 Label 会被旧 .dialog-pane .label 命中成冷白 #e6e8ee */
+    private static Label styledLabel(String text) {
+        Label l = new Label(text);
+        l.getStyleClass().add("form-label");
+        return l;
+    }
+
     /** 新建（null 带默认值）/ 编辑（预填）MCP 服务器表单；OK 返回服务器对象（编辑回写原对象），取消 null */
     private static McpServer form(McpServer s, final Window owner) {
         Dialog<McpServer> d = new Dialog<McpServer>();
@@ -487,6 +496,7 @@ public class SettingsDialog {
         headerLabel.setTooltip(new Tooltip("K:V 或\nKEY=VALUE\n每行一条\n空行忽略"));
         grid.addRow(6, headerLabel, headerArea);
         d.getDialogPane().setContent(grid);
+        DarkDialogs.decorate(d, s == null ? "新建 MCP 服务器" : "编辑 MCP 服务器");
 
         Runnable applyTransport = () -> {
             String t = selectedTransport(transportGroup);
@@ -745,11 +755,11 @@ public class SettingsDialog {
         VBox box = new VBox(10);
         box.setPadding(new Insets(16));
         box.getChildren().addAll(
-                new Label("兼容win7的代码开发助手"),
+                styledLabel("兼容win7的代码开发助手"),
                 new Separator(),
-                new Label("作者：尹承"),
-                new Label("联系方式：258915527@qq.com"),
-                new Label("开发语言：Java 8 + JavaFX"));
+                styledLabel("作者：尹承"),
+                styledLabel("联系方式：258915527@qq.com"),
+                styledLabel("开发语言：Java 8 + JavaFX"));
         return box;
     }
 
