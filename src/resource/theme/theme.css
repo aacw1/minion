@@ -603,10 +603,27 @@
 }
 .dialog-pane.dark-dialog .dark-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
 .dialog-pane.dark-dialog .dark-subtitle { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+/* 自绘根容器（标题栏 + 内容）：padding 归零，圆角全部由 .dialog-pane.dark-dialog 负责 */
+.dark-wrap { -fx-padding: 0; }
+/* 标题栏可拖动，给手型/移动光标提示 */
+.dialog-pane.dark-dialog .dark-titlebar { -fx-cursor: move; }
+/* 标题栏关闭按钮：modena 的 .dialog-pane .button（2 个类）会抢走 padding/border 与 hover 底色，
+   这里用 4 个类的高特异度规则压回去，保证透明底 + 紧凑内边距 + hover 红底生效 */
+.dialog-pane.dark-dialog .dark-titlebar .btn-close {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4 6 4 6;
+    -fx-background-radius: 6;
+}
+.dialog-pane.dark-dialog .dark-titlebar .btn-close:hover {
+    -fx-background-color: #c4433a;
+}
 .dark-dialog .button-bar .container {
     -fx-background-color: #1b1a18;
     -fx-padding: 12 20 12 20;
     -fx-border-color: rgba(255,255,255,0.07) transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
+    /* 按钮栏是窗体内最后一块，底角跟随外层 12px 圆角，否则深色底板在四角戳出来 */
+    -fx-background-radius: 0 0 12 12;
 }
 .dark-dialog > .content { -fx-padding: 0; }

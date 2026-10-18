@@ -23,11 +23,15 @@ import javafx.stage.Window;
  * 无边框深色弹窗：自绘标题栏（拖动 + 关闭），内容与按钮栏仍交给 DialogPane。
  *
  * <p>动机：Windows 系统标题栏为浅色，与深色内容割裂（暖石主题）。{@link #decorate} 把 Dialog 的
- * Stage 改为 {@link StageStyle#UNDECORATED}，清掉 DialogPane 的 header/graphic（原 headerText 降为
+ * Stage 改为 {@link StageStyle#TRANSPARENT}，清掉 DialogPane 的 header/graphic（原 headerText 降为
  * 内容区顶部副标题），并在内容上方插入 {@code .dark-titlebar}（标题 + 弹性空白 + 关闭按钮）。
  * 关闭按钮语义同「取消」：{@code setResult(null) + close()}。注意 JavaFX 8 的 close() 行为——
  * 弹窗存在 cancel 按钮（ButtonData.CANCEL_CLOSE，如 ButtonType.CLOSE/CANCEL）时结果会被置为该
  * 按钮，showAndWait 返回 present(取消按钮)；没有 cancel 按钮时返回 empty（8u181 实测）。</p>
+ *
+ * <p>窗口样式必须是 {@code TRANSPARENT} 而非 {@code UNDECORATED}：两者都没有系统标题栏，但 JavaFX 8
+ * 下只有 TRANSPARENT 允许场景透明填充（{@code scene.setFill(Color.TRANSPARENT)}）；UNDECORATED 会
+ * 忽略透明填充，12px 圆角的四角露出系统默认的深/浅色方块。</p>
  *
  * <p>注意：本类不挂样式表（避免与既有调用点重复挂载），调用方仍需先调用
  * {@code Theme.style(dialog)}，否则 {@code .dark-dialog} 系列规则不生效。</p>
@@ -55,7 +59,7 @@ public final class DarkDialogs {
      * 必须在 show/showAndWait 之前调用（{@code initStyle} 只能在未显示时设置）。
      */
     public static void decorate(Dialog<?> d, String title) {
-        d.initStyle(StageStyle.UNDECORATED);
+        d.initStyle(StageStyle.TRANSPARENT);
         DialogPane pane = d.getDialogPane();
         String header = pane.getHeaderText();
         pane.setHeaderText(null);
@@ -72,7 +76,11 @@ public final class DarkDialogs {
         if (content != null) body.getChildren().add(content);
 
         HBox bar = titleBar(d, title);
-        pane.setContent(new VBox(bar, body));
+        // 自绘根容器加 dark-wrap：圆角由 .dialog-pane.dark-dialog 的 background-radius 负责，
+        // 根容器自身不能再带内边距，否则内容压不住圆角内侧（.dark-wrap { -fx-padding: 0; }）
+        VBox root = new VBox(bar, body);
+        root.getStyleClass().add("dark-wrap");
+        pane.setContent(root);
 
         d.setOnShown(e -> {
             Scene scene = pane.getScene();
