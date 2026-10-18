@@ -13,7 +13,7 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 /**
- * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为 SVG，IconFactory 集中管理）。
+ * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为描边 SVG，IconFactory 集中管理）。
  * 拖动标题栏移动窗口；双击空白区切换最大化。关闭走 confirmClose（与系统关闭共用退出确认）。
  * 最大化不用 stage.setMaximized（无边框窗口在 Windows 上会覆盖任务栏），改手动定位到
  * Screen.getPrimary().getVisualBounds()（系统已排除任务栏区域），还原时恢复记录的原 bounds。
@@ -48,12 +48,12 @@ public class TitleBar extends HBox {
         HBox.setHgrow(spacer, Priority.ALWAYS); // 原页签区弹性占位：模型名与右侧按钮之间留白
 
         Button gear = new Button();
-        gear.setGraphic(sized(IconFactory.settings()));
+        gear.setGraphic(sized(IconFactory.strokeSettings()));
         gear.getStyleClass().add("btn-ghost");
         gear.setOnAction(e -> openSettings.run());
 
         Button min = new Button();
-        min.setGraphic(sized(IconFactory.remove()));
+        min.setGraphic(sized(IconFactory.strokeMinus()));
         min.getStyleClass().add("btn-ghost");
         min.setOnAction(e -> stage.setIconified(true));
 
@@ -63,7 +63,7 @@ public class TitleBar extends HBox {
         max.setOnAction(e -> toggleMaximize()); // 手动最大化（不挡任务栏）
 
         Button close = new Button();
-        close.setGraphic(sized(IconFactory.close()));
+        close.setGraphic(sized(IconFactory.strokeClose()));
         close.getStyleClass().add("btn-close");
         close.setOnAction(e -> confirmClose.run());
 
@@ -100,7 +100,7 @@ public class TitleBar extends HBox {
 
     /** 最大化/还原图标（maxed=true 显示还原双框，否则最大化方框） */
     private static Node maximizeIcon(boolean maxed) {
-        return sized(maxed ? IconFactory.filterNone() : IconFactory.cropSquare());
+        return sized(maxed ? IconFactory.strokeRestore() : IconFactory.strokeMaximize());
     }
 
     /** 切换最大化：未最大化 → 记录当前 bounds 并移动到可视区；已最大化 → 还原记录 */

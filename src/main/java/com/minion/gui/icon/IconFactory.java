@@ -5,8 +5,8 @@ import javafx.scene.shape.SVGPath;
 /**
  * 图标工厂：集中管理全部界面矢量图标（Material Symbols Outlined 24×24 viewport，Apache-2.0，
  * 来源 https://github.com/google/material-design-icons ，注释标注图标名）。
- * 颜色一律由 CSS 样式类控制（-fx-fill），本类不设颜色；
- * 显示尺寸用 size() 按 24 viewport 缩放（默认 scale=1.0 即 24px）。
+ * 颜色一律由 CSS 样式类控制（填充图标 -fx-fill、描边图标 .icon-stroke 的 -fx-stroke），本类不设颜色；
+ * 显示尺寸用 size() 按 24 viewport 缩放（默认 scale=1.0 即 24px；描边图标的线宽随缩放同比变细）。
  * 动机：Win7 字体回退链缺这些 Unicode 字形（⚙✕✅❌❓▶✓⛭▾▸⏱❐□ 等显示方块），SVGPath 不依赖字体。
  */
 public final class IconFactory {
@@ -65,6 +65,29 @@ public final class IconFactory {
     public static final String SEND_PATH = "M12 4 L20 13 L15 13 L15 21 L9 21 L9 13 L4 13 Z";
     /** 停止方块（自绘 path，InputView 迁移） */
     public static final String STOP_PATH = "M7 7 L17 7 L17 17 L7 17 Z";
+    /** 描边叉（窗口关闭/关键按钮；Feather x） */
+    public static final String STROKE_CLOSE_PATH = "M6 6l12 12M18 6L6 18";
+    /** 描边短横线（最小化） */
+    public static final String STROKE_MINUS_PATH = "M5 12h14";
+    /** 描边方框（最大化） */
+    public static final String STROKE_MAXIMIZE_PATH = "M5 5h14v14H5z";
+    /** 描边双框（还原） */
+    public static final String STROKE_RESTORE_PATH = "M9 9h10v10H9zM5 5h10v10H5z";
+    /** 描边上箭头（发送/补充/回答） */
+    public static final String STROKE_SEND_PATH = "M12 19V5M5 12l7-7 7 7";
+    /** 描边加号（新建会话/工作空间） */
+    public static final String STROKE_PLUS_PATH = "M12 5v14M5 12h14";
+    /** 描边齿轮（标题栏设置入口；Feather settings） */
+    public static final String STROKE_SETTINGS_PATH = "M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"
+            + "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06"
+            + "a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09"
+            + "A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83"
+            + "l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09"
+            + "A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83"
+            + "l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09"
+            + "a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83"
+            + "l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09"
+            + "a1.65 1.65 0 0 0-1.51 1z";
 
     // ---- 工厂方法（样式类在 theme.css 定义颜色） ----
 
@@ -72,6 +95,14 @@ public final class IconFactory {
         SVGPath icon = new SVGPath();
         icon.setContent(path);
         icon.getStyleClass().add(styleClass);
+        return icon;
+    }
+
+    /** 描边图标：填充透明、描边取色（颜色/hover 由 theme.css 的 .icon-stroke 规则控制） */
+    private static SVGPath stroke(String path, String styleClass) {
+        SVGPath icon = new SVGPath();
+        icon.setContent(path);
+        icon.getStyleClass().addAll("icon-stroke", styleClass);
         return icon;
     }
 
@@ -100,6 +131,16 @@ public final class IconFactory {
     public static SVGPath send() { return create(SEND_PATH, "icon-send"); }
     public static SVGPath stop() { return create(STOP_PATH, "icon-stop"); }
     public static SVGPath attachFile() { return create(ATTACH_FILE_PATH, "icon-upload"); }
+
+    // ---- 描边图标（关键按钮；fill 透明 + stroke 取色，2.2px 线宽在 14~16px 下清晰） ----
+
+    public static SVGPath strokeClose() { return stroke(STROKE_CLOSE_PATH, "icon-close"); }
+    public static SVGPath strokeMinus() { return stroke(STROKE_MINUS_PATH, "icon-min"); }
+    public static SVGPath strokeMaximize() { return stroke(STROKE_MAXIMIZE_PATH, "icon-max"); }
+    public static SVGPath strokeRestore() { return stroke(STROKE_RESTORE_PATH, "icon-restore"); }
+    public static SVGPath strokeSend() { return stroke(STROKE_SEND_PATH, "icon-send"); }
+    public static SVGPath strokePlus() { return stroke(STROKE_PLUS_PATH, "icon-plus"); }
+    public static SVGPath strokeSettings() { return stroke(STROKE_SETTINGS_PATH, "icon-settings"); }
 
     /** 按 24×24 viewport 缩放到目标像素（scale = px/24） */
     public static void size(SVGPath icon, double px) {

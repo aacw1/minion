@@ -48,6 +48,25 @@ public class IconFactoryTest {
         assertEquals(12.0 / 24.0, icon.getScaleY(), 0.001);
     }
 
+    /** 描边图标：带 .icon-stroke 与专属样式类，且 path 能被 SVGPath 解析（布局宽度非 0，解析失败会抛异常） */
+    @Test
+    public void strokeIcons_parseAndStyled() {
+        assertStroke(IconFactory.strokeClose(), "icon-close");
+        assertStroke(IconFactory.strokeMinus(), "icon-min");
+        assertStroke(IconFactory.strokeMaximize(), "icon-max");
+        assertStroke(IconFactory.strokeRestore(), "icon-restore");
+        assertStroke(IconFactory.strokeSend(), "icon-send");
+        assertStroke(IconFactory.strokePlus(), "icon-plus");
+        assertStroke(IconFactory.strokeSettings(), "icon-settings");
+    }
+
+    private void assertStroke(SVGPath icon, String styleClass) {
+        assertIcon(icon, styleClass);
+        assertTrue("icon-stroke 样式类: " + styleClass, icon.getStyleClass().contains("icon-stroke"));
+        // 横线（最小化）高度为 0，故只校验宽度；解析错误会在 bounds 计算时直接抛出
+        assertTrue("path 可解析: " + styleClass, icon.getLayoutBounds().getWidth() > 0);
+    }
+
     @Test
     public void chevronPaths_differ() {
         assertNotEquals(IconFactory.CHEVRON_DOWN_PATH, IconFactory.CHEVRON_RIGHT_PATH);

@@ -75,7 +75,8 @@ public class InputView extends VBox {
     private final PauseTransition toastHold = new PauseTransition(Duration.millis(3000));
     private final FadeTransition toastOut = new FadeTransition(Duration.millis(250), inputToast);
     private final ContextRing contextRing = new ContextRing();
-    private final SVGPath arrowIcon = IconFactory.send();
+    /** 发送箭头：描边图标（16px，线宽随缩放同比 2.2×16/24≈1.47px），填充态由 theme.css 的 .icon-stroke 控制 */
+    private final SVGPath arrowIcon = arrowIcon();
     private final SVGPath stopIcon = IconFactory.stop();
     private final SVGPath uploadIcon = IconFactory.attachFile();
     private final SuggestionPopup popup = new SuggestionPopup();
@@ -126,7 +127,8 @@ public class InputView extends VBox {
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
         // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关；
         // 焦点进入时刷新文案——设置窗勾选发送键后点回输入框，提示与 tooltip 立即正确
-        // 聚焦边框：聚焦时大框边框 #d97757 + 主色光晕，失焦还原 #3a362f（frame 构造晚于本监听注册，判空）
+        // 聚焦边框：聚焦时大框边框 #d97757（主色 1px 边框，不加光晕效果——dropshadow 会让 TextArea
+        // 整棵子树离屏渲染、丢失 LCD 子像素抗锯齿导致正文发虚），失焦还原 #3a362f（frame 构造晚于本监听注册，判空）
         input.focusedProperty().addListener((obs, ov, nv) -> {
             if (frame != null) {
                 if (nv) frame.getStyleClass().add("input-frame-focused");
@@ -277,6 +279,13 @@ public class InputView extends VBox {
         this.composerHint = composerHint;
         getChildren().add(root);
         updatePrompt(); // askPending 默认 false，显示正常发送键提示
+    }
+
+    /** 描边发送箭头（16px 显示尺寸）：IconFactory.size 按 24 viewport 缩放 */
+    private static SVGPath arrowIcon() {
+        SVGPath icon = IconFactory.strokeSend();
+        IconFactory.size(icon, 16);
+        return icon;
     }
 
     /** 确认插入的最终文本：@ 文件补全补回 @ 前缀（FileSuggester 的 insertText 为纯路径）。

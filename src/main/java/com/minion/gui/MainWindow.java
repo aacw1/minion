@@ -148,7 +148,7 @@ public class MainWindow {
         Region sessionSpacer = new Region();
         HBox.setHgrow(sessionSpacer, Priority.ALWAYS);
         Button newSession = new Button();
-        SVGPath plusIcon = com.minion.gui.icon.IconFactory.plus();
+        SVGPath plusIcon = com.minion.gui.icon.IconFactory.strokePlus();
         com.minion.gui.icon.IconFactory.size(plusIcon, 13);
         newSession.setGraphic(plusIcon);
         newSession.getStyleClass().add("btn-cell");
@@ -166,7 +166,7 @@ public class MainWindow {
         Region wsSpacer = new Region();
         HBox.setHgrow(wsSpacer, Priority.ALWAYS);
         Button newWs = new Button();
-        SVGPath wsPlusIcon = com.minion.gui.icon.IconFactory.plus();
+        SVGPath wsPlusIcon = com.minion.gui.icon.IconFactory.strokePlus();
         com.minion.gui.icon.IconFactory.size(wsPlusIcon, 13);
         newWs.setGraphic(wsPlusIcon);
         newWs.getStyleClass().add("btn-cell");
@@ -252,7 +252,10 @@ public class MainWindow {
                 });
             }
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
-                Platform.runLater(() -> updateTab(h));
+                Platform.runLater(() -> {
+                    updateTab(h);
+                    sessionList.refresh(); // 运行态变化：侧栏运行点即时变绿/变灰（TabPane/列表各自维护 graphic）
+                });
                 if (inputView != null) inputView.onRunningChanged(h, running);
                 // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写，统一 runLater 访问）
                 Platform.runLater(() -> {
@@ -576,6 +579,7 @@ public class MainWindow {
                 String title = h.title == null ? "(新会话)" : h.title;
                 t.setText(tabTitle(title));
                 t.setTooltip(new Tooltip(title)); // 完整标题提示
+                StatusDot.stopPulseIn(t.getGraphic()); // 回收旧状态点的无限 Timeline（替换 graphic 前必须停）
                 t.setGraphic(runningIndicator(h));
                 return;
             }
@@ -610,6 +614,7 @@ public class MainWindow {
             // 关闭流程：卸载视图缓存（再次从左侧打开时重新加载）+ 移除页签
             openedIds.remove(h.id);
             viewCache.remove(h.id);
+            StatusDot.stopPulseIn(t.getGraphic()); // 页签离场：回收状态点无限 Timeline（不停则动画持续跑）
             tabs.getTabs().remove(t);
             if (chatView != null && chatView.handle() == h) {
                 manager.deactivateSession(h); // 幂等守卫不再拦截再次激活
@@ -624,6 +629,7 @@ public class MainWindow {
     private void removeTabById(String id) {
         for (Tab t : tabs.getTabs()) {
             if (id.equals(t.getUserData())) {
+                StatusDot.stopPulseIn(t.getGraphic()); // 删除会话联动移页签：先回收状态点动画
                 tabs.getTabs().remove(t);
                 return;
             }

@@ -198,7 +198,7 @@ public class SessionListView extends ListView<SessionHandle> {
             if (m.role == Message.Role.TOOL) continue;
             if (m.content == null || m.content.trim().isEmpty()) continue;
             String text = m.content.replace('\n', ' ').replace('\r', ' ').trim();
-            return text.length() > 40 ? text.substring(0, 40) + "..." : text;
+            return text.length() > 40 ? text.substring(0, 40) + "…" : text;
         }
         return null;
     }

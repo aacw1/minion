@@ -16,8 +16,8 @@
     -fx-padding: 0; /* 沿用旧规则：非零内边距会让正文内缩，且与 MessageTextArea 高度测量口径不符 */
 }
 
-/* 按钮 */
-.btn { -fx-background-radius: 7; -fx-padding: 6 13 6 13; -fx-font-size: 12px; -fx-cursor: hand; }
+/* 按钮（应用按钮统一样式类；注意 JavaFX Button 的默认类名是 button，
+   故字号/内边距必须落在具体按钮类上，另见下方 .btn-* 汇总规则） */
 .btn-primary {
     -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757);
     -fx-text-fill: #23130d;
@@ -38,6 +38,12 @@
     -fx-background-radius: 9;
 }
 .btn-send-empty:hover, .btn-send-full:hover { -fx-background-color: #e69a78; }
+/* 按钮字号/内边距：JavaFX Button 默认类名是 button（.btn 无节点使用），此处按具体样式类补齐 */
+.btn-primary, .btn-ghost, .btn-send-empty, .btn-send-full,
+.btn-approve, .btn-cell, .btn-close { -fx-font-size: 12px; }
+.btn-primary, .btn-ghost, .btn-send-empty, .btn-send-full,
+.btn-approve { -fx-padding: 6 13 6 13; }
+.btn-ghost { -fx-background-radius: 7; }
 
 /* 滚动条（变窄；箭头按钮隐藏） */
 .scroll-bar:vertical { -fx-background-color: transparent; -fx-pref-width: 9px; }
@@ -88,7 +94,6 @@
     -fx-border-color: #3a362f;
     -fx-border-radius: 999;
     -fx-padding: 4 9 4 9;
-    -fx-max-height: 24;
 }
 
 /* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
@@ -108,6 +113,25 @@
 /* 侧栏分组标题右侧「新建」加号（text-2 → hover text-1） */
 .icon-plus { -fx-fill: #b6afa2; }
 .btn-cell:hover .icon-plus { -fx-fill: #f4efe7; }
+
+/* ===== 描边图标（关键按钮：标题栏窗口按钮/设置、新建、发送箭头）=====
+   fill 透明 + 描边取色；2.2 线宽在 24 viewport 下绘制，显示时按 14/16px 缩放（线宽同比约 1.3~1.5px）。
+   放在填充图标规则之后：同特异度时以后置规则覆盖 -fx-fill（避免 .icon-send/.icon-plus 等把叉/箭头填成实心）。 */
+.icon-stroke {
+    -fx-fill: transparent;
+    -fx-stroke: #b6afa2;
+    -fx-stroke-width: 2.2;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+}
+/* hover 变色（fill 一并钉死 transparent：.btn-close:hover .icon-close 等既有规则会填实描边路径） */
+.btn-ghost:hover .icon-stroke, .btn-cell:hover .icon-stroke, .btn-close:hover .icon-stroke {
+    -fx-fill: transparent;
+    -fx-stroke: #f4efe7;
+}
+/* 发送键（主色底）：深色箭头/方块，保证对比度 */
+.btn-send-full .icon-stroke, .btn-send-empty .icon-stroke { -fx-stroke: #23130d; }
+.btn-send-full .icon-stop, .btn-send-empty .icon-stop { -fx-fill: #23130d; }
 
 /* 当前标记圆点（工作空间列表/设置窗模型列表） */
 .icon-dot { -fx-fill: #4f8cff; }
@@ -144,11 +168,11 @@
     -fx-padding: 9 10 8 14;
     -fx-font-smoothing-type: lcd;
 }
-/* 输入框聚焦：仅主色边框加粗（不用 dropshadow：effect 会让 TextArea 整棵子树离屏渲染，
-   丢失 LCD 子像素抗锯齿导致正文发虚。InputView focus 监听切换样式类，失焦还原 border #3a362f） */
+/* 输入框聚焦：仅主色 1px 边框（1.5px 会改变 border insets，触发 1px 布局抖动；不用 dropshadow：
+   effect 会让 TextArea 整棵子树离屏渲染，丢失 LCD 子像素抗锯齿导致正文发虚。InputView focus 监听切换样式类，失焦还原 border #3a362f） */
 .input-frame-focused {
     -fx-border-color: #d97757;
-    -fx-border-width: 1.5;
+    -fx-border-width: 1;
 }
 /* transparent 底与 control-inner-background 保留：防 modena 默认白底在暖石 surface 上露白 */
 .input-frame .input-textarea {
@@ -617,7 +641,7 @@
     -fx-background-radius: 6;
 }
 .dialog-pane.dark-dialog .dark-titlebar .btn-close:hover {
-    -fx-background-color: #c4433a;
+    -fx-background-color: #c93a39;
 }
 .dark-dialog .button-bar .container {
     -fx-background-color: #1b1a18;

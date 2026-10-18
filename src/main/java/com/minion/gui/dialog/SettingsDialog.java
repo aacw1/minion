@@ -370,7 +370,7 @@ public class SettingsDialog {
 
         HBox actions = new HBox(8);
         Button add = new Button("新建");
-        Button edit = new Button("编辑");
+        Button edit = new Button("修改"); // 文案统一：模型页/工作空间同用「修改」
         Button del = new Button("删除");
         Button reconnect = new Button("重连");
         add.getStyleClass().add("btn-ghost");
