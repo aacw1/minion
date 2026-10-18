@@ -751,3 +751,12 @@
    这里清掉底色；text-fill/font-size 后置覆盖 .msg-thinking 的 14px 蓝色调灰。
    前缀 .dark-dialog 用于压过旧 .dialog-pane .label（2 类）的冷白字色 */
 .dark-dialog .plugin-status { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-background-color: transparent; }
+
+/* ===== 提问卡片（AskUserQuestion）：工具正文的等宽 12px 对提问过小，改为比例字体 14px =====
+   ask-body 同时挂在 CollapsibleText（摘要行）与正文 TextArea 上：
+   - .msg-textarea.ask-body（2 类）压过 .tool-body（1 类）的 Consolas/12px；
+   - .content 用卡片同色 #262320（LCD 规则）并补内边距，避免问题/选项贴边。 */
+.msg-textarea.ask-body { -fx-font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif; -fx-font-size: 14px; }
+.msg-textarea.ask-body .content { -fx-background-color: #262320; -fx-padding: 2 12 10 12; }
+.ask-body .log-summary-text { -fx-font-size: 13px; }
+.ask-body .log-collapse-toggle { -fx-font-size: 13px; }

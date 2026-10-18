@@ -148,6 +148,12 @@ public class ChatView extends VBox {
             this.subAgentId = subAgentId;
         }
 
+        /** 追加正文/折叠容器的附加样式类（如提问卡的 ask-body） */
+        void addBodyClass(String cls) {
+            if (collapsible != null) collapsible.getStyleClass().add(cls);
+            body.getStyleClass().add(cls);
+        }
+
         /** 场景样式类（卡片/提示条）：折叠段挂到折叠容器（整卡阴影底色），普通段挂到正文；
          *  CSS 里这些类提供圆角背景与左侧色条——正文 .content 背景须与所在卡片同色，
          *  否则透明层退回灰阶抗锯齿、正文发虚（LCD 规则，见 theme.css .msg-textarea 说明） */
@@ -371,9 +377,10 @@ public class ChatView extends VBox {
                 if ("AskUserQuestion".equals(e.text)) {
                     // 提问段无视长度阈值恒展开（长选项被折叠 = 「看不见提问内容」的第二类成因）
                     String askBody = askQuestionOf(e.data);
-                    appendCollapsible(tagOf(id, null), "log-tool",
+                    Seg ask = appendCollapsible(tagOf(id, null), "log-tool",
                             statusSummary(IconFactory.help(), askSummaryText(e.data)),
                             askBody, StreamKind.NONE, askExpanded(askBody), id);
+                    ask.addBodyClass("ask-body");
                     // 提问必须可见：模型在等回答，滚出视口会静默卡住整个流程
                     if (scrollBottomRequest != null) scrollBottomRequest.run();
                 } else {
