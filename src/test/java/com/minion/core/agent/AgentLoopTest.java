@@ -1762,4 +1762,35 @@ public class AgentLoopTest {
         assertEquals(1, llm.requests.size());
         assertTrue(ui.errors.stream().anyMatch(e -> e.contains("空回复")));
     }
+
+    /** 非中断异常退出（如 UI 回调抛 RuntimeException）也不得留下半轮 toolCalls。
+     *  两个工具调用：第一条结果入历史后回调抛异常 → 第二条永远拿不到 TOOL 消息，
+     *  历史残留「assistant 带 2 个 toolCalls、只有 1 条 TOOL」——旧实现只在 interrupted 时清洗，
+     *  这份半轮会带进下一次请求（400）。 */
+    @Test
+    public void exceptionExit_leavesNoToolCallsResidue() {
+        ToolCall tc = new ToolCall();
+        tc.id = "c1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"x\"}";
+        ToolCall tc2 = new ToolCall();
+        tc2.id = "c2";
+        tc2.name = "example";
+        tc2.arguments = "{\"text\":\"y\"}";
+        llm.addTurnWithTools(Arrays.asList(tc, tc2), null);
+        RecordingUi throwing = new RecordingUi() {
+            @Override public synchronized void onToolResult(String name, ToolResult result) {
+                throw new RuntimeException("boom");
+            }
+        };
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, throwing, null, new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.runUserTurn("任务");
+        for (Message m : loop.messages()) {
+            assertTrue("残留 toolCalls: " + m.role, m.toolCalls == null || m.toolCalls.isEmpty());
+        }
+        assertTrue(throwing.errors.stream().anyMatch(e -> e.contains("异常")));
+    }
 }

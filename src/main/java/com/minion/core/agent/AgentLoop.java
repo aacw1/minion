@@ -744,11 +744,13 @@ public class AgentLoop {
         }
         if (interrupted) {
             ui.onWarning("本轮已被中断");
-            scrubHalfTurn(); // 兜底：任何中断退出路径（含工具阶段）的 toolCalls 半轮残留清洗
         }
+        // 所有退出路径统一清洗：正常结束/轮数上限/错误/中断/异常都不得留下未配对的 toolCalls
+        // （旧实现只在 interrupted 时清洗，正常 break 会把半轮写进历史，下次请求 400）
+        scrubHalfTurn();
         // 所有退出路径的兜底落盘：正常结束 / 轮数上限 / 错误 / 中断 / 异常
         persistSession();
-        // 每轮结束统计行（置于 scrubHalfTurn/persistSession 之后：中断路径的 ctx 估算是清洗半轮后的准确值）
+        // 每轮结束统计行（置于 scrubHalfTurn/persistSession 之后：各退出路径的 ctx 估算是清洗半轮后的准确值）
         long elapsed = System.currentTimeMillis() - start;
         int currentCtx = contextManager != null
                 ? contextManager.estimate(session.messages)
