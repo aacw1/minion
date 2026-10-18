@@ -5,6 +5,7 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.ConfirmSheet;
+import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.dialog.WorkspaceFormDialog;
 import com.minion.gui.input.InputView;
@@ -423,6 +424,7 @@ public class MainWindow {
         a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a);
         a.setTitle("退出确认");
+        DarkDialogs.decorate(a, a.getTitle());
         a.showAndWait();
         if (a.getResult() == ButtonType.OK) {
             manager.shutdown();
@@ -552,6 +554,7 @@ public class MainWindow {
                             + "（后两项留空视为合法）", ButtonType.OK);
             Theme.style(a);
             a.setTitle("新建失败");
+            DarkDialogs.decorate(a, a.getTitle());
             a.showAndWait();
         }
         wsList.refresh();
@@ -599,6 +602,7 @@ public class MainWindow {
                 a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
                 Theme.style(a);
                 a.setTitle("关闭会话");
+                DarkDialogs.decorate(a, a.getTitle());
                 a.showAndWait();
                 if (a.getResult() != ButtonType.OK) return; // 取消：页签保留、运行继续
                 manager.stop(h); // 中断运行（会话不删除，保留在列表）

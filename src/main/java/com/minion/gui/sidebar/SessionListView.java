@@ -2,6 +2,7 @@ package com.minion.gui.sidebar;
 
 import com.minion.core.llm.Message;
 import com.minion.gui.StatusDot;
+import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
@@ -160,9 +161,11 @@ public class SessionListView extends ListView<SessionHandle> {
     private void doRename(SessionHandle h) {
         TextInputDialog d = new TextInputDialog(h.title);
         d.setTitle("重命名会话");
-        d.setHeaderText("输入新标题");
+        d.setHeaderText("输入新标题"); // decorate 会把 headerText 降为内容区顶部副标题，勿置 null
         d.getDialogPane().setGraphic(null); // 去掉叹号圆圈图标（同需求 6 精简处理）
+        d.getDialogPane().setPrefWidth(380);
         Theme.style(d); // 弹窗深色
+        DarkDialogs.decorate(d, "重命名会话");
         d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
     }
 

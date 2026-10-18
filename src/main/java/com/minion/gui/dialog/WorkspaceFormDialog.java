@@ -161,6 +161,7 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         a.setTitle("路径无效");
         a.setHeaderText(null);
         Theme.style(a);
+        DarkDialogs.decorate(a, a.getTitle());
         if (getOwner() != null) a.initOwner(getOwner());
         a.showAndWait();
     }

@@ -94,6 +94,7 @@ public class SshConnectionsDialog {
                     "删除连接「" + sel + "」？", ButtonType.OK, ButtonType.CANCEL);
             a.setTitle("删除连接");
             Theme.style(a);
+            DarkDialogs.decorate(a, a.getTitle());
             if (owner != null) a.initOwner(owner);
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {

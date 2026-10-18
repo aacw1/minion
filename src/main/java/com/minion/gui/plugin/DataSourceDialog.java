@@ -84,6 +84,7 @@ public class DataSourceDialog {
                     "删除数据源「" + sel + "」？", ButtonType.OK, ButtonType.CANCEL);
             a.setTitle("删除数据源");
             Theme.style(a);
+            DarkDialogs.decorate(a, a.getTitle());
             if (owner != null) a.initOwner(owner);
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {

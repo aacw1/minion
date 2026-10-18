@@ -189,6 +189,7 @@ public class SettingsDialog {
                     "删除模型「" + name + "」？", ButtonType.OK, ButtonType.CANCEL);
             Theme.style(a);
             a.setTitle("删除模型");
+            DarkDialogs.decorate(a, a.getTitle()); // 无边框深色（标题取自上行的 setTitle）
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
                 if (!models.remove(name)) error("删除失败", "至少保留一个模型");
@@ -405,6 +406,7 @@ public class SettingsDialog {
                     "删除 MCP 服务器「" + s.name + "」？", ButtonType.OK, ButtonType.CANCEL);
             Theme.style(a);
             a.setTitle("删除 MCP 服务器");
+            DarkDialogs.decorate(a, a.getTitle());
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
                 mcp.servers().remove(s);
@@ -779,6 +781,7 @@ public class SettingsDialog {
         Alert a = new Alert(Alert.AlertType.ERROR, msg, ButtonType.OK);
         a.setTitle(title);
         Theme.style(a);
+        DarkDialogs.decorate(a, a.getTitle());
         a.showAndWait();
     }
 }

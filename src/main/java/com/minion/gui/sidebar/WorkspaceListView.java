@@ -3,6 +3,7 @@ package com.minion.gui.sidebar;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.core.config.WorkspaceManager;
 import com.minion.core.config.WorkspacePaths;
+import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.dialog.WorkspaceFormDialog;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionManager;
@@ -188,6 +189,7 @@ public class WorkspaceListView extends ListView<String> {
         a.getDialogPane().setGraphic(null);    // 去掉叹号圆圈图标
         a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a); // 弹窗深色
+        DarkDialogs.decorate(a, a.getTitle());
         Optional<ButtonType> r = a.showAndWait();
         if (r.isPresent() && r.get() == ButtonType.OK) {
             if (!manager.deleteWorkspace(name)) {
@@ -201,6 +203,7 @@ public class WorkspaceListView extends ListView<String> {
         Alert a = new Alert(Alert.AlertType.ERROR, msg, ButtonType.OK);
         a.setTitle(title);
         Theme.style(a); // 弹窗深色
+        DarkDialogs.decorate(a, a.getTitle());
         a.showAndWait();
     }
 }

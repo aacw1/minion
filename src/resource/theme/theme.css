@@ -430,33 +430,34 @@
 /* ===== 危险操作确认底部卡片（ConfirmSheet，右侧面板内） ===== */
 .sheet-scrim { -fx-background-color: rgba(0,0,0,0.55); }
 .sheet-card {
-    -fx-background-color: #1a1d24;
+    -fx-background-color: #262320;
     -fx-background-radius: 12;
-    -fx-border-color: #2a2f3a;
+    -fx-border-color: #3a362f;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 24, 0, 0, 8);
-    -fx-font-size: 14px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 24, 0, 0, 8);
+    -fx-font-size: 12.5px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
 }
-.sheet-accent { -fx-background-color: #e3b341; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
-.sheet-warn { -fx-text-fill: #e3b341; -fx-font-size: 16px; }
-.sheet-title { -fx-text-fill: #f0f2f6; -fx-font-size: 14px; -fx-font-weight: bold; }
+.sheet-accent { -fx-background-color: #d8ab5f; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
+.sheet-warn { -fx-text-fill: #d8ab5f; -fx-font-size: 13px; -fx-font-weight: bold; }
+.sheet-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
 .sheet-message {
-    -fx-background-color: #13161c;
+    -fx-background-color: #151412;
     -fx-background-radius: 8;
-    -fx-padding: 10 12 10 12;
-    -fx-text-fill: #d3d7de;
-    -fx-font-size: 13px;
+    -fx-padding: 9 11 9 11;
+    -fx-text-fill: #c9c1b4;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 11.5px;
 }
-.sheet-hint { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
+.sheet-hint { -fx-text-fill: #857f74; -fx-font-size: 11px; }
 .btn-approve {
-    -fx-background-color: linear-gradient(to bottom, #3fb950, #2ea043);
-    -fx-text-fill: white;
+    -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757);
+    -fx-text-fill: #23130d;
     -fx-font-weight: bold;
-    -fx-background-radius: 6;
-    -fx-padding: 6 14 6 14;
+    -fx-background-radius: 7;
+    -fx-padding: 6 13 6 13;
     -fx-cursor: hand;
 }
-.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #4cc95e, #3fb950); }
+.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #e89b7a, #e08a66); }
 
 /* ===== 右侧顶部页签栏（tabs-bar，正文上方分隔线） ===== */
 .tabs-bar {
