@@ -34,6 +34,12 @@ public class TitleBar extends HBox {
         getStyleClass().add("topbar");
         setSpacing(10);
 
+        Region logo = new Region();
+        logo.getStyleClass().add("brand-logo");
+        logo.setMinSize(18, 18);
+        logo.setPrefSize(18, 18);
+        logo.setMaxSize(18, 18);
+
         Label app = new Label("minion");
         app.getStyleClass().add("topbar-title");
 
@@ -60,7 +66,7 @@ public class TitleBar extends HBox {
         close.getStyleClass().add("btn-close");
         close.setOnAction(e -> confirmClose.run());
 
-        getChildren().addAll(app, modelLabel, spacer, gear, min, max, close);
+        getChildren().addAll(logo, app, modelLabel, spacer, gear, min, max, close);
 
         // 拖动移动窗口（记录按下偏移，拖拽按屏幕坐标差值移动）
         setOnMousePressed(e -> {

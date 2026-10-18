@@ -106,7 +106,7 @@ public class MainWindow {
         // 自绘标题栏：应用名 | 模型标签 | 留白 | ⚙ | 窗口按钮
         Label modelLabel = new Label(modelLabelText());
         modelLabel.getStyleClass().add("topbar-model");
-        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.ALL_TABS);
         // 需求：标题栏页签点击激活对应会话（userData 存会话 id）；跨工作空间的页签点击先自动切回该空间
         tabs.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> {
             if (nv == null) return;
