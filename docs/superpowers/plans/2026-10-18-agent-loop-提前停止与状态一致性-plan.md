@@ -326,14 +326,20 @@ git commit -m "fix(agent): 空回复自动重试一次，仍空则明确报错"
 `AgentLoopTest` 追加（工具结果回调抛异常，走 `catch (Exception)` 退出路径）：
 
 ```java
-    /** 非中断异常退出（如 UI 回调抛 RuntimeException）也不得留下半轮 toolCalls */
+    /** 非中断异常退出（如 UI 回调抛 RuntimeException）也不得留下半轮 toolCalls。
+     *  必须用 2 个 toolCall：TOOL 消息先入历史、onToolResult 回调在后，单调用在回调抛异常时
+     *  已是完整配对（need==have），制造不出"未配对"残留；第二个调用永远拿不到 TOOL 消息。 */
     @Test
     public void exceptionExit_leavesNoToolCallsResidue() {
-        ToolCall tc = new ToolCall();
-        tc.id = "c1";
-        tc.name = "example";
-        tc.arguments = "{\"text\":\"x\"}";
-        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        ToolCall tc1 = new ToolCall();
+        tc1.id = "c1";
+        tc1.name = "example";
+        tc1.arguments = "{\"text\":\"x\"}";
+        ToolCall tc2 = new ToolCall();
+        tc2.id = "c2";
+        tc2.name = "example";
+        tc2.arguments = "{\"text\":\"y\"}";
+        llm.addTurnWithTools(Arrays.asList(tc1, tc2), null);
         RecordingUi throwing = new RecordingUi() {
             @Override public synchronized void onToolResult(String name, ToolResult result) {
                 throw new RuntimeException("boom");
