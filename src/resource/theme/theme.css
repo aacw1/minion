@@ -82,6 +82,7 @@
     -fx-border-color: #3a362f;
     -fx-border-radius: 999;
     -fx-padding: 4 9 4 9;
+    -fx-max-height: 24;
 }
 
 /* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
@@ -235,7 +236,9 @@
 .tab-pane .tab:selected { -fx-background-color: transparent; -fx-border-color: transparent transparent #d97757 transparent; }
 .tab-pane .tab-label { -fx-text-fill: #857f74; -fx-font-size: 12.5px; }
 .tab-pane .tab:selected .tab-label { -fx-text-fill: #f4efe7; }
-.tab-pane .tab .tab-close-button { -fx-background-color: transparent; -fx-padding: 0 3 0 3; }
+/* 关闭按钮的 × 由 modena 的 -fx-shape + -fx-background-color 绘制，置 transparent 会让 × 消失，故显式给可见前景色 */
+.tab-pane .tab .tab-close-button { -fx-background-color: #857f74; }
+.tab-pane .tab .tab-close-button:hover { -fx-background-color: #f4efe7; }
 
 /* 页签溢出：隐藏控制按钮（下拉箭头/滚动），超出宽度由 header 裁剪，不显示滚动条 */
 .tab-pane > .tab-header-area > .control-buttons-tab { visibility: hidden; }

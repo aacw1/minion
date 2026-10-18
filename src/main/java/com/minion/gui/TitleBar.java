@@ -33,6 +33,7 @@ public class TitleBar extends HBox {
         this.modelLabel = modelLabel; // 设置窗关闭后 MainWindow 刷新顶部模型名用
         getStyleClass().add("topbar");
         setSpacing(10);
+        setFillHeight(false); // HBox 默认拉伸子节点到 46 高，关掉后 -fx-alignment: center-left 才使胶囊/按钮保持内容高
 
         Region logo = new Region();
         logo.getStyleClass().add("brand-logo");
