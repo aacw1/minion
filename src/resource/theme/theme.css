@@ -135,43 +135,50 @@
 }
 .btn-close:hover { -fx-background-color: #c93a39; -fx-text-fill: white; }
 
-/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
+/* ===== 输入区大框（暖石：surface 底 + 1px border + 圆角 14，61.8% 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
 .input-frame {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 8;
-    -fx-border-color: #232733;
-    -fx-border-radius: 8;
-    -fx-padding: 8 10 8 14;
+    -fx-background-color: #262320;
+    -fx-background-radius: 14;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 14;
+    -fx-padding: 9 10 8 14;
     -fx-font-smoothing-type: lcd;
 }
+/* 输入框聚焦：主色边框 + 主色光晕（InputView focus 监听切换样式类，失焦还原 border #3a362f） */
+.input-frame-focused {
+    -fx-border-color: #d97757;
+    -fx-effect: dropshadow(gaussian, rgba(217,119,87,0.30), 14, 0, 0, 0);
+}
+/* transparent 底与 control-inner-background 保留：防 modena 默认白底在暖石 surface 上露白 */
 .input-frame .input-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
-    -fx-text-fill: #f0f2f6;
-    -fx-prompt-text-fill: #7a828e;
+    -fx-text-fill: #f4efe7;
+    -fx-prompt-text-fill: #857f74;
     -fx-highlight-fill: #3b6fe0;
+    -fx-font-size: 14px;
 }
 .input-frame .input-textarea .content { -fx-background-color: transparent; }
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
-/* 输入框聚焦：大框边框 #f48771（InputView focus 监听切换样式类，失焦还原 #232733） */
-.input-frame-focused { -fx-border-color: #f48771; }
-.input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
+.input-divider { -fx-background-color: #3a362f; }
+/* 提示行（InputView.composerHint）：输入框下方居中 11px 辅助色，文案随设置里的发送键切换 */
+.composer-hint { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-padding: 6 0 0 0; }
 
 /* 键盘空输入提示（InputView toast）：悬浮输入框上方居中，3 秒自动淡出，不占布局不挡鼠标 */
 .input-toast {
-    -fx-background-color: #232733;
-    -fx-border-color: #3a4050;
+    -fx-background-color: #332f2a;
+    -fx-border-color: #4a453c;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
-    -fx-padding: 5 12 5 12;
-    -fx-font-size: 12px;
-    -fx-text-fill: #a8b0bb;
+    -fx-padding: 5 12 5 12; /* 沿用旧规则：胶囊内边距 */
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #b6afa2;
 }
 
-/* 上传按钮（输入框底部操作行左）：回形针图标（Material 线性填充，同 icon-settings 色系） */
+/* 上传按钮（输入框底部操作行左）：回形针图标（26×26 由 Java 定尺寸，CSS 不设宽高） */
 .btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
-.icon-upload { -fx-fill: #a8b0bb; }
-.btn-upload:hover .icon-upload { -fx-fill: #f0f2f6; }
+.icon-upload { -fx-fill: #857f74; }
+.btn-upload:hover .icon-upload { -fx-fill: #f4efe7; }
 
 /* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
 .chip-row { -fx-hgap: 8; -fx-vgap: 8; }
@@ -181,7 +188,7 @@
     -fx-border-width: 1;
     -fx-padding: 2 4 2 8;
 }
-.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 14px; }
+.chip-label { -fx-text-fill: #f4efe7; -fx-font-size: 11.5px; }
 .chip-close {
     -fx-background-color: transparent;
     -fx-padding: 0 4 0 4;
@@ -191,29 +198,13 @@
 .chip-close .icon-close { -fx-fill: #98a0ab; }
 .chip-close:hover { -fx-background-color: rgba(248, 81, 73, 0.15); }
 .chip-close:hover .icon-close { -fx-fill: #f85149; }
-.input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
-.input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
-.input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
-.input-chip-image { -fx-background-color: #241f38; -fx-border-color: #7c5cd6; }
+.input-chip-command, .input-chip-skill { -fx-background-color: #2f2723; -fx-border-color: #5d4034; }
+.input-chip-file { -fx-background-color: #25301f; -fx-border-color: #4a5d3a; }
+.input-chip-paste { -fx-background-color: #2a2723; -fx-border-color: #3a362f; }
+.input-chip-image { -fx-background-color: #2b2430; -fx-border-color: #55405f; }
 
-/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
-.suggest-list {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 8;
-    -fx-border-color: #2a2f3a;
-    -fx-border-radius: 8;
-    -fx-font-smoothing-type: lcd;
-    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
-       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
-       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
-    -fx-padding: 0;
-}
-.suggest-list .list-cell { -fx-background-color: transparent; -fx-padding: 6 10 6 10; }
-.suggest-list .list-cell:hover { -fx-background-color: #20242e; }
-.suggest-list .list-cell:selected { -fx-background-color: #2a3344; }
-.suggest-label { -fx-text-fill: #d3d7de; }
-.suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #f0f2f6; }
-.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 14px; }
+/* 补全弹层（/命令、@文件）样式统一放到文件末尾：
+   .list-view .list-cell 与本弹层的 cell 规则特异度相同，靠「后置」+「:filled 态」双保险，避免被列表样式串色 */
 
 /* 列表（暖石：透明底；行背景内缩成 8 圆角胶囊，hover/selected 仅对 filled cell 生效——
    列表底部空白区域由空 cell 填充，保持透明不变色） */
@@ -468,3 +459,35 @@
 .log-collapsible { -fx-padding: 0; }
 .log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; }
 .log-collapse-toggle:hover { -fx-text-fill: #f0f2f6; }
+
+/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽）=====
+   必须放在文件末尾（.list-view .list-cell 之后）：两者特异度相同，靠后置取胜；
+   hover/选中态一律用 :filled 且特异度提到 3 类，防止被列表行背景串色 */
+.suggest-list {
+    -fx-background-color: #262320;
+    -fx-background-radius: 10;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 10;
+    -fx-font-smoothing-type: lcd;
+    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
+       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
+       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
+    -fx-padding: 0;
+}
+/* insets/radius 归零：抵消 .list-view .list-cell 的胶囊内缩（弹层行须整行通栏），
+   否则选中行背景比橙条左移 2px、上下缩 1px */
+.suggest-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 7 12 7 12;
+}
+.suggest-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
+.suggest-list .list-cell:filled:selected {
+    -fx-background-color: #2f2723;
+    -fx-border-color: transparent transparent transparent #d97757;
+    -fx-border-width: 0 0 0 2;
+}
+.suggest-label { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; }
+.suggest-desc { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
