@@ -144,10 +144,11 @@
     -fx-padding: 9 10 8 14;
     -fx-font-smoothing-type: lcd;
 }
-/* 输入框聚焦：主色边框 + 主色光晕（InputView focus 监听切换样式类，失焦还原 border #3a362f） */
+/* 输入框聚焦：仅主色边框加粗（不用 dropshadow：effect 会让 TextArea 整棵子树离屏渲染，
+   丢失 LCD 子像素抗锯齿导致正文发虚。InputView focus 监听切换样式类，失焦还原 border #3a362f） */
 .input-frame-focused {
     -fx-border-color: #d97757;
-    -fx-effect: dropshadow(gaussian, rgba(217,119,87,0.30), 14, 0, 0, 0);
+    -fx-border-width: 1.5;
 }
 /* transparent 底与 control-inner-background 保留：防 modena 默认白底在暖石 surface 上露白 */
 .input-frame .input-textarea {
@@ -195,9 +196,9 @@
     -fx-background-radius: 4;
     -fx-cursor: hand;
 }
-.chip-close .icon-close { -fx-fill: #98a0ab; }
-.chip-close:hover { -fx-background-color: rgba(248, 81, 73, 0.15); }
-.chip-close:hover .icon-close { -fx-fill: #f85149; }
+.chip-close .icon-close { -fx-fill: #b6afa2; }
+.chip-close:hover { -fx-background-color: rgba(224, 130, 114, 0.15); }
+.chip-close:hover .icon-close { -fx-fill: #e08272; }
 .input-chip-command, .input-chip-skill { -fx-background-color: #2f2723; -fx-border-color: #5d4034; }
 .input-chip-file { -fx-background-color: #25301f; -fx-border-color: #4a5d3a; }
 .input-chip-paste { -fx-background-color: #2a2723; -fx-border-color: #3a362f; }
