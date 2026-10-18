@@ -520,6 +520,77 @@ public class SessionManagerTest {
         assertEquals(0, fresh.closeCount); // 当前客户端仍在使用，不得关闭
     }
 
+    /** 停止语义：stop() 先置位 stopRequested 再通知（GUI「正在停止...」不早于置位点亮），仅 running 时生效 */
+    @Test
+    public void stop_setsRequestedAndNotifiesBeforeInterrupt() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        final List<Boolean> stopFlagAtNotify = new ArrayList<Boolean>();
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+            @Override public void onSessionStopping(SessionHandle h) {
+                stopFlagAtNotify.add(h.stopRequested); // 通知那一刻的停止态快照
+            }
+        });
+        SessionHandle h = m.createSession(null);
+        h.running = true; // 模拟运行中（不经 send：避免工作线程抢改 running）
+
+        m.stop(h);
+
+        assertEquals("onSessionStopping 必须通知一次", 1, stopFlagAtNotify.size());
+        assertEquals("通知时 stopRequested 必须已为 true（GUI 据此显示「正在停止...」）",
+                Boolean.TRUE, stopFlagAtNotify.get(0));
+        assertTrue(h.stopRequested);
+
+        h.running = false; // 空闲时 stop() 不置位（语义不变）
+        h.stopRequested = false;
+        m.stop(h);
+        assertEquals("空闲会话不得再通知", 1, stopFlagAtNotify.size());
+        assertFalse(h.stopRequested);
+    }
+
+    /** 回合开始清脏：上一回合 stop()/收尾竞态残留的 stopRequested 不得污染新回合指示器 */
+    @Test
+    public void send_clearsStaleStopRequested() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        SpyManager m = new SpyManager(FAKE_UI, config, jar, ws, models);
+        SessionHandle h = m.createSession(null);
+        FakeLlmClient llm = m.created.get(0);
+        llm.addTurn("完成");
+        final List<Boolean> staleAtTurnStart = new ArrayList<Boolean>(); // running=true 通知时的停止态快照
+        final CountDownLatch idle = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
+                if (running) staleAtTurnStart.add(h.stopRequested);
+                else idle.countDown();
+            }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { fail("不应有错误: " + message); }
+        });
+        h.stopRequested = true; // 模拟残留：stop() 读到 running 后 worker 已完成收尾并复位，随后 stop() 又置回 true
+
+        m.send(h, "继续");
+
+        assertTrue("等待回合结束超时", idle.await(5, TimeUnit.SECONDS));
+        assertEquals("running=true 通知应发生一次", 1, staleAtTurnStart.size());
+        assertFalse("回合开始必须清除残留停止态（否则整轮显示「正在停止...」且轮换文案停摆）",
+                staleAtTurnStart.get(0));
+        assertFalse(h.running);
+        assertFalse("回合结束同样复位", h.stopRequested);
+    }
+
     /** 工作空间排序转发：顺序变化可查；不发通知（拖拽排序不清空右侧） */
     @Test
     public void moveWorkspace_reordersWithoutNotify() throws Exception {

@@ -717,6 +717,7 @@ public class SessionManager {
                         persist(h);
                         notifyTitleChanged(h);
                     }
+                    h.stopRequested = false; // 回合开始清脏：stop() 读 running 与置位之间若撞上收尾，残留会污染本回合指示器
                     h.running = true;
                     notifyRunningChanged(h, true);
                     try {
