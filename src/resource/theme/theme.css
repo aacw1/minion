@@ -633,17 +633,26 @@
    2 个类的特异度，靠后置覆盖——放末尾会把工具页插件名（#f4efe7）与状态行（#857f74 11px）压回
    次要灰。列表 cell 规则（5 类）特异度高于设置窗导航列旧规则（4 类），故导航列选择器统一加
    .dark-dialog 前缀补到 5 类并后置，保持 Task 10 的选中态配色不被这里的新规则串色。 */
-.dark-dialog .list-view { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-border-radius: 9; -fx-background-radius: 9; }
+.dark-dialog .list-view { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-border-width: 1; -fx-border-radius: 9; -fx-background-radius: 9; }
 .dark-dialog .list-view .list-cell { -fx-background-color: transparent; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
 .dark-dialog .list-view .list-cell:filled:hover { -fx-background-color: #2c2925; }
 .dark-dialog .list-view .list-cell:filled:selected { -fx-background-color: #332f2a; -fx-text-fill: #f4efe7; }
 .dark-dialog .label { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+/* 提示块（数据源/ssh 列表底部详情、浏览器配置说明、模型/MCP 表单提示）沿用 .msg-thinking 类：
+   该类自带冷蓝胶囊底 #13161c。上方 .dark-dialog .label 已把文字改成暖石次要灰，底色却仍是冷蓝，
+   这里补一条 2 类选择器（后置）把底换成暖石深色 #24221f，与整体底色同系。
+   注意：工具页 .plugin-status 也带 .msg-thinking 类，其规则在下方后置且声明 transparent（纯文字），不受影响 */
+.dark-dialog .msg-thinking { -fx-background-color: #24221f; -fx-text-fill: #b6afa2; }
+/* 弹窗内错误行：旧 .log-error 为冷红 #f85149，改暖石暖红 */
+.dark-dialog .log-error { -fx-text-fill: #e08272; }
 .dark-dialog .radio-button { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
 /* 选中圆点：旧 .dialog-pane .radio-button:selected .radio .dot（5 类）比单靠 .dark-dialog 前缀的
    3 类规则特异度高，并列写全路径（同为 5 类 + 后置）才能把蓝点改成陶土橙 */
 .dark-dialog .radio-button:selected .dot,
 .dialog-pane.dark-dialog .radio-button:selected .radio .dot { -fx-background-color: #d97757; }
-.dark-dialog .combo-box { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; }
+/* 焦点环：旧 .dialog-pane .radio-button:focused .radio 仍是冷蓝边框，改暖石橙（与输入框焦点口径一致） */
+.dialog-pane.dark-dialog .radio-button:focused .radio { -fx-border-color: #d97757; }
+.dark-dialog .combo-box { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-background-radius: 7; }
 /* 下拉框显示区是 ListCell，不被 .dark-dialog .label 命中：旧规则（3 类）冷白，这里（4 类）改暖石主文字色 */
 .dialog-pane.dark-dialog .combo-box .list-cell { -fx-text-fill: #f4efe7; }
 
