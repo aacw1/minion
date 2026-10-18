@@ -754,6 +754,7 @@ git commit -m "feat(gui): 运行指示器增加正在停止与等待用户状态
 **Files:**
 - Modify: `src/main/java/com/minion/gui/session/SessionHandle.java`
 - Modify: `src/main/java/com/minion/gui/session/SessionManager.java`（`Listener`、`stop()`、`send` finally）
+- Modify: `src/main/java/com/minion/gui/dialog/ConfirmSheet.java`（仅新增 `isShowing()`）
 - Modify: `src/main/java/com/minion/gui/MainWindow.java`（监听器分支替换为 `syncIndicator`）
 - Test: `src/test/java/com/minion/gui/MainWindowIndicatorTest.java`（新建，纯静态判定）
 
@@ -837,6 +838,13 @@ Expected: 编译失败（`indicatorAllowed` 不存在）。
 
 ```java
                         h.stopRequested = false; // 运行结束：停止态复位（含中断/异常路径）
+```
+
+`ConfirmSheet` 先补一个只读查询（句柄与 `cancel()` 在 Task 9 实现）：
+
+```java
+    /** 确认卡片是否可见（指示器同步用） */
+    public static boolean isShowing() { return showing; }
 ```
 
 `MainWindow` 加静态判定与同步方法：
@@ -966,7 +974,7 @@ Expected: PASS（此用例防回归；新行为靠 Step 4 手工冒烟）。
     }
 
     /** 确认卡片是否可见（指示器同步用） */
-    public static boolean isShowing() { return showing; }
+    public static boolean isShowing() { return showing; }   // Task 8 已加入，本任务保留不重复添加
 ```
 
 `pending` 类型改为 `Queue<Handle>`；`show` 返回句柄：
