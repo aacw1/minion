@@ -6,7 +6,9 @@ import javafx.scene.shape.SVGPath;
  * 图标工厂：集中管理全部界面矢量图标（Material Symbols Outlined 24×24 viewport，Apache-2.0，
  * 来源 https://github.com/google/material-design-icons ，注释标注图标名）。
  * 颜色一律由 CSS 样式类控制（填充图标 -fx-fill、描边图标 .icon-stroke 的 -fx-stroke），本类不设颜色；
- * 显示尺寸用 size() 按 24 viewport 缩放（默认 scale=1.0 即 24px；描边图标的线宽随缩放同比变细）。
+ * 显示尺寸：fill 图标用 size() 按 24 viewport 缩放（默认 scale=1.0 即 24px）；描边图标的 path 只占
+ * viewport 一部分（12~22），改用 sizeVisual() 按实际 bounds 归一化到目标像素，否则实显只有目标一半。
+ * 描边线宽随缩放同比变细。
  * 动机：Win7 字体回退链缺这些 Unicode 字形（⚙✕✅❌❓▶✓⛭▾▸⏱❐□ 等显示方块），SVGPath 不依赖字体。
  */
 public final class IconFactory {
@@ -145,6 +147,28 @@ public final class IconFactory {
     /** 按 24×24 viewport 缩放到目标像素（scale = px/24） */
     public static void size(SVGPath icon, double px) {
         double s = px / 24.0;
+        icon.setScaleX(s);
+        icon.setScaleY(s);
+    }
+
+    /**
+     * 按图形实际 bounds 归一化到目标像素（描边图标用；fill 图标仍用 size）。
+     *
+     * <p>描边图标的 path 只占 24 viewport 的一小部分（如 close 为 12×12、发送/加号为 14×14、
+     * 齿轮约 22×22），用 {@link #size} 按 viewport 缩放会让实显尺寸只有目标的一半左右，
+     * 且各图标彼此不一致。本方法按 bounds 的最大边换算缩放：bounds × scale ≈ px。</p>
+     *
+     * <p>未入场景时 {@code getBoundsInLocal()} 对 SVGPath 同样可用（几何在需要时惰性计算）；
+     * 若尺寸为 0（异常 path）则回退 {@link #size}，保证不会得到 0 缩放。</p>
+     */
+    public static void sizeVisual(SVGPath icon, double px) {
+        javafx.geometry.Bounds b = icon.getBoundsInLocal();
+        double max = Math.max(b.getWidth(), b.getHeight());
+        if (max <= 0) {
+            size(icon, px);
+            return;
+        }
+        double s = px / max;
         icon.setScaleX(s);
         icon.setScaleY(s);
     }

@@ -149,7 +149,7 @@ public class MainWindow {
         HBox.setHgrow(sessionSpacer, Priority.ALWAYS);
         Button newSession = new Button();
         SVGPath plusIcon = com.minion.gui.icon.IconFactory.strokePlus();
-        com.minion.gui.icon.IconFactory.size(plusIcon, 13);
+        com.minion.gui.icon.IconFactory.sizeVisual(plusIcon, 13);
         newSession.setGraphic(plusIcon);
         newSession.getStyleClass().add("btn-cell");
         newSession.setTooltip(new Tooltip("新建会话"));
@@ -167,7 +167,7 @@ public class MainWindow {
         HBox.setHgrow(wsSpacer, Priority.ALWAYS);
         Button newWs = new Button();
         SVGPath wsPlusIcon = com.minion.gui.icon.IconFactory.strokePlus();
-        com.minion.gui.icon.IconFactory.size(wsPlusIcon, 13);
+        com.minion.gui.icon.IconFactory.sizeVisual(wsPlusIcon, 13);
         newWs.setGraphic(wsPlusIcon);
         newWs.getStyleClass().add("btn-cell");
         newWs.setTooltip(new Tooltip("新建工作空间"));

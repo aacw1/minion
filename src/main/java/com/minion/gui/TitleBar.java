@@ -92,9 +92,9 @@ public class TitleBar extends HBox {
         return visual;
     }
 
-    /** 标题栏图标：24 viewport 缩放到 14px 显示 */
+    /** 标题栏描边图标：按图形实际 bounds 缩放到 14px 显示（path 只占 24 viewport 一部分，size 会实显偏小） */
     private static Node sized(SVGPath icon) {
-        IconFactory.size(icon, 14);
+        IconFactory.sizeVisual(icon, 14);
         return icon;
     }
 

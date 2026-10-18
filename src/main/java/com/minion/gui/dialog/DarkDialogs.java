@@ -1,6 +1,7 @@
 package com.minion.gui.dialog;
 
 import com.minion.gui.icon.IconFactory;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -74,6 +75,22 @@ public final class DarkDialogs {
             body.getChildren().add(subtitle);
         }
         if (content != null) body.getChildren().add(content);
+        // Alert 只用 setContentText（pane.getContent() 为 null）：一旦把 content 换成自绘 root，
+        // DialogPane.updateContentArea() 会把内部 contentLabel 隐藏（visible/managed=false），
+        // 结果是所有确认/错误弹窗只剩标题栏和按钮，正文（要删哪个模型、退出原因等）看不到。
+        // 这里把 contentText 转成普通 Label 放进 body，并清空 contentText 避免残留在隐藏标签里。
+        String contentText = pane.getContentText();
+        if (content == null && contentText != null && !contentText.trim().isEmpty()) {
+            Label text = new Label(contentText);
+            text.setWrapText(true);
+            text.setMaxWidth(Double.MAX_VALUE);
+            text.setPrefWidth(360);
+            text.getStyleClass().addAll("content", "label");
+            VBox host = new VBox(text);
+            host.setPadding(new Insets(14, 16, 14, 16));
+            body.getChildren().add(host);
+            pane.setContentText(null);
+        }
 
         HBox bar = titleBar(d, title);
         // 自绘根容器加 dark-wrap：圆角由 .dialog-pane.dark-dialog 的 background-radius 负责，

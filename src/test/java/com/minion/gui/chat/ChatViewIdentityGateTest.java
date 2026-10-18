@@ -28,4 +28,17 @@ public class ChatViewIdentityGateTest {
         gate.onUserMessage();
         assertTrue(gate.consume(0, true));
     }
+
+    /** 斜杠命令结果走 SYSTEM 事件（log-sys）：不是 AI 输出，不得消费身份名额
+     *  （否则 /help、/tokens 等本地结果上方会冒出「m minion」） */
+    @Test public void systemSegmentsDoNotConsumeIdentity() {
+        assertFalse(ChatView.consumesIdentity("log-sys"));
+    }
+
+    /** AI 正文段（log-reply）消费身份名额；用户回显与无标签兜底同样不消费 */
+    @Test public void replySegmentsConsumeIdentity() {
+        assertTrue(ChatView.consumesIdentity("log-reply"));
+        assertFalse(ChatView.consumesIdentity("log-input"));
+        assertFalse(ChatView.consumesIdentity(null));
+    }
 }

@@ -663,6 +663,10 @@
     -fx-background-radius: 0 0 12 12;
 }
 .dark-dialog > .content { -fx-padding: 0; }
+/* Alert 正文：Alert 只有 setContentText 时 pane.getContent() 为 null，DarkDialogs 会把正文
+   转成带 .content.label 的 Label 放进自绘 body。旧规则 .dialog-pane .content.label（3 类）比
+   .dark-dialog .label（2 类）特异度高，必须用 4 类选择器 + 后置才能改回暖石主文字色。 */
+.dialog-pane.dark-dialog .content.label { -fx-text-fill: #f4efe7; }
 
 /* ===== 列表 / 表单弹窗（数据源、ssh、浏览器、模型、MCP、工作空间表单）=======
    追加位置（不是文件末尾）：.dark-dialog .label 与 .form-label/.plugin-name/.plugin-status 同为

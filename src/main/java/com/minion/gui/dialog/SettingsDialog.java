@@ -13,6 +13,7 @@ import com.minion.gui.theme.Theme;
 import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
@@ -45,6 +46,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Screen;
 import javafx.stage.Window;
 import javafx.util.Duration;
 
@@ -105,8 +107,12 @@ public class SettingsDialog {
         HBox box = new HBox(0);
         box.getChildren().addAll(nav, content);
         HBox.setHgrow(content, Priority.ALWAYS);
-        // 暖石主题：导航列 172（CSS）+ 右侧内容区 748 = 920；高度 560（自绘标题栏 44 由 DialogPane 额外占用）
-        box.setPrefSize(920, 560);
+        // 暖石主题：导航列 172（CSS）+ 右侧内容区 748 = 920；内容高 560（自绘标题栏 44 + 按钮栏约 50 由
+        // DialogPane 额外占用）。125% DPI（如 1366×768 → 可视逻辑高约 614）下 654 总高会溢屏、底部按钮不可达，
+        // 故按主屏可视区钳制内容高（下限 420，保证导航/表单仍可用）。Screen.getPrimary() 必须在 FX 线程，本方法由 show 在 FX 线程调用。
+        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
+        double contentH = Math.min(560, Math.max(420, vb.getHeight() - 180));
+        box.setPrefSize(920, contentH);
         d.getDialogPane().setContent(box);
         // 无边框深色弹窗：自绘标题栏（拖动 + 关闭），去掉 Windows 浅色系统标题栏（样式类 dark-dialog）
         DarkDialogs.decorate(d, "设置");

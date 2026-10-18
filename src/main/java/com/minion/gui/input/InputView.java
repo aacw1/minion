@@ -281,10 +281,10 @@ public class InputView extends VBox {
         updatePrompt(); // askPending 默认 false，显示正常发送键提示
     }
 
-    /** 描边发送箭头（16px 显示尺寸）：IconFactory.size 按 24 viewport 缩放 */
+    /** 描边发送箭头（16px 显示尺寸）：按图形实际 bounds 归一化（IconFactory.sizeVisual） */
     private static SVGPath arrowIcon() {
         SVGPath icon = IconFactory.strokeSend();
-        IconFactory.size(icon, 16);
+        IconFactory.sizeVisual(icon, 16);
         return icon;
     }
 
