@@ -679,23 +679,34 @@ public class AgentLoop {
                 List<Future<ToolResult>> futures = new ArrayList<Future<ToolResult>>();
                 for (ToolCall call : calls) {
                     if (interrupted) break; // 提交间隙的中断兜底（T14 IM-2 残留 race）
-                    futures.add(pool.submit(() -> runOneTool(call)));
-                }
-                synchronized (inFlight) {
-                    inFlight.addAll(futures);
+                    Future<ToolResult> f = pool.submit(() -> runOneTool(call));
+                    futures.add(f);
+                    // 提交即登记：消除 submit 与 addAll 之间的取消窗口（窗口内 interrupt 拿不到 future）
+                    synchronized (inFlight) {
+                        inFlight.add(f);
+                    }
                 }
                 try {
                     // 循环上界用 futures.size()：提交阶段被打断时未提交的调用没有对应 future
                     for (int i = 0; i < futures.size(); i++) {
                         ToolResult result;
                         try {
-                            result = futures.get(i).get();
-                        } catch (ExecutionException e) {
-                            result = ToolResult.error("工具执行异常: " + e.getMessage());
-                        } catch (CancellationException e) {
-                            break; // 已被 interrupt() 取消，本轮剩余工具结果丢弃
+                            result = awaitToolResult(futures.get(i),
+                                    () -> interrupted || Thread.currentThread().isInterrupted(), 200);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            result = null;
                         }
-                        if (result == null) result = ToolResult.error("工具执行失败");
+                        if (result == null) {
+                            // 已停止：取消本批剩余工具，并为未出结果的调用补 UI 结果行
+                            // （历史不补——scrubHalfTurn 统一清理半轮）
+                            for (int j = i; j < futures.size(); j++) {
+                                futures.get(j).cancel(true);
+                                ui.onToolResult(calls.get(j).name,
+                                        ToolResult.error("已取消（用户停止）"));
+                            }
+                            break;
+                        }
                         if (result.ok) {
                             consecutiveToolErrors = 0;
                         } else {
@@ -758,6 +769,25 @@ public class AgentLoop {
         int maxCtx = contextManager != null ? contextManager.maxTokens() : 0;
         ui.onStatsLine(StatsLine.format(session.usage, elapsed, currentCtx, maxCtx));
         ui.onContextStats(currentCtx, maxCtx); // 轮次结束兜底推送（含中断/异常路径）
+    }
+
+    /** 可中断等待工具结果：200ms 分段轮询停止标志（用户停止只置标志，不中断工作线程）；
+     *  返回 null = 已停止/已取消，调用方负责取消剩余 future 并补发「已取消」结果。
+     *  ExecutionException 统一转错误结果（与旧路径一致），不向上抛。 */
+    static ToolResult awaitToolResult(Future<ToolResult> future,
+                                      java.util.function.BooleanSupplier stopped,
+                                      long sliceMs) throws InterruptedException {
+        while (true) {
+            try {
+                return future.get(sliceMs, TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                if (stopped.getAsBoolean()) return null;
+            } catch (ExecutionException e) {
+                return ToolResult.error("工具执行异常: " + e.getMessage());
+            } catch (CancellationException e) {
+                return null;
+            }
+        }
     }
 
     /** 零增量闸门：本次请求是否还没吐出任何可见内容。tool_calls 不参与判定——

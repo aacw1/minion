@@ -1793,4 +1793,47 @@ public class AgentLoopTest {
         }
         assertTrue(throwing.errors.stream().anyMatch(e -> e.contains("异常")));
     }
+
+    /** 可中断等待：停止标志为真时，不响应中断的 future 也必须在轮询片内返回 null */
+    @Test
+    public void awaitToolResult_stopped_returnsNullQuickly() throws Exception {
+        java.util.concurrent.FutureTask<ToolResult> never =
+                new java.util.concurrent.FutureTask<ToolResult>(
+                        () -> ToolResult.success("x")); // 永不 run
+        long start = System.currentTimeMillis();
+        ToolResult r = AgentLoop.awaitToolResult(never, () -> true, 50);
+        assertNull(r);
+        assertTrue(System.currentTimeMillis() - start < 1000);
+    }
+
+    /** 可中断等待：正常完成原样返回 */
+    @Test
+    public void awaitToolResult_completed_returnsResult() throws Exception {
+        java.util.concurrent.FutureTask<ToolResult> ft =
+                new java.util.concurrent.FutureTask<ToolResult>(
+                        () -> ToolResult.success("ok"));
+        ft.run();
+        assertEquals("ok", AgentLoop.awaitToolResult(ft, () -> false, 50).output);
+    }
+
+    /** 中断时未完成工具补发「已取消」结果行（聊天区不留无结果的工具行） */
+    @Test
+    public void interruptDuringTools_emitsCancelledResult() throws Exception {
+        ToolCall tc = new ToolCall();
+        tc.id = "c1";
+        tc.name = "blocker";
+        tc.arguments = "{}";
+        llm.addTurnWithTools(Collections.singletonList(tc), null);
+        AgentLoop loop = newLoop();
+        BlockingTool blocker = new BlockingTool();
+        registry.register(blocker);
+        Thread t = new Thread(() -> loop.runUserTurn("任务"));
+        t.start();
+        assertTrue(blocker.entered.await(5, TimeUnit.SECONDS));
+        loop.interrupt();
+        t.join(5000);
+        assertFalse(t.isAlive());
+        assertTrue("应补发已取消结果: " + ui.toolResults,
+                ui.toolResults.contains("blocker"));
+    }
 }
