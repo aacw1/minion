@@ -316,9 +316,10 @@
 .log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
 
 /* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe）
-   暖石：运行中点苔绿 #8fbb7f（原 GitHub 绿 #3fb950 在暖色底上偏冷） */
-.status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
-.status-dot-running { -fx-background-color: #8fbb7f; }
+   节点是 Circle（Shape），填充色用 -fx-fill；-fx-background-* 对 Shape 无效，勿用。
+   暖石：静态点暖灰 #857f74，运行中点苔绿 #8fbb7f（原 GitHub 绿 #3fb950 在暖色底上偏冷） */
+.status-dot { -fx-fill: #857f74; }
+.status-dot-running { -fx-fill: #8fbb7f; }
 
 /* ===== 运行状态指示器（正文区左下角齿轮+文案；暖石胶囊：surface 底 + 1px border + 全圆角） =====
    不加 dropshadow：effect 会让整棵子树离屏渲染、丢失 LCD 子像素抗锯齿，11.5px 小字会发虚

@@ -29,7 +29,10 @@ public final class StatusDot {
     public static Circle create(boolean running) {
         Circle dot = new Circle(4);
         dot.getStyleClass().add("status-dot");
-        if (running) startPulse(dot);
+        if (running) {
+            dot.getStyleClass().add("status-dot-running");
+            startPulse(dot);
+        }
         return dot;
     }
 
