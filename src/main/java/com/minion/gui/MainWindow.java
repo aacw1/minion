@@ -198,14 +198,14 @@ public class MainWindow {
         setupAutoScroll();
         WheelScrollAccelerator.attach(chatScroll); // 滚轮加速：每格固定像素滚动（替换 JavaFX 8 默认慢速比例滚动）
         inputView = new InputView(manager, MinionApp.config());
-        // 运行状态指示器：正文区左下角悬浮（齿轮+动态文案），StackPane 叠加于消息区之上，不占布局
+        // 运行状态指示器：独立一行，放在消息区与输入框之间（不再悬浮覆盖正文；
+        // 隐藏时不占布局，显示时贴输入框上边线）
         runningIndicator = new RunningIndicator();
-        StackPane chatHost = new StackPane(chatScroll, runningIndicator);
-        StackPane.setAlignment(runningIndicator, Pos.BOTTOM_LEFT);
-        StackPane.setMargin(runningIndicator, new Insets(0, 0, 10, 14));
+        runningIndicator.managedProperty().bind(runningIndicator.visibleProperty());
+        VBox.setMargin(runningIndicator, new Insets(0, 0, -8, 14));
         // JavaFX 8 无 StackPane.setFillWidth/Height（12+ 才有）：用 max 钳制防默认 fill 拉伸铺满
         runningIndicator.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        VBox.setVgrow(chatHost, Priority.ALWAYS); // 原 chatScroll 的 vgrow 约束移交 chatHost
+        VBox.setVgrow(chatScroll, Priority.ALWAYS);
         // 页签栏（右侧顶部，下带 1px 分隔线；页签为空时整行隐藏）
         tabsBar = new HBox(tabs);
         tabsBar.getStyleClass().add("tabs-bar");
@@ -217,7 +217,7 @@ public class MainWindow {
         // 启动时无页签（懒加载）；注册监听后立即同步一次初始可见性
         tabsBar.setVisible(!tabs.getTabs().isEmpty());
         tabsBar.setManaged(!tabs.getTabs().isEmpty());
-        right.getChildren().setAll(tabsBar, chatHost, inputView);
+        right.getChildren().setAll(tabsBar, chatScroll, runningIndicator, inputView);
 
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
         StackPane rightStack = new StackPane(right);

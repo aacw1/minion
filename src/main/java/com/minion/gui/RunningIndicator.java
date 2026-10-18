@@ -24,7 +24,7 @@ import java.util.Random;
  * 停止收尾期固定显示「正在停止…」（优先于重试/压缩与轮换）；等待用户（提问挂起/确认卡片）时隐藏但保留运行态。
  * 弹窗遮挡（suspend/resume）与等待用户是两个独立隐藏原因，任一存在即隐藏，互不覆盖。
  * 动画规约同 StatusDot：隐藏前必须停全部 Timeline，防动画引用节点泄漏。
- * 挂载方式：放入 StackPane 并 setAlignment(BOTTOM_LEFT)（本组件不管理布局）。
+ * 挂载方式：放入 VBox 独立一行（隐藏时 unmanaged 不占布局，显示时贴输入框上边线；本组件不管理布局）。
  */
 public class RunningIndicator extends HBox {
 
