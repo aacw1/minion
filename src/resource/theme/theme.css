@@ -577,4 +577,3 @@
 .subagent-card .log-summary-text { -fx-text-fill: #b3e5fc; -fx-font-size: 12px; }
 .subagent-card .content { -fx-background-color: #20242a; }
 .empty-hint { -fx-text-fill: #857f74; -fx-font-size: 13px; }
-.empty-hint .content { -fx-background-color: #1b1a18; }

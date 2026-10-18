@@ -441,10 +441,14 @@ public class ChatView extends VBox {
         append(null, "log-error", text, StreamKind.NONE, 0);
     }
 
+    /** 空会话占位：Label 包在容器里水平居中、顶部留白 80px（占位文本无需选中复制，Label 才能吃到对齐/留白样式） */
     private Node hint() {
-        MessageTextArea ta = new MessageTextArea(EMPTY_HINT);
-        ta.getStyleClass().add("empty-hint");
-        return ta;
+        Label label = new Label(EMPTY_HINT);
+        label.getStyleClass().add("empty-hint");
+        VBox host = new VBox(label);
+        host.setAlignment(Pos.TOP_CENTER);
+        host.setPadding(new Insets(80, 0, 0, 0));
+        return host;
     }
 
     /** 追加一条用户消息气泡（右对齐、无标签、不消费 AI 身份行）：气泡段恒静态（StreamKind.NONE），
