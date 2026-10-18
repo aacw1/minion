@@ -167,12 +167,12 @@ scrubHalfTurn(); // 所有退出路径无条件执行
 `MainWindow` 新增 `syncIndicator(SessionHandle h)`：
 
 ```java
-boolean active = h != null && h.running;
-boolean allowed = active && !h.askPending && !ConfirmSheet.isShowing();
-runningIndicator.setRunning(active);                          // 先刷运行态
-runningIndicator.setPausedByModal(ConfirmSheet.isShowing());  // 遮挡态由单一真相驱动
-runningIndicator.setStopping(active && h.stopRequested);
-runningIndicator.setWaitingUser(active && !allowed);          // 再刷等待/停止态（可覆盖可见性）
+if (chatView == null || chatView.handle() != h) return;        // 仅当前激活会话
+boolean allowed = indicatorAllowed(h.running, h.askPending, ConfirmSheet.isShowing());
+runningIndicator.setRunning(h.running);                        // 先刷运行态
+runningIndicator.setPausedByModal(ConfirmSheet.isShowing());   // 遮挡态由单一真相驱动
+runningIndicator.setStopping(h.running && h.stopRequested);
+runningIndicator.setWaitingUser(h.running && !allowed);        // 再刷等待态（可覆盖可见性）
 ```
 
 `MainWindow` 中所有 `runningIndicator.suspend()/resume()` 调用删除，统一走 `syncIndicator`。
@@ -183,11 +183,11 @@ runningIndicator.setWaitingUser(active && !allowed);          // 再刷等待/�
 
 **4.2 `RunningIndicator`**
 
-- 新增 `setStopping(boolean)`：显示固定文案「正在停止…」，优先级高于压缩/重试/轮换；
+- 新增 `setStopping(boolean)`：显示固定文案「正在停止...」，优先级高于重试/压缩/轮换；
   停止态仍显示齿轮动画。`false` 时按当前状态重绘。
 - 新增 `setWaitingUser(boolean)`：隐藏但不改变 `running/compressing/retry` 状态
   （替代裸 `suspend/resume`）；`setRunning(false)` 时一并复位 stopping/waiting。
-- 状态优先级：`waitingUser`（隐藏）> `stopping` > `compressing` > `retry` > 轮换。
+- 状态优先级：`waitingUser`（隐藏）> `stopping` > `retry` > `compressing` > 轮换。
 
 **4.3 确认卡片**
 

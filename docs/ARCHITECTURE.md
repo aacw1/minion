@@ -146,8 +146,10 @@ com.minion
 用户输入 → InputView → SessionManager.dispatchCommand（命令本地/消息 send）→ 会话工作线程 → AgentLoop
   1. 追加 user 消息；TokenCounter 估算达阈值 → 自动压缩
   2. 流式请求（thinking / 正文 / tool_calls 增量 → EventList → UI 渲染；ChatView 流式缓冲在轮次边界——用户消息/补充/工具调用——重置，防多轮回复文本跨轮累积拼接）
-  3. finish_reason==tool_calls → 执行工具（同回合并行；Bash 超时 120s；高危经 ConfirmGate→GuiConfirmUi 弹窗）→ tool 消息回传 → 下一轮
-  4. 无工具调用 → 本轮完成 → 落盘
+  3. toolCalls 非空 → 执行工具（同回合并行；Bash 超时 120s；高危经 ConfirmGate→GuiConfirmUi 弹窗）→ tool 消息回传 → 下一轮
+     执行依据只认 toolCalls 非空，finish_reason 不作门槛；DeepSeekClient 在 toolCalls 非空时把 finish_reason 归一为 tool_calls（网关/截断流写成 stop 也不丢工具调用）
+  4. toolCalls 为空 → 本轮完成 → 落盘
+  5. 任何退出路径（正常结束 / 轮数上限 / 错误 / 中断 / 异常）都经 scrubHalfTurn 清洗未配对的 tool_calls，历史中不留半轮
 ```
 
 细节时序见 `docs/superpowers/specs/2026-08-08-minion-design.md` §7。

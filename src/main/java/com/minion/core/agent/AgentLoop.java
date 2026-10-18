@@ -757,7 +757,7 @@ public class AgentLoop {
             ui.onWarning("本轮已被中断");
         }
         // 所有退出路径统一清洗：正常结束/轮数上限/错误/中断/异常都不得留下未配对的 toolCalls
-        // （旧实现只在 interrupted 时清洗，正常 break 会把半轮写进历史，下次请求 400）
+        // （防回归：兜住未来新增的 break 点与异常路径，保证历史里永不出现未配对的 tool_calls，否则下次请求 400）
         scrubHalfTurn();
         // 所有退出路径的兜底落盘：正常结束 / 轮数上限 / 错误 / 中断 / 异常
         persistSession();
