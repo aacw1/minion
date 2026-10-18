@@ -26,7 +26,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 | `workspace.json` | 工作空间（名称、项目路径 workDir、项目主说明文件 projectMd、项目级技能路径 projectSkillsDir）；界面「＋ 新建工作空间」创建（名称与项目路径必填且须是已存在文件夹，另两项可选、填了才校验：主说明文件须是已存在文件、技能路径须是已存在文件夹；均可浏览选取）；首次启动无本文件时生成的 default 空间只填项目路径 `.`，主说明文件与技能路径留空 |
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；设置窗「模型」页管理 |
 | `config.properties` | confirm（高危确认开关/白名单）、paths（空间外读/空间外写）、agent（工具空输出占位）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改，skills.dir 可用目录选择器浏览选取 |
-| `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
+| `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/修改/删除/重连） |
 | `tools.json` | 可插拔工具配置：`browser`（路径/端口/用户数据目录/无头/超时 + 启用）、`mysql`/`postgresql`/`oracle`（启用 + 数据源列表 + 当前选中）、`ssh`（启用 + 连接列表 + 当前选中）；设置窗「工具」页管理，改动即落盘、全局会话下一轮生效 |
 
 工作空间弹窗（新建/修改）各字段的填写要求与含义：
@@ -133,7 +133,7 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 
 ## MCP 工具扩展（stdio / SSE / Streamable HTTP）
 
-对接 MCP（Model Context Protocol）服务器，把服务器上的工具暴露给模型调用。标准 JSON-RPC 2.0 协议，兼容 Claude Code / 千问等生态的 MCP 服务器。配置在设置窗「MCP」页管理（服务器列表 + 状态点 + 启用开关 + 新建/编辑/删除/重连），落盘 `mcp.json`。列表项失败原因展示截断（40 字符），点击可复制完整失败原因（含多行）。
+对接 MCP（Model Context Protocol）服务器，把服务器上的工具暴露给模型调用。标准 JSON-RPC 2.0 协议，兼容 Claude Code / 千问等生态的 MCP 服务器。配置在设置窗「MCP」页管理（服务器列表 + 状态点 + 启用开关 + 新建/修改/删除/重连），落盘 `mcp.json`。列表项失败原因展示截断（40 字符），点击可复制完整失败原因（含多行）。
 
 字段：
 

@@ -41,8 +41,9 @@
 /* 按钮字号/内边距：JavaFX Button 默认类名是 button（.btn 无节点使用），此处按具体样式类补齐 */
 .btn-primary, .btn-ghost, .btn-send-empty, .btn-send-full,
 .btn-approve, .btn-cell, .btn-close { -fx-font-size: 12px; }
-.btn-primary, .btn-ghost, .btn-send-empty, .btn-send-full,
-.btn-approve { -fx-padding: 6 13 6 13; }
+/* .btn-primary 只出现在 InputView 的 removeAll 清理列表里（从无节点携带），
+   故不参与内边距汇总（避免死规则）；字号汇总保留它无副作用 */
+.btn-ghost, .btn-send-empty, .btn-send-full, .btn-approve { -fx-padding: 6 13 6 13; }
 .btn-ghost { -fx-background-radius: 7; }
 
 /* 滚动条（变窄；箭头按钮隐藏） */
@@ -94,6 +95,16 @@
     -fx-border-color: #3a362f;
     -fx-border-radius: 999;
     -fx-padding: 4 9 4 9;
+}
+/* 标题栏纯图标按钮（设置/最小化/最大化/还原/关闭）：设计稿统一 30×30。
+   2 类选择器压过上方按钮汇总规则的通用内边距（6 13）与 modena 默认 padding，
+   否则 14px 图标被横向撑成 40px 宽、关闭键又按文字内边距排出另一尺寸。
+   只设尺寸不碰底色：关闭键 hover 红底仍由 .btn-close:hover 决定 */
+.topbar .btn-ghost, .topbar .btn-close {
+    -fx-padding: 3 5 3 5;
+    -fx-background-radius: 7;
+    -fx-min-width: 30; -fx-pref-width: 30; -fx-max-width: 30;
+    -fx-min-height: 30; -fx-pref-height: 30; -fx-max-height: 30;
 }
 
 /* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
