@@ -200,9 +200,11 @@ public class MainWindow {
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
         StackPane rightStack = new StackPane(right);
         ConfirmSheet.setHost(rightStack);
-        // 工具提问弹窗显示期间隐藏运行状态指示器（防"等待用户操作"被误判为卡死），关闭后恢复
+        // 工具提问弹窗显示期间隐藏运行状态指示器（防"等待用户操作"被误判为卡死），关闭后恢复。
+        // 与其它状态变化一样收敛到 syncIndicator：可见性口径由 SessionHandle/ConfirmSheet 单一真相推导，
+        // 不再成对 suspend/resume（resume 与 setWaitingUser 共用可见性，两套入口会互相覆盖）
         ConfirmSheet.setVisibilityListener(showing -> Platform.runLater(() -> {
-            if (showing) runningIndicator.suspend(); else runningIndicator.resume();
+            if (chatView != null) syncIndicator(chatView.handle());
         }));
 
         // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
@@ -233,7 +235,7 @@ public class MainWindow {
                 // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写，统一 runLater 访问）
                 Platform.runLater(() -> {
                     if (chatView != null && chatView.handle() == h) {
-                        runningIndicator.setRunning(running);
+                        syncIndicator(h);
                         runningIndicator.setCompressing(false); // 运行结束复位压缩态
                     }
                 });
@@ -259,13 +261,11 @@ public class MainWindow {
             @Override public void onSessionAskChanged(SessionHandle h, boolean asking, String question) {
                 if (inputView != null) inputView.onAskChanged(h, asking, question);
                 // AskUserQuestion 挂起等待回答期间会话 running 仍为 true（AgentLoop 阻塞等待），
-                // 齿轮指示器会误显示"正在加载"；挂起时隐藏（保留运行态），回答完成/中断后恢复（同 ConfirmSheet 先例）
-                Platform.runLater(() -> {
-                    if (chatView != null && chatView.handle() == h) { // 仅当前激活会话
-                        if (asking) runningIndicator.suspend();
-                        else runningIndicator.resume();
-                    }
-                });
+                // 齿轮指示器会误显示"正在加载"；挂起时隐藏（保留运行态），回答完成/中断后恢复
+                Platform.runLater(() -> syncIndicator(h));
+            }
+            @Override public void onSessionStopping(SessionHandle h) {
+                Platform.runLater(() -> syncIndicator(h));
             }
             @Override public void onSessionActivated(SessionHandle h) {
                 Platform.runLater(() -> {
@@ -284,7 +284,8 @@ public class MainWindow {
                         chatScroll.setVvalue(chatView.savedVvalue());
                         if (inputView != null) inputView.bindSession(h);
                         sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
-                        runningIndicator.setRunning(h.running); // 切会话：按新会话运行态刷新指示器
+                        // 切会话：按新会话运行态刷新指示器（必须在 chatView 赋值之后，否则 handle 过滤直接 return）
+                        syncIndicator(h);
                         runningIndicator.setCompressing(false); // 切会话复位压缩态（压缩事件按会话隔离）
                         return;
                     }
@@ -319,7 +320,8 @@ public class MainWindow {
                     chatScroll.setContent(chatView);
                     if (inputView != null) inputView.bindSession(h);
                     sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
-                    runningIndicator.setRunning(h.running); // 切会话：按新会话运行态刷新指示器
+                    // 切会话：按新会话运行态刷新指示器（必须在 chatView 赋值之后，否则 handle 过滤直接 return）
+                    syncIndicator(h);
                     runningIndicator.setCompressing(false); // 切会话复位压缩态（压缩事件按会话隔离）
                 });
             }
@@ -415,8 +417,26 @@ public class MainWindow {
         chatView = null;
         chatScroll.setContent(placeholder); // 无活动会话：空白占位
         if (inputView != null) inputView.bindSession(null); // current=null → 下次发送自动建会话
+        // 无活动会话：chatView 已置 null，syncIndicator 会直接 return，故此处保留显式复位
         runningIndicator.setRunning(false); // 无活动会话：指示器隐藏并停动画
+        runningIndicator.setWaitingUser(false);
         runningIndicator.setCompressing(false);
+    }
+
+    /** 指示器可见条件（纯静态可单测）：运行中且不在等待用户操作（提问挂起/确认卡片） */
+    static boolean indicatorAllowed(boolean running, boolean askPending, boolean confirmShowing) {
+        return running && !askPending && !confirmShowing;
+    }
+
+    /** 指示器单一刷新入口：running/ask/确认卡片/停止态任何变化都走这里，避免多分支漂移。
+     *  须在 chatView 绑定完成后调用（按 chatView.handle() 过滤非当前会话） */
+    private void syncIndicator(SessionHandle h) {
+        if (chatView == null || chatView.handle() != h) return;
+        boolean allowed = indicatorAllowed(h.running, h.askPending, ConfirmSheet.isShowing());
+        runningIndicator.setRunning(h.running);                       // 先刷运行态
+        runningIndicator.setPausedByModal(ConfirmSheet.isShowing());  // 遮挡态由单一真相驱动（不依赖成对 suspend/resume）
+        runningIndicator.setStopping(h.running && h.stopRequested);
+        runningIndicator.setWaitingUser(h.running && !allowed);       // 再刷等待态（可覆盖可见性）
     }
 
     /** 自动滚动节流：流式增长触发的 setVvalue(1.0) 合并为每 150ms 至多一次。

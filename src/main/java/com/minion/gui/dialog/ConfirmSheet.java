@@ -52,6 +52,9 @@ public class ConfirmSheet {
     /** 注册弹窗可见性回调：true=显示，false=完全关闭（淡出完成）；MainWindow 用于挂起/恢复运行状态指示器 */
     public static void setVisibilityListener(Consumer<Boolean> listener) { visibilityListener = listener; }
 
+    /** 确认卡片是否可见（指示器同步用，与「遮挡/等待用户」单一刷新入口配套） */
+    public static boolean isShowing() { return showing; }
+
     public static void show(String message, Consumer<ConfirmUi.Decision> callback) {
         if (host == null) {
             System.err.println("[minion] ConfirmSheet host 未注册，确认请求自动拒绝");

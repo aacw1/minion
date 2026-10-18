@@ -68,6 +68,8 @@ public class SessionManager {
         void onError(String message);
         /** AskUserQuestion 挂起状态变化（asking=true 且 question 非空=开始挂起；asking=false=复位） */
         default void onSessionAskChanged(SessionHandle h, boolean asking, String question) { }
+        /** 已发出停止请求（等待收尾；GUI 指示器显示「正在停止...」） */
+        default void onSessionStopping(SessionHandle h) { }
         /** 上下文压缩状态变化（true=压缩中；仅当前激活会话时 GUI 显示） */
         default void onCompressingChanged(SessionHandle h, boolean compressing) { }
         /** 429 长重试进度（attempt ≥ 1 进入/更新；0 退出；仅当前激活会话时 GUI 显示） */
@@ -727,6 +729,7 @@ public class SessionManager {
                             catch (Exception e) { notifyError("删除会话文件失败: " + e.getMessage()); }
                         }
                         h.running = false;
+                        h.stopRequested = false; // 运行结束：停止态复位（含中断/异常路径）
                         if (h.askPending) { // 中断路径 onAskUserDone 不回调，此处兜底复位
                             h.askPending = false;
                             h.askQuestion = null;
@@ -750,6 +753,8 @@ public class SessionManager {
 
     public void stop(SessionHandle h) {
         if (h != null && h.running) {
+            h.stopRequested = true;
+            for (Listener l : listeners) l.onSessionStopping(h);
             h.loop.interrupt(); // 只取消当前客户端；换模型后 in-flight 请求在旧（已退役）客户端上
             h.closeRetired();   // 一并取消旧客户端的流式请求，防「终止」失效等旧流自然结束（数分钟）
         }

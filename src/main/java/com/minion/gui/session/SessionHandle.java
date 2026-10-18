@@ -50,6 +50,8 @@ public class SessionHandle {
     public volatile boolean titlePending;
     /** 是否正在后台运行（UI 徽标/终止按钮依据） */
     public volatile boolean running;
+    /** 已请求停止（等待工具/请求收尾）：指示器显示「正在停止...」，running=false 时复位 */
+    public volatile boolean stopRequested;
     /** 会话已删除（send 中据此中止，防已删除会话的文件/事件复活） */
     public volatile boolean deleted;
     /** AskUserQuestion 挂起中（输入框进入回答模式；回答/中断/回合结束复位） */
