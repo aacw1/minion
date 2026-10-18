@@ -851,11 +851,16 @@ Expected: 编译失败（`indicatorAllowed` 不存在）。
     private void syncIndicator(SessionHandle h) {
         if (chatView == null || chatView.handle() != h) return;
         boolean allowed = indicatorAllowed(h.running, h.askPending, ConfirmSheet.isShowing());
-        runningIndicator.setRunning(h.running);           // 先刷运行态
+        runningIndicator.setRunning(h.running);                       // 先刷运行态
+        runningIndicator.setPausedByModal(ConfirmSheet.isShowing());  // 遮挡态由单一真相驱动（不依赖成对 suspend/resume）
         runningIndicator.setStopping(h.running && h.stopRequested);
-        runningIndicator.setWaitingUser(h.running && !allowed); // 再刷等待/停止态（可覆盖可见性）
+        runningIndicator.setWaitingUser(h.running && !allowed);       // 再刷等待态（可覆盖可见性）
     }
 ```
+
+同时删除 `MainWindow` 中已有的 `runningIndicator.suspend()/resume()` 调用（`ConfirmSheet` 可见性回调、
+`onSessionAskChanged`），全部改走 `syncIndicator`——`resume()` 与 `setWaitingUser` 共用可见性，
+两套入口并存会互相覆盖（Task 7 复审实测风险）。
 
 替换现有四处分支（`onSessionRunningChanged`、`onSessionAskChanged`、`onSessionActivated` 两处、`clearChatPane`），并新增监听：
 
