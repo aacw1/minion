@@ -35,10 +35,12 @@ public class ChatViewIdentityGateTest {
         assertFalse(ChatView.consumesIdentity("log-sys"));
     }
 
-    /** AI 正文段（log-reply）消费身份名额；用户回显与无标签兜底同样不消费 */
+    /** AI 正文段（log-reply）消费身份名额；用户回显、本地系统行与本地警告/错误同样不消费 */
     @Test public void replySegmentsConsumeIdentity() {
         assertTrue(ChatView.consumesIdentity("log-reply"));
         assertFalse(ChatView.consumesIdentity("log-input"));
+        assertFalse(ChatView.consumesIdentity("log-warn"));
+        assertFalse(ChatView.consumesIdentity("log-error"));
         assertFalse(ChatView.consumesIdentity(null));
     }
 }

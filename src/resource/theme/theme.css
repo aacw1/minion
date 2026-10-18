@@ -638,7 +638,7 @@
     -fx-pref-height: 44;
 }
 .dialog-pane.dark-dialog .dark-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
-.dialog-pane.dark-dialog .dark-subtitle { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dialog-pane.dark-dialog .dark-subtitle { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; -fx-padding: 0 16 0 16; }
 /* 自绘根容器（标题栏 + 内容）：padding 归零，圆角全部由 .dialog-pane.dark-dialog 负责 */
 .dark-wrap { -fx-padding: 0; }
 /* 标题栏可拖动，给手型/移动光标提示 */

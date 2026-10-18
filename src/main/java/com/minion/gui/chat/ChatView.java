@@ -501,12 +501,15 @@ public class ChatView extends VBox {
     }
 
     /** 该样式类的段是否算「AI 输出」（决定能否消费身份行名额，纯静态可单测）：
-     *  用户回显（log-input）与 GUI 本地系统行（log-sys：斜杠命令结果、统计行等）都不是 AI 输出，
-     *  否则 /help、/tokens 等本地结果上方会错误出现「m minion」；tagColorClass=null 兜底为非 AI。 */
+     *  用户回显（log-input）、GUI 本地系统行（log-sys：斜杠命令结果、统计行等）、
+     *  本地警告/错误提示（log-warn/log-error：模型空回复重试等）都不是 AI 输出，
+     *  否则 /help、/tokens、重试提示上方会错误出现「m minion」；tagColorClass=null 兜底为非 AI。 */
     static boolean consumesIdentity(String tagColorClass) {
         return tagColorClass != null
                 && !"log-input".equals(tagColorClass)
-                && !"log-sys".equals(tagColorClass);
+                && !"log-sys".equals(tagColorClass)
+                && !"log-warn".equals(tagColorClass)
+                && !"log-error".equals(tagColorClass);
     }
 
     /** 段行构建：无身份行时保持原结构（有标签=标签+正文的 HBox，无标签=正文本身）；
