@@ -165,6 +165,49 @@ public class RunningIndicatorTest {
         assertEquals("正在加载中...", RunningIndicator.statusText(false, false, "正在加载中..."));
     }
 
+    /** 真实优先级链：停止高于重试（即使 retryBase 已冻结、压缩中） */
+    @Test
+    public void renderTextFor_stoppingBeatsRetry() {
+        RetryProgress p = RetryProgress.of(2, 500, "{\"e\":1}");
+        assertEquals("正在停止...", RunningIndicator.STOPPING_TEXT);
+        assertEquals("正在停止...", RunningIndicator.renderTextFor(
+                true, "正在加载中...", p, false, "可随时补充信息..."));
+        assertEquals("正在停止...", RunningIndicator.renderTextFor(
+                true, "正在加载中...", p, true, "正在加载中..."));
+    }
+
+    /** 非停止态且 retryBase 非空：返回重试文案（重试高于压缩；base 用冻结文案而非当前轮换文案） */
+    @Test
+    public void renderTextFor_retryBeatsCompressing() {
+        RetryProgress p = RetryProgress.of(2, 500, "{\"e\":1}");
+        assertEquals("正在加载中...(500服务报错，重试第2次{\"e\":1})",
+                RunningIndicator.renderTextFor(false, "正在加载中...", p, false, "可随时补充信息..."));
+        assertEquals("上下文压缩中...(429限流，重试第1次)",
+                RunningIndicator.renderTextFor(false, RunningIndicator.COMPRESSING_TEXT,
+                        RetryProgress.of(1, 429, null), true, "正在加载中..."));
+    }
+
+    /** 非停止、非重试：压缩固定文案优先，否则原样返回当前轮换文案 */
+    @Test
+    public void renderTextFor_compressingAndRotatingFallback() {
+        assertEquals("上下文压缩中...",
+                RunningIndicator.renderTextFor(false, null, null, true, "正在加载中..."));
+        assertEquals("可随时补充信息...",
+                RunningIndicator.renderTextFor(false, null, null, false, "可随时补充信息..."));
+    }
+
+    /** 可见性口径：等待用户与弹窗遮挡是独立隐藏原因，互不覆盖（resume 不得掀开等待用户态，
+     *  setWaitingUser(false) 不得掀开弹窗遮挡） */
+    @Test
+    public void visibleFor_waitingUserAndModalIndependent() {
+        assertTrue(RunningIndicator.visibleFor(true, false, false));
+        assertFalse(RunningIndicator.visibleFor(true, true, false));  // 等待用户
+        assertFalse(RunningIndicator.visibleFor(true, false, true));  // 弹窗遮挡
+        assertFalse(RunningIndicator.visibleFor(true, true, true));   // 两者叠加
+        assertFalse(RunningIndicator.visibleFor(false, false, false)); // 未运行
+        assertFalse(RunningIndicator.visibleFor(false, false, true));
+    }
+
     /** 点击复制：返回完整 body 原文（超 200 字符不截断，与展示截断口径区分） */
     @Test
     public void copyText_returnsFullBody() {

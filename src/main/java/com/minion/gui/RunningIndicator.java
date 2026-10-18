@@ -21,7 +21,8 @@ import java.util.Random;
  * 运行状态指示器：正文区左下角悬浮（齿轮旋转 + 文案轮换）。
  * 齿轮 2s/圈旋转；文案每 10s 随机轮换（正在加载中.../可随时补充信息...）；
  * 上下文压缩中固定显示「上下文压缩中...」（不参与轮换，压缩结束恢复）。
- * 停止收尾期固定显示「正在停止...」（优先于压缩与轮换）；等待用户（提问挂起/确认卡片）时隐藏但保留运行态。
+ * 停止收尾期固定显示「正在停止...」（优先于重试/压缩与轮换）；等待用户（提问挂起/确认卡片）时隐藏但保留运行态。
+ * 弹窗遮挡（suspend/resume）与等待用户是两个独立隐藏原因，任一存在即隐藏，互不覆盖。
  * 动画规约同 StatusDot：隐藏前必须停全部 Timeline，防动画引用节点泄漏。
  * 挂载方式：放入 StackPane 并 setAlignment(BOTTOM_LEFT)（本组件不管理布局）。
  */
@@ -52,6 +53,7 @@ public class RunningIndicator extends HBox {
     private boolean compressing;
     private boolean stopping;    // 停止请求已发出（等待收尾）：显示固定文案、暂停轮换
     private boolean waitingUser; // 等待用户（提问挂起/确认卡片）：隐藏但保留运行态
+    private boolean pausedByModal; // 弹窗遮挡（suspend/resume）：独立于等待用户的隐藏原因
     private String retryBase;          // 进入重试态时冻结的基础文案；null = 非重试态
     private RetryProgress retryProgress; // 最近一次进度（挂起/恢复时重绘重试文案用）
     private PauseTransition copyFeedback; // 「已复制 ✓」反馈计时（隐藏/状态更新时停，防过期回调）
@@ -86,10 +88,24 @@ public class RunningIndicator extends HBox {
         return compressing ? COMPRESSING_TEXT : current;
     }
 
-    /** 文案优先级（纯静态可单测）：停止 > 压缩 > 轮换 */
+    /** 文案优先级（纯静态可单测）：停止 > 压缩 > 轮换（非重试态口径，等价于 renderTextFor 无重试入参） */
     static String statusText(boolean stopping, boolean compressing, String current) {
+        return renderTextFor(stopping, null, null, compressing, current);
+    }
+
+    /** 指示器实际文案（纯静态可单测，生产与测试共用同一优先级链）：
+     *  停止 > 重试 > 压缩 > 轮换；retryBase 非空时必须同时给出 retryProgress */
+    static String renderTextFor(boolean stopping, String retryBase, RetryProgress retryProgress,
+                                boolean compressing, String current) {
         if (stopping) return STOPPING_TEXT;
+        if (retryBase != null) return retryText(retryProgress, retryBase);
         return displayText(compressing, current);
+    }
+
+    /** 可见性口径（纯静态可单测）：仅运行中、且非等待用户、且无弹窗遮挡时显示。
+     *  waitingUser 与 pausedByModal 是彼此独立的隐藏原因，任一都不能被另一方的恢复动作覆盖 */
+    static boolean visibleFor(boolean running, boolean waitingUser, boolean pausedByModal) {
+        return running && !waitingUser && !pausedByModal;
     }
 
     /** 重试文案：冻结基础文案 + 错误标签/次数/详情 + 等待时长后缀 */
@@ -161,23 +177,15 @@ public class RunningIndicator extends HBox {
         copyFeedback.play();
     }
 
-    /** 按当前状态重绘文案（统一口径：状态变化/反馈到期共用）：停止态 → 固定停止文案；
-     *  重试态 → 重试文案；否则压缩/轮换文案。反馈计时未到期即被新状态覆盖时在此停表（提示让位于实时状态） */
+    /** 按当前状态重绘文案（统一口径：状态变化/反馈到期共用）：优先级收敛到纯静态 renderTextFor
+     *  （停止 > 重试 > 压缩 > 轮换）。反馈计时未到期即被新状态覆盖时在此停表（提示让位于实时状态） */
     private void renderText() {
         if (copyFeedback != null) { copyFeedback.stop(); copyFeedback = null; }
-        if (stopping) {
-            text.setText(STOPPING_TEXT);
-            return;
-        }
-        if (retryBase != null) {
-            text.setText(retryText(retryProgress, retryBase));
-            return;
-        }
-        text.setText(statusText(stopping, compressing, pickText(rnd)));
+        text.setText(renderTextFor(stopping, retryBase, retryProgress, compressing, pickText(rnd)));
     }
 
     /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩/重试/停止/等待态；
-     *  true → 显示 + 启动动画（收敛到可见性监听；等待用户态下保持隐藏） */
+     *  true → 显示 + 启动动画（收敛到可见性监听；等待用户/弹窗遮挡下保持隐藏） */
     public void setRunning(boolean running) {
         this.running = running;
         if (!running) {
@@ -191,13 +199,14 @@ public class RunningIndicator extends HBox {
             setVisible(false);
             return;
         }
-        setVisible(!waitingUser); // 触发 visibleProperty 监听：显示文案 + 启动动画
+        setVisible(visibleFor(true, waitingUser, pausedByModal)); // 触发 visibleProperty 监听：显示文案 + 启动动画
     }
 
-    /** 停止态：显示固定文案（齿轮继续转），false 时按当前状态重绘 */
+    /** 停止态：显示固定文案（齿轮继续转），false 时按当前状态重绘；
+     *  未运行时忽略（不写字段，避免跨回合残留「正在停止...」） */
     public void setStopping(boolean stopping) {
+        if (!running) return; // 未运行：字段保持复位值，下一回合不受本回合调用影响
         this.stopping = stopping;
-        if (!running) return;
         renderText();
         if (stopping) {
             if (rotateText != null) rotateText.stop();
@@ -206,20 +215,26 @@ public class RunningIndicator extends HBox {
         }
     }
 
-    /** 等待用户（提问挂起/确认卡片）：隐藏但保留运行态；false 时按 running 恢复显示 */
+    /** 等待用户（提问挂起/确认卡片）：隐藏但保留运行态；false 时按 running 与弹窗遮挡恢复显示。
+     *  未运行时忽略（不写字段，避免跨回合残留） */
     public void setWaitingUser(boolean waitingUser) {
+        if (!running) return; // 未运行：字段保持复位值
         this.waitingUser = waitingUser;
-        setVisible(running && !waitingUser);
+        setVisible(visibleFor(running, waitingUser, pausedByModal));
     }
 
-    /** 弹窗遮挡期间挂起：仅隐藏（visible 监听自动停动画），保留 running/compressing 状态 */
+    /** 弹窗遮挡期间挂起：仅隐藏（visible 监听自动停动画），保留 running/compressing 状态；
+     *  与等待用户标志独立，不会覆盖等待用户态 */
     public void suspend() {
+        pausedByModal = true;
         setVisible(false);
     }
 
-    /** 弹窗关闭后恢复：会话仍运行则重新显示（visible 监听重启动画）；否则保持隐藏（防弹窗期间会话已结束） */
+    /** 弹窗关闭后恢复：仅清除遮挡，仍运行且不在等待用户时才重新显示（visible 监听重启动画）；
+     *  否则保持隐藏（防弹窗期间会话已结束/仍在等待用户时误显示） */
     public void resume() {
-        setVisible(running);
+        pausedByModal = false;
+        setVisible(visibleFor(running, waitingUser, pausedByModal));
     }
 
     /** 压缩状态：true → 固定压缩文案并暂停轮换；false → 恢复轮换（仅运行态生效） */
