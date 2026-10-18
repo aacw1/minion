@@ -505,3 +505,32 @@
 }
 .suggest-label { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; }
 .suggest-desc { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
+
+/* ===== 用户气泡与 AI 身份行（暖石）=====
+   用户消息 = 右对齐暖褐气泡（右上/左下圆角收窄，指向发送者）；AI 输出前的「m minion」身份行
+   （暖橙渐变头像 + 名称）每条用户消息后只出现一次。气泡内容区仍走 .msg-textarea 的
+   LCD/透明策略，此处只覆盖底色与内边距（置文件末尾保证与 .msg-textarea 同特异度时生效）。 */
+.msg-user-bubble {
+    -fx-background-color: #332a22;
+    -fx-background-radius: 13 13 4 13;
+    -fx-border-color: #45382c;
+    -fx-border-radius: 13 13 4 13;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #f7f0e6;
+    -fx-font-size: 14px;
+}
+.msg-user-bubble .content { -fx-background-color: #332a22; }
+.msg-user-bubble .scroll-pane, .msg-user-bubble .viewport { -fx-background-color: transparent; }
+.msg-user-row { -fx-padding: 6 0 16 0; }
+.ai-head { -fx-padding: 10 0 2 0; }
+.ai-avatar {
+    -fx-background-color: linear-gradient(to bottom right, #d97757, #e3a06b);
+    -fx-background-radius: 6;
+    -fx-text-fill: #23130d;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-min-width: 19; -fx-min-height: 19;
+    -fx-max-width: 19; -fx-max-height: 19;
+    -fx-alignment: center;
+}
+.ai-name { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; -fx-font-weight: bold; }

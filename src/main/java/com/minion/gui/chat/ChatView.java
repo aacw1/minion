@@ -126,8 +126,8 @@ public class ChatView extends VBox {
         }
         Seg(String tagText, String tagColorClass, Node summary, String text,
             boolean defaultExpanded, StreamKind kind, int subAgentId) {
-            tag = new Label(tagText);
-            tag.getStyleClass().addAll("log-tag", tagColorClass);
+            tag = tagText == null ? null : new Label(tagText);
+            if (tag != null) tag.getStyleClass().addAll("log-tag", tagColorClass);
             if (summary == null) {
                 collapsible = null;
                 body = new MessageTextArea(text);
@@ -144,12 +144,33 @@ public class ChatView extends VBox {
             this.kind = kind;
             this.subAgentId = subAgentId;
         }
+
+        /** 用户气泡段：无标签（tag=null）、无流身份（NONE，恒静态行）；气泡不铺满行宽、不参与流式就地更新。
+         *  静态工厂避免与 String 构造器的 null 歧义 */
+        private Seg(Label tagNode, String tagColorClass, MessageTextArea body, StreamKind kind, int subAgentId) {
+            this.tag = tagNode;
+            this.collapsible = null;
+            this.body = body;
+            this.kind = kind;
+            this.subAgentId = subAgentId;
+            this.thinkFinalized = false;
+            this.row = null;
+        }
+
+        /** 用户消息气泡段（tagColorClass 恒 null：气泡无标签） */
+        static Seg userBubble(MessageTextArea body, int subAgentId) {
+            return new Seg(null, null, body, StreamKind.NONE, subAgentId);
+        }
+
         /** 加入段行的节点：折叠段为 CollapsibleText 整体，普通段为正文 */
         Node node() { return collapsible != null ? collapsible : body; }
     }
 
     private final List<Seg> segs = new ArrayList<Seg>();
     private boolean empty = true; // 无任何消息段（仍显示占位提示）
+
+    /** AI 身份行闸门：每条用户消息后的第一段 AI 输出前插一行「m minion」，一轮只插一次（纯逻辑，见 IdentityGate） */
+    private final IdentityGate identityGate = new IdentityGate();
 
     public ChatView(EventList events, SessionHandle handle) {
         this.events = events;
@@ -165,6 +186,13 @@ public class ChatView extends VBox {
     /** 侧边留白（package-private 供单测）：正文按 828px 居中；窗口装不下 828+2×20 时贴最小留白 */
     static double contentPadding(double width) {
         return Math.max(MIN_SIDE_PADDING, (width - MAX_CONTENT_WIDTH) / 2.0);
+    }
+
+    /** 用户气泡宽度（package-private 供单测）：按字符数估算（中英混排取均值 13px/字），
+     *  下限 120px 防短消息被压成窄条，上限 620px 防长消息铺满整行（失去气泡形态） */
+    static double bubbleWidth(String text) {
+        int len = text == null ? 0 : text.length();
+        return Math.min(620, Math.max(120, 40 + len * 13.0));
     }
 
     /** 同步内边距：两端对称留白（取整避免半像素导致正文发虚），顶部 16px，底部 40px 为左下角运行状态指示器让位 */
@@ -289,11 +317,13 @@ public class ChatView extends VBox {
         if (e.kind != EventList.Kind.THINKING) finalizeThinking(id);
         switch (e.kind) {
             case USER_MESSAGE:
-                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
+                identityGate.onUserMessage(); // 本轮 AI 输出的第一段前插「m minion」身份行
+                appendUserBubble(e.text, id);
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             case USER_SUPPLEMENT:
-                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
+                // 补充输入同样以气泡展示；不重开身份行（仍属同一轮，首段 AI 输出只需一次身份行）
+                appendUserBubble(e.text, id);
                 break;
             case THINKING: {
                 // 空思考增量不渲染（与 CONTENT 分支空防御对称）：qwen 流式每 chunk 带
@@ -391,6 +421,30 @@ public class ChatView extends VBox {
         return ta;
     }
 
+    /** 追加一条用户消息气泡（右对齐、无标签、不消费 AI 身份行）：气泡段恒静态（StreamKind.NONE），
+     *  不经 addSeg（气泡不是 AI 输出，不得触发身份行）；首段先清掉占位提示 */
+    private Seg appendUserBubble(String text, int subAgentId) {
+        if (empty) {
+            getChildren().clear();
+            empty = false;
+        }
+        MessageTextArea body = new MessageTextArea(text);
+        body.getStyleClass().add("msg-user-bubble");
+        body.setPrefWidth(bubbleWidth(text));
+        body.setMinWidth(120);
+        body.setMaxWidth(620);
+        Seg seg = Seg.userBubble(body, subAgentId);
+        HBox row = new HBox(body);
+        row.setAlignment(Pos.CENTER_RIGHT);
+        row.getStyleClass().add("msg-user-row");
+        seg.row = row;
+        attachFocusGovernance(seg);
+        segs.add(seg);
+        getChildren().add(row);
+        trimHead();
+        return seg;
+    }
+
     /** 追加一段控制台输出（首段先清掉占位提示；kind 仅记录流身份，NONE 静态行恒新起一段）；
      *  subAgentId=段主人（0=主代理，>0=子代理编号，用于流式判等与思考定稿隔离）；返回新段供流式引用登记 */
     private Seg append(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
@@ -401,10 +455,39 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, text, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        seg.row = new HBox(seg.tag, seg.node());
-        getChildren().add(seg.row);
+        addSeg(seg, tagColorClass);
         trimHead();
         return seg;
+    }
+
+    /** 段挂载（唯一入口，保证 segs 与 getChildren 一一对应，trimHead 的按位删除才成立）：
+     *  每条用户消息后的第一段主代理 AI 输出（非 log-input 段）前插入「m minion」身份行；
+     *  身份行关在闸门内消费，子代理输出与用户气泡不占名额 */
+    private void addSeg(Seg seg, String tagColorClass) {
+        Node head = identityGate.consume(seg.subAgentId, !"log-input".equals(tagColorClass))
+                ? identityHead() : null;
+        seg.row = buildRow(seg, head);
+        getChildren().add(seg.row);
+    }
+
+    /** 段行构建：无身份行时保持原结构（有标签=标签+正文的 HBox，无标签=正文本身）；
+     *  有身份行时竖排「身份行 + 内容」（间距 8px） */
+    private static Node buildRow(Seg seg, Node head) {
+        Node content = seg.tag == null ? seg.node() : new HBox(seg.tag, seg.node());
+        return head == null ? content : new VBox(8, head, content);
+    }
+
+    /** AI 身份行：头像（m）+ 名称（minion）——只在每条用户消息后的首段 AI 输出前出现一次，
+     *  不显示时间/模型名（EventList.Ev 无时间戳字段） */
+    private static Node identityHead() {
+        Label avatar = new Label("m");
+        avatar.getStyleClass().add("ai-avatar");
+        Label name = new Label("minion");
+        name.getStyleClass().add("ai-name");
+        HBox head = new HBox(6, avatar, name);
+        head.getStyleClass().add("ai-head");
+        head.setAlignment(Pos.CENTER_LEFT);
+        return head;
     }
 
     /** 焦点治理：任一段获得焦点即清除其他段选区（选区是 TextInputControl 私有状态，多块同时显示选中
@@ -447,8 +530,7 @@ public class ChatView extends VBox {
             Seg seg = new Seg(tagText, tagColorClass, summary, "", false, kind, subAgentId);
             attachFocusGovernance(seg);
             segs.add(seg);
-            seg.row = new HBox(seg.tag, seg.node());
-            getChildren().add(seg.row);
+            addSeg(seg, tagColorClass);
             trimHead();
             return seg;
         }
@@ -460,8 +542,7 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, summary, text, expanded, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        seg.row = new HBox(seg.tag, seg.node());
-        getChildren().add(seg.row);
+        addSeg(seg, tagColorClass);
         trimHead();
         return seg;
     }
@@ -668,6 +749,24 @@ public class ChatView extends VBox {
     static String toolResultBody(String name, String data) {
         if ("AskUserQuestion".equals(name) && data != null && data.startsWith("ok")) return "";
         return toolResultBody(data);
+    }
+
+    /** AI 身份行闸门（纯逻辑、无 JavaFX 依赖，可单测）：每条用户消息武装一次，
+     *  只允许「该轮第一段主代理 AI 输出」消费——一个用户回合只出现一次「m minion」，不刷屏。
+     *  子代理输出（subAgentId>0）与用户段（aiSegment=false）不消费名额（否则子代理先说话就把
+     *  主代理的身份行吃掉；后续主代理输出反而没有身份）。 */
+    static final class IdentityGate {
+        private boolean pending;
+
+        /** 用户消息到达：武装闸门（新回合） */
+        void onUserMessage() { pending = true; }
+
+        /** 尝试取走身份行名额：命中（已武装 + 主代理 + AI 段）返回 true 并解除武装，之后同轮恒 false */
+        boolean consume(int subAgentId, boolean aiSegment) {
+            if (!pending || !aiSegment || subAgentId != 0) return false;
+            pending = false;
+            return true;
+        }
     }
 
     /**
