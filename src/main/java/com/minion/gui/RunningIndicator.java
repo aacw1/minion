@@ -184,7 +184,7 @@ public class RunningIndicator extends HBox {
         text.setText(renderTextFor(stopping, retryBase, retryProgress, compressing, pickText(rnd)));
     }
 
-    /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩/重试/停止/等待态；
+    /** 运行状态：false → 整体隐藏 + 停止全部动画（防泄漏）+ 复位压缩/重试/停止/等待/遮挡态；
      *  true → 显示 + 启动动画（收敛到可见性监听；等待用户/弹窗遮挡下保持隐藏） */
     public void setRunning(boolean running) {
         this.running = running;
@@ -194,6 +194,9 @@ public class RunningIndicator extends HBox {
             retryProgress = null;
             stopping = false;
             waitingUser = false;
+            // 兜底自愈：遮挡态的复位回调可能因会话删除/切走被丢弃（旧调用方按 chatView 过滤），
+            // 每回合结束统一清遮挡，避免下一回合 setRunning(true) 恒隐藏
+            pausedByModal = false;
             setCursor(null);
             stopAnimations();
             setVisible(false);
@@ -223,18 +226,24 @@ public class RunningIndicator extends HBox {
         setVisible(visibleFor(running, waitingUser, pausedByModal));
     }
 
+    /** 弹窗遮挡（提问挂起/确认卡片等模态 UI）：置位后按统一口径刷新可见性
+     *  （未运行 / 等待用户 / 已遮挡均隐藏）。调用方无需按「是否当前会话」过滤——
+     *  复位事件即使来自已删除/切走的会话也必须能清掉遮挡，否则指示器会永久隐藏 */
+    public void setPausedByModal(boolean paused) {
+        pausedByModal = paused;
+        setVisible(visibleFor(running, waitingUser, pausedByModal));
+    }
+
     /** 弹窗遮挡期间挂起：仅隐藏（visible 监听自动停动画），保留 running/compressing 状态；
-     *  与等待用户标志独立，不会覆盖等待用户态 */
+     *  与等待用户标志独立，不会覆盖等待用户态（等价于 setPausedByModal(true)） */
     public void suspend() {
-        pausedByModal = true;
-        setVisible(false);
+        setPausedByModal(true);
     }
 
     /** 弹窗关闭后恢复：仅清除遮挡，仍运行且不在等待用户时才重新显示（visible 监听重启动画）；
-     *  否则保持隐藏（防弹窗期间会话已结束/仍在等待用户时误显示） */
+     *  否则保持隐藏（防弹窗期间会话已结束/仍在等待用户时误显示）（等价于 setPausedByModal(false)） */
     public void resume() {
-        pausedByModal = false;
-        setVisible(visibleFor(running, waitingUser, pausedByModal));
+        setPausedByModal(false);
     }
 
     /** 压缩状态：true → 固定压缩文案并暂停轮换；false → 恢复轮换（仅运行态生效） */

@@ -208,6 +208,20 @@ public class RunningIndicatorTest {
         assertFalse(RunningIndicator.visibleFor(false, false, true));
     }
 
+    /** 可见性口径：弹窗遮挡（pausedByModal）也是独立隐藏原因——运行中且非等待用户时，
+     *  遮挡置位仍隐藏，撤销遮挡即恢复显示（对应 setPausedByModal 的置位/复位；复位不得被丢弃） */
+    @Test
+    public void visibleFor_pausedByModalHidesUntilCleared() {
+        assertTrue(RunningIndicator.visibleFor(true, false, false));   // 正常运行：显示
+        assertFalse(RunningIndicator.visibleFor(true, false, true));   // 遮挡置位：即使 running && !waitingUser 也隐藏
+        assertTrue(RunningIndicator.visibleFor(true, false, false));   // 遮挡复位：恢复显示
+        assertFalse(RunningIndicator.visibleFor(true, false, true));   // 再次置位：重新隐藏
+        assertFalse(RunningIndicator.visibleFor(true, true, false));   // 等待用户：单独即隐藏
+        assertFalse(RunningIndicator.visibleFor(true, true, true));    // 两者叠加
+        assertFalse(RunningIndicator.visibleFor(false, false, false)); // 未运行：无论遮挡与否均隐藏
+        assertFalse(RunningIndicator.visibleFor(false, false, true));
+    }
+
     /** 点击复制：返回完整 body 原文（超 200 字符不截断，与展示截断口径区分） */
     @Test
     public void copyText_returnsFullBody() {
