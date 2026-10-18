@@ -45,6 +45,8 @@ public class McpManager {
             if (s.state == McpServer.State.CONNECTING || s.state == McpServer.State.CONNECTED) return;
             s.state = McpServer.State.CONNECTING;
             s.failReason = null;
+            // 重连期间清空旧工具表：否则 UI/会话会显示「有 N 个工具」但实际连不上
+            s.tools = new ArrayList<McpToolInfo>();
         }
         notifyListeners(s);
         Thread t = new Thread(new Runnable() {
@@ -74,6 +76,8 @@ public class McpManager {
             synchronized (this) {
                 s.state = McpServer.State.FAILED;
                 s.failReason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                // 失败不得保留上一次成功连接的工具表（否则「有工具却连不上」）
+                s.tools = new ArrayList<McpToolInfo>();
             }
         }
         notifyListeners(s);

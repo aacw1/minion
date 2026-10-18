@@ -7,6 +7,7 @@ import com.ajaxjs.mcp.protocol.ProtocolVersion;
 import com.ajaxjs.mcp.protocol.initialize.InitializationNotification;
 import com.ajaxjs.mcp.protocol.initialize.InitializeRequest;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -140,7 +141,9 @@ public class MinionStdioTransport extends McpTransport {
                     // close() 主动关流或进程退出：进入下方 EOF 分支
                 } finally {
                     if (!closed) {
-                        failPendingRequests(new IOException("MCP 服务器进程已退出（stdout EOF）"));
+                        // 等 stderr 读线程收尾，让失败原因带上服务端真实报错（npx/node 的错误都在 stderr）
+                        joinQuietly(stderrThread, 300);
+                        failPendingRequests(new IOException(exitMessage()));
                     }
                 }
             }
@@ -268,7 +271,7 @@ public class MinionStdioTransport extends McpTransport {
     @Override
     public CompletableFuture<JsonNode> sendRequestWithResponse(McpRequest request) {
         requireInitialized();
-        return execute(JsonUtils.toJson(request), numericId(request.getId()));
+        return execute(stripNullMeta(JsonUtils.toJson(request)), numericId(request.getId()));
     }
 
     @Override
@@ -287,15 +290,18 @@ public class MinionStdioTransport extends McpTransport {
         Process p = process;
         PrintStream o = out;
         if (closed || p == null || o == null || !p.isAlive()) {
-            future.completeExceptionally(new IOException("MCP stdio 进程未运行"));
+            future.completeExceptionally(new IOException("MCP stdio 进程未运行" + diagnosticSuffix()));
             return future;
         }
         if (id != null) saveRequest(id, future);
         try {
             if (logEvents) log.info("MCP stdio -> {}", abbreviate(json));
-            o.println(json);
+            // 规范：消息以单个 LF 分隔（PrintStream.println 用平台行尾，Windows 会发 CRLF）
+            o.print(json);
+            o.write('\n');
+            o.flush();
             if (o.checkError() || !p.isAlive()) {
-                IOException failure = new IOException("写入 MCP 服务器 stdin 失败（进程已退出）");
+                IOException failure = new IOException("写入 MCP 服务器 stdin 失败（进程已退出）" + diagnosticSuffix());
                 failPendingRequests(failure);
                 future.completeExceptionally(failure);
                 return future;
@@ -305,6 +311,27 @@ public class MinionStdioTransport extends McpTransport {
             future.completeExceptionally(e);
         }
         return future;
+    }
+
+    /**
+     * 去掉库模型序列化出的 null 的 {@code params._meta}：JSON-RPC/MCP 里 _meta 是可选的保留字段，
+     * 缺省与 null 不等价，部分严格校验的服务端会以参数错误拒绝（如 tools/call）。
+     */
+    private static String stripNullMeta(String json) {
+        try {
+            JsonNode root = JsonUtils.OBJECT_MAPPER.readTree(json);
+            if (!(root instanceof ObjectNode)) return json;
+            JsonNode params = root.get("params");
+            if (!(params instanceof ObjectNode)) return json;
+            ObjectNode p = (ObjectNode) params;
+            if (p.has("_meta") && p.get("_meta").isNull()) {
+                p.remove("_meta");
+                return JsonUtils.OBJECT_MAPPER.writeValueAsString(root);
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // 清理失败：按原帧发送，不改变原有行为
+        }
+        return json;
     }
 
     /** 协议版本校验（在发送 initialized 通知之前） */
@@ -324,6 +351,38 @@ public class MinionStdioTransport extends McpTransport {
 
     /** 被跳过的非协议输出最后若干行（快照） */
     public List<String> noiseTail() { return snapshot(noiseTail); }
+
+    /** 进程退出/不可用时的诊断消息：退出码 + stderr 末尾 + 被跳过的非协议输出 */
+    private String exitMessage() {
+        StringBuilder sb = new StringBuilder("MCP 服务器进程已退出（stdout EOF");
+        Process p = process;
+        if (p != null) {
+            try {
+                sb.append("，退出码 ").append(p.exitValue());
+            } catch (IllegalThreadStateException ignored) {
+                // 进程仍在退出过程中，无退出码可读
+            }
+        }
+        sb.append("）");
+        return sb.append(diagnosticSuffix()).toString();
+    }
+
+    /** 诊断附加文本（无诊断数据时为空串） */
+    private String diagnosticSuffix() {
+        List<String> err = stderrTail();
+        List<String> noise = noiseTail();
+        if (err.isEmpty() && noise.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        if (!err.isEmpty()) {
+            sb.append("\n服务器 stderr 末尾:");
+            for (String line : err) sb.append("\n  ").append(line);
+        }
+        if (!noise.isEmpty()) {
+            sb.append("\n被跳过的非协议输出:");
+            for (String line : noise) sb.append("\n  ").append(line);
+        }
+        return sb.toString();
+    }
 
     // ---------------------------------------------------------------- 内部工具
 

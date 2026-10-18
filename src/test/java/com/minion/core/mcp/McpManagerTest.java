@@ -108,4 +108,28 @@ public class McpManagerTest {
         Thread.sleep(500); // 等可能的错误连接发生
         assertEquals(McpServer.State.DISCONNECTED, server.state);
     }
+
+    @Test
+    public void reconnectFailure_clearsStaleTools() throws Exception {
+        McpServer s = waitForState(manager, "fake", McpServer.State.CONNECTED);
+        assertEquals(5, s.tools.size());
+        // 模拟连接已失效：不改工具表，直接把配置改坏并置 FAILED，触发重连失败
+        s.state = McpServer.State.FAILED;
+        s.command = "definitely-not-a-command-xyz";
+        s.args = new ArrayList<String>();
+        manager.ensureConnectedAsync("fake");
+        waitFailed(manager, "fake");
+        assertTrue("重连失败后不得残留旧工具表（否则会显示有工具却连不上）", s.tools.isEmpty());
+    }
+
+    private static void waitFailed(McpManager m, String name) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < deadline) {
+            for (McpServer s : m.servers()) {
+                if (s.name.equals(name) && s.state == McpServer.State.FAILED) return;
+            }
+            Thread.sleep(50);
+        }
+        fail("等待连接失败状态超时");
+    }
 }

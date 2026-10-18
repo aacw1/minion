@@ -3,6 +3,7 @@ package com.minion.core.mcp;
 import com.ajaxjs.mcp.client.McpClient;
 import com.ajaxjs.mcp.client.transport.McpTransport;
 import com.ajaxjs.mcp.protocol.McpConstant;
+import com.ajaxjs.mcp.protocol.ProtocolVersion;
 import com.ajaxjs.mcp.protocol.tools.CallToolRequest;
 import com.ajaxjs.mcp.protocol.tools.GetToolListRequest;
 import com.ajaxjs.mcp.protocol.utils.pagination.Cursor;
@@ -38,6 +39,13 @@ public class AjMcpClient implements McpHandle {
     private static final int CONNECT_ATTEMPTS = 3;
     private static final long CONNECT_RETRY_INTERVAL_MS = 500;
 
+    /**
+     * 协议版本候选（库支持列表，从新到旧）：每次连接尝试取一个。
+     * 规范要求客户端发自己支持的最新版本，服务端返回它支持的版本；
+     * 对不合规地直接拒绝新版本的服务端，后续尝试自动降级（2025-06-18 → 2025-03-26 → 2024-11-05）。
+     */
+    private static final List<String> PROTOCOL_VERSIONS = ProtocolVersion.supportedVersions();
+
     /** 原始请求 id 段：库内部 idGenerator 从 1 递增，这里错开避免撞号 */
     private static final long RAW_ID_BASE = 100_000L;
     private static final int MAX_PAGES = 20;
@@ -67,7 +75,7 @@ public class AjMcpClient implements McpHandle {
         if (connected) return;
         if (factory == null) {
             try {
-                doConnect(fixedTransport);
+                doConnect(fixedTransport, PROTOCOL_VERSIONS.get(0));
             } catch (RuntimeException e) {
                 close();
                 throw new McpException("MCP 握手失败: " + rootMessage(e) + diagnostics(), e);
@@ -85,7 +93,7 @@ public class AjMcpClient implements McpHandle {
                 continue;
             }
             try {
-                doConnect(t);
+                doConnect(t, protocolVersionOf(attempt));
                 return;
             } catch (RuntimeException e) {                last = e;
                 close();   // 清理本次尝试的传输/进程，下一轮重建
@@ -96,13 +104,20 @@ public class AjMcpClient implements McpHandle {
                 + rootMessage(last) + diagnostics(), last);
     }
 
+    /** 第 attempt 次连接尝试使用的协议版本：越界取最旧（降级到底） */
+    static String protocolVersionOf(int attempt) {
+        int idx = Math.min(attempt - 1, PROTOCOL_VERSIONS.size() - 1);
+        return PROTOCOL_VERSIONS.get(Math.max(idx, 0));
+    }
+
     /** 单次连接尝试：建客户端 → 库握手 → 注册 ping 应答 */
-    private void doConnect(McpTransport t) {
+    private void doConnect(McpTransport t, String protocolVersion) {
         this.transport = t;
         this.client = McpClient.builder()
                 .transport(t)
                 .clientName("minion")
                 .clientVersion("0.1.0")
+                .protocolVersion(protocolVersion)
                 .requestTimeout(Duration.ofMillis(CALL_TIMEOUT_MS))
                 .build();
         client.initialize();

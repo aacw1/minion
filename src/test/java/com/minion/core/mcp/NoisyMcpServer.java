@@ -26,6 +26,10 @@ import java.util.regex.Pattern;
  *   <li>{@code dieAfterInit} 响应 initialize 后立即退出（exit 3）</li>
  *   <li>{@code dieNow}    启动即向 stderr 输出后退出（exit 8，不读 stdin）</li>
  *   <li>{@code flaky=文件} 计数文件：前 2 次启动直接退出（exit 7），第 3 次才正常服务（用于重试验证）</li>
+ *   <li>{@code capture=文件} 按原始字节读取 stdin，把每行以 {@code LF|}/{@code CR|} 前缀原样追加到文件
+ *       （用于协议一致性断言：行尾、字段内容）</li>
+ *   <li>{@code onlyVersion=X} 只接受 protocolVersion=X 的 initialize，其余版本打印 stderr 后 exit 9
+ *       （用于协议版本降级验证）</li>
  * </ul>
  *
  * <p>协议面：initialize / notifications/initialized / tools/list（中文工具描述）/ tools/call（中文回声），
@@ -43,6 +47,8 @@ public class NoisyMcpServer {
         boolean dieNow = has(args, "dieNow");
         int stderrLines = intArg(args, "stderr=", 0);
         String flakyFile = arg(args, "flaky=");
+        String captureFile = arg(args, "capture=");
+        String onlyVersion = arg(args, "onlyVersion=");
 
         for (int i = 1; i <= stderrLines; i++) {
             System.err.println("noisy-stderr-line-" + i);
@@ -69,9 +75,49 @@ public class NoisyMcpServer {
 
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;
+        if (captureFile != null || onlyVersion != null) {
+            serveRaw(out, log, dieAfterInit, captureFile, onlyVersion);
+            return;
+        }
         while ((line = in.readLine()) != null) {
             if (log) out.println("noisy-log: received " + line.length() + " chars (not json)");
             if (line.trim().isEmpty()) continue;
+            String resp = respondTo(line);
+            if (resp != null) out.println(resp);
+            if (dieAfterInit && line.contains("\"initialize\"")) {
+                out.flush();
+                System.exit(3);
+            }
+        }
+    }
+
+    /** 原始字节读循环：捕获每行行尾形态（CR|/LF|），可限制协议版本；用于协议一致性测试 */
+    private static void serveRaw(PrintStream out, boolean log, boolean dieAfterInit,
+                                 String captureFile, String onlyVersion) throws IOException {
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        int b;
+        while ((b = System.in.read()) != -1) {
+            if (b != '\n') {
+                buf.write(b);
+                continue;
+            }
+            String raw = new String(buf.toByteArray(), StandardCharsets.UTF_8);
+            buf.reset();
+            boolean cr = raw.endsWith("\r");
+            String line = cr ? raw.substring(0, raw.length() - 1) : raw;
+            if (captureFile != null) {
+                Files.write(Paths.get(captureFile),
+                        ((cr ? "CR|" : "LF|") + line + "\n").getBytes(StandardCharsets.UTF_8),
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            }
+            if (log) out.println("noisy-log: received " + line.length() + " chars (not json)");
+            if (line.trim().isEmpty()) continue;
+            if (onlyVersion != null && line.contains("\"initialize\"")
+                    && !line.contains("\"protocolVersion\":\"" + onlyVersion + "\"")) {
+                System.err.println("rejected-protocol-version");
+                System.err.flush();
+                System.exit(9);
+            }
             String resp = respondTo(line);
             if (resp != null) out.println(resp);
             if (dieAfterInit && line.contains("\"initialize\"")) {
