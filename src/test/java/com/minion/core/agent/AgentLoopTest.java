@@ -1708,4 +1708,23 @@ public class AgentLoopTest {
         assertTrue("回给模型的应是「不存在或已停用」提示",
                 msgs.get(2).content.contains("工具不存在或已停用: Browser"));
     }
+
+    /** 有 toolCalls 但 finish_reason 非 tool_calls：工具必须执行（旧实现直接 break，且留下半轮残留） */
+    @Test
+    public void toolCallsWithNonToolFinish_executesTool() {
+        ToolCall tc = new ToolCall();
+        tc.id = "c1";
+        tc.name = "example";
+        tc.arguments = "{\"text\":\"hi\"}";
+        llm.addTurnWithToolsAndFinish(Collections.singletonList(tc), null, "stop");
+        llm.addTurn("处理完成");
+        AgentLoop loop = newLoop();
+        loop.runUserTurn("调用一下");
+        assertEquals(1, ui.toolCalls.size());
+        assertEquals("example", ui.toolCalls.get(0));
+        // 0:user 1:assistant(tool_calls) 2:tool 3:assistant
+        assertEquals(4, loop.messages().size());
+        assertEquals(Message.Role.TOOL, loop.messages().get(2).role);
+        assertEquals("处理完成", loop.messages().get(3).content);
+    }
 }

@@ -32,6 +32,8 @@ public class FakeLlmClient implements LlmClient {
         public final boolean throwOnCall; // true = streamChat 直接抛 error（响应码异常路径）
         /** 非 null：抛错/回调前先吐这段增量（模拟流式中途断流） */
         public final String partialContent;
+        /** 非 null：覆盖 onFinish 的 finishReason（null = 按旧规则 tool_calls/stop） */
+        public String finishReason;
 
         public ScriptedTurn(List<ToolCall> toolCalls, String content) {
             this(toolCalls, content, null, null, false);
@@ -76,6 +78,13 @@ public class FakeLlmClient implements LlmClient {
         turns.add(new ScriptedTurn(toolCalls, content, thinking));
     }
 
+    /** 指定 finishReason 的工具轮（模拟兼容网关/截断流返回 stop） */
+    public void addTurnWithToolsAndFinish(List<ToolCall> toolCalls, String content, String finish) {
+        ScriptedTurn t = new ScriptedTurn(toolCalls, content, null, null, false, null);
+        t.finishReason = finish;
+        turns.add(t);
+    }
+
     /** 脚本化失败：streamChat 时以 onError 回调报错（模拟 API 400/500 等） */
     public void addTurnError(String message) {
         turns.add(new ScriptedTurn(null, null, null,
@@ -112,11 +121,13 @@ public class FakeLlmClient implements LlmClient {
         u.outputTokens = 5;
         // thinking 先于 content/tool_calls 回调（与 DeepSeek SSE 顺序一致）
         if (turn.thinking != null) handler.onThinking(turn.thinking);
+        String finishReason = turn.finishReason != null ? turn.finishReason
+                : (turn.toolCalls != null && !turn.toolCalls.isEmpty() ? "tool_calls" : "stop");
         if (turn.toolCalls != null && !turn.toolCalls.isEmpty()) {
-            handler.onFinish("tool_calls", u, turn.toolCalls);
+            handler.onFinish(finishReason, u, turn.toolCalls);
         } else {
             handler.onContent(turn.content);
-            handler.onFinish("stop", u, new ArrayList<ToolCall>());
+            handler.onFinish(finishReason, u, new ArrayList<ToolCall>());
         }
     }
 

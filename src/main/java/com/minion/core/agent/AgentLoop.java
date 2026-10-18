@@ -652,8 +652,9 @@ public class AgentLoop {
 
                 if (interrupted) break;
 
-                if (toolCalls[0] == null || toolCalls[0].isEmpty()
-                        || !"tool_calls".equals(finish[0])) {
+                // 执行依据只看 toolCalls：finish_reason 可能被网关/截断流写成 stop，
+                // 客户端已在 DeepSeekClient 归一，此处再兜一层，绝不因 finish 丢弃工具调用
+                if (toolCalls[0] == null || toolCalls[0].isEmpty()) {
                     break;
                 }
                 rounds++;
