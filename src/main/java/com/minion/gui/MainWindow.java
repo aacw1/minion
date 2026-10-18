@@ -40,6 +40,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -138,24 +139,44 @@ public class MainWindow {
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh();
                 });
-        VBox.setVgrow(sessionList, Priority.ALWAYS);
-        Button newSession = new Button("＋ 新建会话");
-        newSession.getStyleClass().add("btn-ghost");
-        newSession.setMaxWidth(Double.MAX_VALUE);
+        Label sessionTitle = new Label("会话");
+        sessionTitle.getStyleClass().add("section-title");
+        Label sessionCount = new Label("0");
+        sessionCount.getStyleClass().add("section-count");
+        sessionCount.textProperty().bind(sessionList.countProperty().asString());
+        Region sessionSpacer = new Region();
+        HBox.setHgrow(sessionSpacer, Priority.ALWAYS);
+        Button newSession = new Button();
+        SVGPath plusIcon = com.minion.gui.icon.IconFactory.plus();
+        com.minion.gui.icon.IconFactory.size(plusIcon, 13);
+        newSession.setGraphic(plusIcon);
+        newSession.getStyleClass().add("btn-cell");
+        newSession.setTooltip(new Tooltip("新建会话"));
         newSession.setOnAction(e -> onNewSession());
-        VBox sessionBox = new VBox(6);
-        sessionBox.getChildren().addAll(newSession, sessionList);
+        HBox sessionHead = new HBox(8, sessionTitle, sessionCount, sessionSpacer, newSession);
+        sessionHead.getStyleClass().add("side-head");
+        VBox sessionBox = new VBox(6, sessionHead, sessionList);
+        VBox.setVgrow(sessionList, Priority.ALWAYS);
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
         final WorkspaceListView wsList = new WorkspaceListView(manager);
-        VBox.setVgrow(wsList, Priority.ALWAYS);
-        Button newWs = new Button("＋ 新建工作空间");
-        newWs.getStyleClass().add("btn-ghost");
-        newWs.setMaxWidth(Double.MAX_VALUE);
+
+        Label wsTitle = new Label("工作空间");
+        wsTitle.getStyleClass().add("section-title");
+        Region wsSpacer = new Region();
+        HBox.setHgrow(wsSpacer, Priority.ALWAYS);
+        Button newWs = new Button();
+        SVGPath wsPlusIcon = com.minion.gui.icon.IconFactory.plus();
+        com.minion.gui.icon.IconFactory.size(wsPlusIcon, 13);
+        newWs.setGraphic(wsPlusIcon);
+        newWs.getStyleClass().add("btn-cell");
+        newWs.setTooltip(new Tooltip("新建工作空间"));
         newWs.setOnAction(e -> onNewWorkspace(wsList));
-        VBox wsBox = new VBox(6);
-        wsBox.getChildren().addAll(newWs, wsList);
+        HBox wsHead = new HBox(8, wsTitle, wsSpacer, newWs);
+        wsHead.getStyleClass().add("side-head");
+        VBox wsBox = new VBox(6, wsHead, wsList);
+        VBox.setVgrow(wsList, Priority.ALWAYS);
         VBox.setVgrow(wsBox, Priority.ALWAYS);
-        // VBox(8) 间距自然分隔上下两区，不加分隔线
+        // 上下两区靠 VBox 间距（CSS .panel 的 -fx-spacing）自然分隔，不加分隔线
         sidebar.getChildren().setAll(sessionBox, wsBox);
         // 需求：会话/工作空间高度固定黄金比例 0.618:0.382（VBox 无权重 API，监听高度动态设 prefHeight 实现）
         sidebar.heightProperty().addListener((obs, ov, nv) -> {

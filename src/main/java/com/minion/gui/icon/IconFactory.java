@@ -80,6 +80,10 @@ public final class IconFactory {
     public static SVGPath remove() { return create(REMOVE_PATH, "icon-min"); }
     public static SVGPath cropSquare() { return create(CROP_SQUARE_PATH, "icon-max"); }
     public static SVGPath filterNone() { return create(FILTER_NONE_PATH, "icon-restore"); }
+    /** add（加号：侧栏分组标题右侧「新建」按钮）。
+     *  注：计划文档给的 path「M19 13H5v-2h14v2z」实际是减号（横杠，同 REMOVE_PATH），
+     *  这里用 Material Icons 的 add 路径（横竖两笔），否则「新建」按钮显示成「－」。 */
+    public static SVGPath plus() { return create("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z", "icon-plus"); }
     public static SVGPath close() { return create(CLOSE_PATH, "icon-close"); }
     public static SVGPath edit() { return create(EDIT_PATH, "icon-edit"); }
     public static SVGPath delete() { return create(DELETE_PATH, "icon-delete"); }
