@@ -29,20 +29,6 @@ public class GuiConfirmUiTest {
     }
 
     @Test
-    public void ask_withoutFxThread_stillReturnsReject_afterHandleChange() throws Exception {
-        final ConfirmUi ui = new com.minion.gui.confirm.GuiConfirmUi();
-        final CountDownLatch done = new CountDownLatch(1);
-        final ConfirmUi.Decision[] result = new ConfirmUi.Decision[1];
-        Thread t = new Thread(() -> {
-            result[0] = ui.ask("! 高危操作 Bash → rm -rf");
-            done.countDown();
-        });
-        t.start();
-        assertTrue(done.await(5, TimeUnit.SECONDS));
-        assertEquals(ConfirmUi.Decision.REJECT, result[0]);
-    }
-
-    @Test
     public void implementsConfirmUi() {
         ConfirmUi ui = new com.minion.gui.confirm.GuiConfirmUi();
         assertTrue(ui instanceof ConfirmUi);

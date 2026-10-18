@@ -218,8 +218,15 @@ public class ConfirmSheet {
                 showing = false;
                 if (visibilityListener != null) visibilityListener.accept(false);
                 callback.accept(d);
-                Handle next = pending.poll();
-                if (next != null) next.display();
+                // 出队并跳过已取消句柄：Handle.display() 对已取消项直接 return，
+                // 若只 poll 一次会让队列停摆（后续 show 永久排在队里不显示）
+                Handle next;
+                while ((next = pending.poll()) != null) {
+                    if (!next.cancelled) {
+                        next.display();
+                        break;
+                    }
+                }
             }
         });
         out.play();

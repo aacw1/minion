@@ -38,11 +38,18 @@ public class GuiConfirmUi implements ConfirmUi {
         try {
             return q.take();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            try { posted.await(200, TimeUnit.MILLISECONDS); }
-            catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-            final ConfirmSheet.Handle h = ref.get();
-            if (h != null) Platform.runLater(h::cancel); // 中断即关闭自己的卡片
+            // InterruptedException 已清除中断状态：先等投递任务跑完拿到句柄，再恢复中断位；
+            // 若先恢复中断位，await 会立刻抛 InterruptedException，200ms 投递窗口恒为 0。
+            try {
+                try { posted.await(200, TimeUnit.MILLISECONDS); }
+                catch (InterruptedException ignored) {
+                    // 等待期间再次被中断：吞掉并继续，最后统一恢复中断位
+                }
+                final ConfirmSheet.Handle h = ref.get();
+                if (h != null) Platform.runLater(h::cancel); // 中断即关闭自己的卡片
+            } finally {
+                Thread.currentThread().interrupt(); // 恢复中断位，交上层循环识别停止
+            }
             return Decision.REJECT;
         }
     }
