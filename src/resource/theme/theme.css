@@ -315,14 +315,26 @@
 .log-body-subagent { -fx-text-fill: #b3e5fc; } /* 子代理边界正文 浅青（仅子任务完成报告） */
 .log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
 
-/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
+/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe）
+   暖石：运行中点苔绿 #8fbb7f（原 GitHub 绿 #3fb950 在暖色底上偏冷） */
 .status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
-.status-dot-running { -fx-background-color: #3fb950; }
+.status-dot-running { -fx-background-color: #8fbb7f; }
 
-/* ===== 运行状态指示器（正文区左下角齿轮+文案） ===== */
-.running-indicator { -fx-spacing: 8; }
-.running-indicator-gear { -fx-fill: #8a8f98; }
-.running-indicator-text { -fx-text-fill: #8a8f98; -fx-font-size: 12px; }
+/* ===== 运行状态指示器（正文区左下角齿轮+文案；暖石胶囊：surface 底 + 1px border + 全圆角） =====
+   不加 dropshadow：effect 会让整棵子树离屏渲染、丢失 LCD 子像素抗锯齿，11.5px 小字会发虚
+   （同 .input-frame-focused 的取舍）；胶囊已有底色+描边，与正文区分足够 */
+.running-indicator {
+    -fx-spacing: 8;
+    -fx-alignment: center-left;
+    -fx-background-color: #262320;
+    -fx-background-radius: 999;
+    -fx-border-color: #3a362f;
+    -fx-border-width: 1;
+    -fx-border-radius: 999;
+    -fx-padding: 5 12 5 12;
+}
+.running-indicator-gear { -fx-fill: #d97757; }
+.running-indicator-text { -fx-text-fill: #b6afa2; -fx-font-size: 11.5px; }
 
 /* 滚动面板（滚动条外观见文件头） */
 .scroll-pane { -fx-background-color: transparent; }
