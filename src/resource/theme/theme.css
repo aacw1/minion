@@ -534,3 +534,47 @@
     -fx-alignment: center;
 }
 .ai-name { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; -fx-font-weight: bold; }
+
+/* ===== 消息场景卡片 / 提示条（暖石）=====
+   工具调用 = surface 卡片、思考 = 左侧细线灰字、错误/警告 = 左侧色条提示条、
+   系统行/统计行/空态 = 辅助色灰字。所有嵌入卡片/提示条的 .content 背景都与所在卡片同色：
+   不透明 .content 是 LCD 子像素渲染的前提（见 .msg-textarea 说明），透明会退回灰阶抗锯齿、正文发虚。 */
+.tool-card {
+    -fx-background-color: #262320;
+    -fx-background-radius: 9;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 9;
+    -fx-padding: 2 0 2 0;
+}
+.tool-card .log-collapse-toggle { -fx-padding: 7 12 7 12; }
+.tool-body { -fx-font-family: "Consolas", "Courier New", monospace; -fx-font-size: 12px; }
+.tool-body .content { -fx-background-color: #151412; }
+.tool-diffstat { -fx-text-fill: #857f74; -fx-font-family: "Consolas", monospace; -fx-font-size: 11.5px; }
+.think-block { -fx-border-color: transparent transparent transparent #3a362f; -fx-border-width: 0 0 0 2; -fx-padding: 2 0 2 12; }
+.think-block .log-collapse-toggle { -fx-text-fill: #857f74; }
+.think-block .log-body, .think-block .msg-textarea { -fx-text-fill: #857f74; }
+.think-block .content { -fx-background-color: #1b1a18; }
+.notice-error {
+    -fx-background-color: #342321;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent transparent transparent #e08272;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 8 10 8 10;
+}
+.notice-error .content { -fx-background-color: #342321; }
+.notice-warn {
+    -fx-background-color: #332b1e;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent transparent transparent #d8ab5f;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 8 10 8 10;
+}
+.notice-warn .content { -fx-background-color: #332b1e; }
+.sys-line { -fx-text-fill: #857f74; -fx-font-size: 12.5px; }
+.sys-line .content { -fx-background-color: #1b1a18; }
+.stats-line .log-summary-text { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
+.subagent-card { -fx-background-color: #20242a; -fx-background-radius: 8; -fx-border-color: #2f3d44; -fx-border-radius: 8; -fx-padding: 2 0 2 0; }
+.subagent-card .log-summary-text { -fx-text-fill: #b3e5fc; -fx-font-size: 12px; }
+.subagent-card .content { -fx-background-color: #20242a; }
+.empty-hint { -fx-text-fill: #857f74; -fx-font-size: 13px; }
+.empty-hint .content { -fx-background-color: #1b1a18; }
