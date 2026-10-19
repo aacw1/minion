@@ -583,7 +583,7 @@
     -fx-border-radius: 9;
     -fx-padding: 2 0 2 0;
 }
-.tool-card .log-collapse-toggle { -fx-padding: 3 10 3 10; }
+.tool-card .log-collapse-toggle { -fx-padding: 0 10 0 10; }
 .tool-body { -fx-font-family: "Consolas", "Courier New", monospace; -fx-font-size: 12px; }
 .tool-body .content { -fx-background-color: #151412; }
 .tool-diffstat { -fx-text-fill: #857f74; -fx-font-family: "Consolas", monospace; -fx-font-size: 11.5px; }
