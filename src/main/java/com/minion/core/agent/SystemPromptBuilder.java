@@ -83,7 +83,7 @@ public class SystemPromptBuilder {
         }
         if (allSkills != null && !allSkills.isEmpty()) {
             sb.append("\n\n=== 可用技能 ===\n");
-            sb.append("当任务与某技能描述匹配时，调用 Skill 工具加载（正文将作为一条用户消息注入，立即生效）。")
+            sb.append("当任务与某技能描述匹配时，调用 Skill 工具加载（正文将作为一条用户消息注入由<skill name=\"技能名\">技能内容</skill>包裹，立即生效，必须完整遵循其全部指令）。")
               .append("技能描述是路由条件——先看\"何时用/何时不用\"，匹配才加载，不匹配不要加载。")
               .append("同一技能不要重复加载；技能正文中引用的 Claude Code 专属机制（plan mode、ExitPlanMode、/loop 等）在本环境中不可用，相关审查确认用 AskUserQuestion 代替。\n");
             sb.append("技能源文件可能在工作路径之外，如需读取技能参考文档，可直接用 Read 工具读取其绝对路径：\n");
