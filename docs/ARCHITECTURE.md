@@ -84,6 +84,7 @@ com.minion
 - `ConfirmGate` / `ConfirmUi` 位于 `core/tools/confirm/` 子包
 - `PathsGuard`：文件工具路径限制。读工具走 `errorIfOutsideRead`（工作路径 + 额外放行目录 + 只读放行目录 + 技能目录 + 会话临时目录），写工具走 `errorIfOutside`（不含只读放行目录）；技能目录可配置为工作路径外的绝对路径。`Workspace.extraAllowedDirs()`（volatile 替换语义）放行项目级技能目录、`extraReadDirs()` 只读放行会话存储目录（`<jarDir>/session/<空间名>`，写仍拒绝）——`SessionManager.buildCtx` 按当前空间配置热更新（renameWorkspace 换目录同步替换），文件工具据此可读项目技能源文件（Read 按绝对路径读）与会话落盘文件；`inside(dir, p)` 在 dir 尚未创建时退化为规范化路径词法前缀比较（惰性创建的放行目录不误报越界，路径已存在仍走 toRealPath 真实校验）
 - `TextFiles`：文本编码辅助——UTF-8 严格解码优先，失败自动降级 GBK（Windows 记事本 ANSI 保存的常见编码）；ReadTool/GrepTool/EditTool 统一复用，EditTool 按实际编码写回不破坏文件（两码均失败时 EditTool 返回「文件编码已损坏」失败结果交模型自救，不再抛 unchecked 穿透）
+- `WalkBudget`：**Grep/Glob 遍历预算器**（包内可见，Grep/Glob 共用）——时间 30s / 条目 20 万 / 深度 64 三层预算 + `toRealPath` 目录环去重（Java 8 在 Windows 不把 junction 当符号链接，会被递归进入）+ 中断检查（`cancel(true)` 后遍历线程能真正退出，不再占死 4 线程工具池）+ 跳过计数（无权限项/超大文件/二进制）。`visitFileFailed` 兜底让「拒绝访问」目录只跳过该项而不是整次 Grep/Glob 抛 IOException 失败；Glob 多根（工作区 + 技能目录）共享时间/条目预算但去重集合按根独立。截断/跳过说明追加在结果末尾（无跳过时零文案变化）。设计见 `docs/superpowers/specs/2026-10-26-grep-glob-遍历有界化-design.md`
 - `AtomicFiles`：Write/Edit 的**原子落盘**——先写同目录唯一临时文件（`<名>.mt<nanoTime>-<线程id>.tmp`）再 `Files.move` 覆盖：`ATOMIC_MOVE` 优先，Windows 上目标被其它句柄持读（编辑器/IDE/杀软/并发 Read）抛 `AccessDeniedException` 时**降级 `REPLACE_EXISTING`**（实测探针3-E）；tmp 写入因文件名变长触 `MAX_PATH` 时降级直接写目标（防"原本能写变写不了"回归）；失败路径 `finally` 清理 tmp；写后校验目标长度，不一致即报错——绝不静默留坏文件。读者要么看到旧文件要么看到新文件，不会看到半截内容
 - `PathLocks`：**进程内按规范化路径串行化**（256 条 striped `ReentrantLock` 按 `hashCode` 取模，可重入，避免 map 无限增长）。必要性：`AgentLoop:661-665` 把同轮 tool_call 先全部 submit 到池宽 4 的线程池再逐个收结果——**收集是顺序的、执行是并行的**，两次 Edit 的"读-改-写"交错会静默丢更新（实测 4 线程 60 轮 240 处改动仅生效 61 处）并产生残留尾部坏字节（事故 0x89 成因）。锁覆盖读-改-写全周期，且**必须在所有 `ConfirmGate` 调用之后获取**（确认会阻塞等用户点击，持锁等待会挂死其他写者）；`tryLock` 30s 超时返回「文件正被其他操作占用」失败结果。跨进程不在范围内（`FileLock` 与 `ATOMIC_MOVE` 冲突），由 `AtomicFiles` 保证不产坏文件
 - `ShellLocale`：bash 编码一次性探测（进程级缓存）——让「命令脚本编码 + 注入的 locale」与 bash 实际 charset 对上。候选序：不注入(UTF-8) → `LC_ALL/LANG=C.UTF-8` → `zh_CN.UTF-8` → 脚本改按 ANSI(GBK) 写；判定=探针 `ls 中文目录` exit==0 且输出含预期中文名；全失败/异常回退不注入（等价探测前行为）。修 Win7 老 msys 默认 ANSI 导致的中文路径乱码（BashTool 调用，`cmd /c` 分支不探测）
@@ -196,6 +197,8 @@ com.minion
 | 会话 tmp 孤儿清理 | 启动时删除无对应 session/\*/\*.json 的 tmp 目录（mtime 超 1 小时） | SessionTempCleaner |
 | Grep 单行截断 LINE_MAX | 1000 字符 | GrepTool |
 | Grep 结果条数 MAX_RESULTS / 显示层 DISPLAY_CHARS | 250 条 / 30k 字符 | GrepTool |
+| Grep 单文件上限 MAX_FILE_BYTES / 二进制探测 BINARY_PROBE_BYTES | 5MB（超限跳过）/ 前 8KB 含 NUL 跳过 | GrepTool |
+| Grep/Glob 遍历预算 MAX_MILLIS / MAX_ENTRIES / MAX_DEPTH | 30s / 200000 项 / 64 层 | WalkBudget |
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |
 | HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
 | CdpClient 连接超时 | 10000ms | Main.java |

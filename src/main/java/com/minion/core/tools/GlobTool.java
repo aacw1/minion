@@ -29,6 +29,12 @@ public class GlobTool implements Tool {
     private final String skillsDir;
     private final String tmpDir;
     private final ConfirmGate confirm;
+    /** 遍历预算工厂（单测注入小预算；默认 {@link WalkBudget#defaults()}）。
+     *  多根（工作区 + 技能目录）共享同一时间/条目预算，去重集合按根独立（见 WalkBudget 类注释） */
+    java.util.function.Supplier<WalkBudget> budgetFactory =
+            new java.util.function.Supplier<WalkBudget>() {
+                @Override public WalkBudget get() { return WalkBudget.defaults(); }
+            };
 
     public GlobTool(Workspace workspace) { this(workspace, null); }
 
@@ -97,13 +103,28 @@ public class GlobTool implements Tool {
                 if (!skillsAbs.startsWith(workRoot.toAbsolutePath().normalize())) roots.add(skillsAbs);
             }
         }
+        final WalkBudget budget = budgetFactory.get();
+        boolean firstRoot = true;
         for (final Path root : roots) {
+            final WalkBudget rootBudget = firstRoot ? budget : budget.newRoot();
+            firstRoot = false;
             final Path rootAbs = root.toAbsolutePath().normalize();
             final boolean rootIsWork = rootAbs.equals(workRootAbs);
             try {
                 Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
                     @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                        return rootBudget.enterDir(dir, root); // 预算/深度/目录环/中断
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                        return rootBudget.fileFailed(); // 无权限等：跳过该项，不整次失败
+                    }
+
+                    @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        if (!rootBudget.checkFile()) return FileVisitResult.TERMINATE; // 预算耗尽/已中断
                         Path abs = file.toAbsolutePath().normalize();
                         if (matchesAny(matchers, baseCandidates(abs, rootAbs, workRootAbs, rootIsWork))) {
                             // 输出：工作区内相对 cwd（与 Read 同口径，模型可直接解析）；区外绝对路径
@@ -119,6 +140,7 @@ public class GlobTool implements Tool {
                 return ToolResult.error("无法遍历路径 " + root + ": " + e.getMessage());
             }
         }
+        final String budgetNote = budget.summary();
         if (found.isEmpty()) {
             StringBuilder hint = new StringBuilder();
             hint.append("未找到匹配文件: ").append(pattern).append("\n搜索根: ");
@@ -127,12 +149,12 @@ public class GlobTool implements Tool {
                 hint.append(roots.get(i));
             }
             hint.append("\npattern 支持绝对路径或相对工作空间（如 src/**/*.java），也支持相对搜索根的写法");
-            return ToolResult.success(hint.toString());
+            return ToolResult.success(WalkBudget.appendNote(hint.toString(), budgetNote));
         }
         StringBuilder sb = new StringBuilder();
         for (String f : found) sb.append(f).append('\n');
         if (found.size() >= MAX_RESULTS) sb.append("... 结果超过 ").append(MAX_RESULTS).append(" 条，已截断\n");
-        return ToolResult.success(sb.toString());
+        return ToolResult.success(WalkBudget.appendNote(sb.toString(), budgetNote));
     }
 
     /** pattern 归一化：Windows 下反斜杠 → '/'（glob 里 '\' 是转义符，模型习惯写路径分隔符）；

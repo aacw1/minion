@@ -23,12 +23,23 @@ public class GrepTool implements Tool {
     private static final int MAX_RESULTS = 250;    // 显示条数默认与钳制上限
     private static final int LINE_MAX = 1000;      // 单行内容截断（防 minified JS/单行 JSON 爆炸）
     private static final int DISPLAY_CHARS = 30000; // 显示总字符上限
+    /** 单文件上限：超过即跳过（用 walkFileTree 提供的 attrs.size() 判定，零额外 IO）。
+     *  日志/数据/jar 大文件整读内存 + UTF-8→GBK 双遍解码是会话被占死的主因（2026-10-26） */
+    static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
+    /** 二进制探测字节数：前 8KB 出现 0x00 即视为二进制（GBK 对任意字节宽容，
+     *  不探测会把整个二进制文件解码成字符串再逐行跑正则） */
+    static final int BINARY_PROBE_BYTES = 8192;
 
     private final Workspace workspace;
     private final String skillsDir;
     /** 会话临时目录（jarDir/.session/tmp/<sessionId>；null = 落盘降级） */
     private final Path tmpDir;
     private final ConfirmGate confirm;
+    /** 遍历预算工厂（单测注入小预算；默认 {@link WalkBudget#defaults()}） */
+    java.util.function.Supplier<WalkBudget> budgetFactory =
+            new java.util.function.Supplier<WalkBudget>() {
+                @Override public WalkBudget get() { return WalkBudget.defaults(); }
+            };
 
     public GrepTool(Workspace workspace) { this(workspace, null); }
 
@@ -104,6 +115,7 @@ public class GrepTool implements Tool {
         final int[] dispCount = {0};   // 已入显示层条数
         final int[] totalCount = {0};  // 全量匹配条数（含落盘）
         final boolean[] dispFull = {false}; // 显示层已满：继续遍历落盘，不再 append
+        final WalkBudget budget = budgetFactory.get(); // 时间/条目/深度预算 + 环去重 + 中断检查
 
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
             @Override
@@ -115,14 +127,30 @@ public class GrepTool implements Tool {
                 if (isDumpDir && !dir.toAbsolutePath().normalize().equals(root.toAbsolutePath().normalize())) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
-                return FileVisitResult.CONTINUE;
+                return budget.enterDir(dir, root); // 预算/深度/目录环/中断
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                return budget.fileFailed(); // 无权限等：跳过该项，不整次失败（原实现直接抛 IOException）
             }
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (!budget.checkFile()) return FileVisitResult.TERMINATE; // 预算耗尽/已中断
                 // 落盘文件本身跳过：遍历中持续写入，读它会自噬（匹配内容写入自身）
                 if (dumpPath != null
                         && file.toAbsolutePath().normalize().equals(dumpPath.toAbsolutePath().normalize())) {
+                    return FileVisitResult.CONTINUE;
+                }
+                // 超大文件跳过：整读内存 + 编码双遍解码会把工具线程占死（attrs 已有大小，零额外 IO）
+                if (attrs.size() > MAX_FILE_BYTES) {
+                    budget.skipLargeFile();
+                    return FileVisitResult.CONTINUE;
+                }
+                // 二进制跳过（前 8KB 含 NUL）：GBK 解码对任意字节宽容，不探测会整篇解码二进制
+                if (isBinary(file)) {
+                    budget.skipBinaryFile();
                     return FileVisitResult.CONTINUE;
                 }
                 Path rel = rootInWork ? workspace.cwd().relativize(file) : file;
@@ -157,22 +185,50 @@ public class GrepTool implements Tool {
             try { dumpWriter.close(); } catch (IOException ignored) { }
         }
 
-        boolean truncated = totalCount[0] > max || disp.length() >= DISPLAY_CHARS;
+        final String budgetNote = budget.summary();
+        // 结果被截断（保留落盘文件）：显示层/条数超限，或预算耗尽/中断且已有部分匹配
+        boolean truncated = totalCount[0] > max || disp.length() >= DISPLAY_CHARS
+                || (budget.incomplete() && totalCount[0] > 0);
         if (!truncated) {
             if (dumpPath != null) {
                 dumpPath.toFile().delete();
                 // 顺带删空的 tmp 目录，保证"不超限不落盘"零磁盘痕迹
                 try { Files.deleteIfExists(dumpPath.getParent()); } catch (IOException ignored) { }
             }
-            return ToolResult.success(disp.toString().trim().isEmpty()
-                    ? "未匹配: " + pattern : disp.toString());
+            String body = disp.toString().trim().isEmpty()
+                    ? "未匹配: " + pattern : disp.toString();
+            return ToolResult.success(WalkBudget.appendNote(body, budgetNote));
         }
         String note = dumpPath == null
                 ? "\n... 共 " + totalCount[0] + " 条，落盘失败未保存完整结果，以上为仅存内容\n"
-                : "\n... 共 " + totalCount[0] + " 条，完整结果已保存到 "
+                : "\n... 共 " + totalCount[0] + " 条，"
+                        + (budget.incomplete() ? "已收集结果已保存到 " : "完整结果已保存到 ")
                         + dumpPath.toAbsolutePath()
                         + "，可用 Read 查看\n";
-        return ToolResult.success(disp.toString() + note);
+        return ToolResult.success(WalkBudget.appendNote(disp.toString() + note, budgetNote));
+    }
+
+    /** 二进制探测：前 {@link #BINARY_PROBE_BYTES} 字节出现 0x00 即视为二进制；
+     *  读失败按二进制处理（与 visitFileFailed 一致：跳过而不是整次失败） */
+    private static boolean isBinary(Path file) {
+        java.io.InputStream in = null;
+        try {
+            in = Files.newInputStream(file);
+            byte[] probe = new byte[BINARY_PROBE_BYTES];
+            int n = in.read(probe);
+            for (int i = 0; i < n; i++) {
+                if (probe[i] == 0) return true;
+            }
+            return false;
+        } catch (IOException e) {
+            return true;
+        } catch (RuntimeException e) {
+            return true;
+        } finally {
+            if (in != null) {
+                try { in.close(); } catch (IOException ignored) { }
+            }
+        }
     }
 
     /** 单行截断：>1000 字符截断并加省略号（落盘与显示同格式，文件大小可控） */
