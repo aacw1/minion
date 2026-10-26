@@ -13,7 +13,6 @@ import com.minion.gui.theme.Theme;
 import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
-import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
@@ -46,7 +45,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.Screen;
 import javafx.stage.Window;
 import javafx.util.Duration;
 
@@ -87,9 +85,8 @@ public class SettingsDialog {
         // 左列导航：TabPane 侧放文字旋转 90°（历史"字倒了"根因）不可用；ListView 复用现有深色样式
         final ListView<String> nav = new ListView<String>();
         nav.getItems().addAll("基础设置", "模型", "MCP", "工具", "关于");
-        nav.setPrefWidth(120); // 实际宽度由 CSS .settings-nav-list 的 -fx-pref-width(172) 覆盖；此处保留为无样式表时的回退
+        nav.setPrefWidth(120);
         nav.setMinWidth(120); // HBox 空间不足时按 HGrow 优先级分配，无 HGrow 的子项会被压到最小宽度；minWidth 保证导航列不被压塌
-        nav.getStyleClass().add("settings-nav-list"); // 导航专用暖石样式（选中态左侧主色条 + 圆角行）
         final Node model = modelPane(models, manager);
         final Node mcpNode = mcpPane(mcp, owner);
         final Node toolsNode = ToolsPane.build(plugins, owner);
@@ -107,15 +104,9 @@ public class SettingsDialog {
         HBox box = new HBox(0);
         box.getChildren().addAll(nav, content);
         HBox.setHgrow(content, Priority.ALWAYS);
-        // 暖石主题：导航列 172（CSS）+ 右侧内容区 748 = 920；内容高 560（自绘标题栏 44 + 按钮栏约 50 由
-        // DialogPane 额外占用）。125% DPI（如 1366×768 → 可视逻辑高约 614）下 654 总高会溢屏、底部按钮不可达，
-        // 故按主屏可视区钳制内容高（下限 420，保证导航/表单仍可用）。Screen.getPrimary() 必须在 FX 线程，本方法由 show 在 FX 线程调用。
-        Rectangle2D vb = Screen.getPrimary().getVisualBounds();
-        double contentH = Math.min(560, Math.max(420, vb.getHeight() - 180));
-        box.setPrefSize(920, contentH);
+        // 需求：右侧内容区宽为原 1.5 倍（导航 120 不变：500 → 750，总宽 620 → 870）
+        box.setPrefSize(870, 500);
         d.getDialogPane().setContent(box);
-        // 无边框深色弹窗：自绘标题栏（拖动 + 关闭），去掉 Windows 浅色系统标题栏（样式类 dark-dialog）
-        DarkDialogs.decorate(d, "设置");
         d.showAndWait();
     }
 
@@ -195,7 +186,6 @@ public class SettingsDialog {
                     "删除模型「" + name + "」？", ButtonType.OK, ButtonType.CANCEL);
             Theme.style(a);
             a.setTitle("删除模型");
-            DarkDialogs.decorate(a, a.getTitle()); // 无边框深色（标题取自上行的 setTitle）
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
                 if (!models.remove(name)) error("删除失败", "至少保留一个模型");
@@ -265,16 +255,15 @@ public class SettingsDialog {
         effort.setValue(mc == null ? "max" : mc.reasoningEffort);
         TextField maxCtx = new TextField(mc == null ? "200000" : String.valueOf(mc.maxContextTokens));
 
-        grid.addRow(0, styledLabel("标识名:"), displayName);
-        grid.addRow(1, styledLabel("URL:"), url);
-        grid.addRow(2, styledLabel("API Key:"), apiKey);
-        grid.addRow(3, styledLabel("模型名:"), modelName);
-        grid.addRow(4, styledLabel("provider:"), provider);
-        grid.addRow(5, styledLabel("思考:"), thinking);
-        grid.addRow(6, styledLabel("effort:"), effort);
-        grid.addRow(7, styledLabel("maxContextTokens:"), maxCtx);
+        grid.addRow(0, new Label("标识名:"), displayName);
+        grid.addRow(1, new Label("URL:"), url);
+        grid.addRow(2, new Label("API Key:"), apiKey);
+        grid.addRow(3, new Label("模型名:"), modelName);
+        grid.addRow(4, new Label("provider:"), provider);
+        grid.addRow(5, new Label("思考:"), thinking);
+        grid.addRow(6, new Label("effort:"), effort);
+        grid.addRow(7, new Label("maxContextTokens:"), maxCtx);
         d.getDialogPane().setContent(grid);
-        DarkDialogs.decorate(d, mc == null ? "新建模型" : "修改模型");
 
         d.setResultConverter(bt -> {
             if (bt != ButtonType.OK) return null;
@@ -376,7 +365,7 @@ public class SettingsDialog {
 
         HBox actions = new HBox(8);
         Button add = new Button("新建");
-        Button edit = new Button("修改"); // 文案统一：模型页/工作空间同用「修改」
+        Button edit = new Button("编辑");
         Button del = new Button("删除");
         Button reconnect = new Button("重连");
         add.getStyleClass().add("btn-ghost");
@@ -412,7 +401,6 @@ public class SettingsDialog {
                     "删除 MCP 服务器「" + s.name + "」？", ButtonType.OK, ButtonType.CANCEL);
             Theme.style(a);
             a.setTitle("删除 MCP 服务器");
-            DarkDialogs.decorate(a, a.getTitle());
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
                 mcp.servers().remove(s);
@@ -444,14 +432,6 @@ public class SettingsDialog {
     private static Label formLabel(String text) {
         Label l = new Label(text);
         l.setPrefWidth(150);
-        return l;
-    }
-
-    /** 不固定列宽的标签（模型页 GridPane / 关于页正文）：加 form-label 类取暖石次要文字色，
-     *  否则裸 Label 会被旧 .dialog-pane .label 命中成冷白 #e6e8ee */
-    private static Label styledLabel(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("form-label");
         return l;
     }
 
@@ -504,7 +484,6 @@ public class SettingsDialog {
         headerLabel.setTooltip(new Tooltip("K:V 或\nKEY=VALUE\n每行一条\n空行忽略"));
         grid.addRow(6, headerLabel, headerArea);
         d.getDialogPane().setContent(grid);
-        DarkDialogs.decorate(d, s == null ? "新建 MCP 服务器" : "编辑 MCP 服务器");
 
         Runnable applyTransport = () -> {
             String t = selectedTransport(transportGroup);
@@ -723,7 +702,7 @@ public class SettingsDialog {
             contentBox.getChildren().addAll(rows);
             contentBox.setPadding(new Insets(12));
             // 去 ScrollPane：JavaFX 8 裁剪内文字回退灰阶 AA 是整页发虚根因；
-            // 内容高约 453px，920x560 固定窗放得下，无需滚动
+            // 内容高约 453px，620x500 固定窗放得下，无需滚动
             this.root = contentBox;
         }
 
@@ -741,14 +720,11 @@ public class SettingsDialog {
         }
     }
 
-    /** 表单行：标签固定宽 146 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用）；多行标签向右上对齐，
-     *  输入控件铺满剩余宽度 */
+    /** 表单行：标签固定宽 160 不收缩（GridPane+ColumnConstraints 在 JavaFX 8 下仍挤压截断，弃用），输入控件铺满剩余宽度 */
     private static HBox row(String labelText, Region control) {
         Label l = new Label(labelText);
-        l.setMinWidth(146);
-        l.setPrefWidth(146);
-        l.setAlignment(javafx.geometry.Pos.TOP_RIGHT);
-        l.getStyleClass().add("form-label");
+        l.setMinWidth(160);
+        l.setPrefWidth(160);
         l.setWrapText(true);
         control.setMaxWidth(Double.MAX_VALUE);
         HBox box = new HBox(8);
@@ -763,11 +739,11 @@ public class SettingsDialog {
         VBox box = new VBox(10);
         box.setPadding(new Insets(16));
         box.getChildren().addAll(
-                styledLabel("兼容win7的代码开发助手"),
+                new Label("兼容win7的代码开发助手"),
                 new Separator(),
-                styledLabel("作者：尹承"),
-                styledLabel("联系方式：258915527@qq.com"),
-                styledLabel("开发语言：Java 8 + JavaFX"));
+                new Label("作者：尹承"),
+                new Label("联系方式：258915527@qq.com"),
+                new Label("开发语言：Java 8 + JavaFX"));
         return box;
     }
 
@@ -787,7 +763,6 @@ public class SettingsDialog {
         Alert a = new Alert(Alert.AlertType.ERROR, msg, ButtonType.OK);
         a.setTitle(title);
         Theme.style(a);
-        DarkDialogs.decorate(a, a.getTitle());
         a.showAndWait();
     }
 }

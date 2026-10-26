@@ -8,13 +8,11 @@ import com.minion.gui.session.EventList.Ev;
 import com.minion.gui.session.SessionHandle;
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.util.Duration;
@@ -25,7 +23,7 @@ import java.util.function.DoubleConsumer;
 
 /**
  * 会话消息区（纯控制台输出流）：订阅 EventList（事件来自后台线程，Listener 内 Platform.runLater 包装）。
- * 每条消息 = 正文 MessageTextArea（主代理无方括号标签，子代理保留【子代理N】标签），段间无缝紧贴（spacing 0），
+ * 每条消息 = HBox（彩色加粗标签 Label + 白色正文 MessageTextArea），段间无缝紧贴（spacing 0），
  * 整区背景 #121314（.panel-dark）铺满正文窗口（配合 ScrollPane fitToHeight）；
  * 正文 TextArea 高度自适应（MessageTextArea）内容全部平铺、无内部滚动条；
  * 段内原生拖选/Ctrl+C/右键复制。
@@ -41,11 +39,6 @@ public class ChatView extends VBox {
 
     /** 截断保活上限：段数超限即移除头部旧段（200 段 ≈ 2000+ 行，长会话滚动不卡） */
     private static final int MAX_SEGS = 200;
-
-    /** 正文最大宽度（px）：超宽窗口下正文居中限宽，避免长行难以扫读 */
-    static final double MAX_CONTENT_WIDTH = 828;
-    /** 侧边最小内边距（px）：窄窗口至少留白，正文不贴边 */
-    static final double MIN_SIDE_PADDING = 20;
 
     private final EventList events;
     private final SessionHandle handle;
@@ -120,15 +113,14 @@ public class ChatView extends VBox {
         final StreamKind kind;
         /** 段主人：0=主代理，>0=子代理编号（流式就地更新只在同主人同 kind 的活跃段进行，见 ActiveStreams） */
         final int subAgentId;
-        Node row; // 该段在 ChatView 中的行节点（trimHead 依赖 getChildren 与 segs 一一对应）
         boolean thinkFinalized; // THINK 段已按最终长度定稿（防 CONTENT 增量重复折叠覆盖手动展开）
         Seg(String tagText, String tagColorClass, String text, StreamKind kind, int subAgentId) {
             this(tagText, tagColorClass, (Node) null, text, false, kind, subAgentId);
         }
         Seg(String tagText, String tagColorClass, Node summary, String text,
             boolean defaultExpanded, StreamKind kind, int subAgentId) {
-            tag = tagText == null ? null : new Label(tagText);
-            if (tag != null && tagColorClass != null) tag.getStyleClass().addAll("log-tag", tagColorClass);
+            tag = new Label(tagText);
+            tag.getStyleClass().addAll("log-tag", tagColorClass);
             if (summary == null) {
                 collapsible = null;
                 body = new MessageTextArea(text);
@@ -137,9 +129,7 @@ public class ChatView extends VBox {
                 body = collapsible.contentArea();
             }
             // 正文 = 默认白（.log-body）+ 浅色调类别色（log-body-* 定义于 CSS；四类消息着色，系统行无定义自动回退白）
-            body.getStyleClass().add("log-body");
-            if (tagColorClass != null) body.getStyleClass().add("log-body-" + tagColorClass.substring(4));
-            applyScenarioClass(tagColorClass);
+            body.getStyleClass().addAll("log-body", "log-body-" + tagColorClass.substring(4));
             // 段节点吃满剩余宽度：普通段 = 正文 body；折叠段 = CollapsibleText（VBox）整体——
             // 只对 body 设 Hgrow 无效（body 是 VBox 内部子节点，不直接参与 HBox 布局），
             // 折叠段会停在 prefWidth 不铺满、窗口窄时被压扁（P1 审查缺陷）
@@ -147,50 +137,6 @@ public class ChatView extends VBox {
             this.kind = kind;
             this.subAgentId = subAgentId;
         }
-
-        /** 追加正文/折叠容器的附加样式类（如提问卡的 ask-body） */
-        void addBodyClass(String cls) {
-            if (collapsible != null) collapsible.getStyleClass().add(cls);
-            body.getStyleClass().add(cls);
-        }
-
-        /** 场景样式类（卡片/提示条）：折叠段挂到折叠容器（整卡阴影底色），普通段挂到正文；
-         *  CSS 里这些类提供圆角背景与左侧色条——正文 .content 背景须与所在卡片同色，
-         *  否则透明层退回灰阶抗锯齿、正文发虚（LCD 规则，见 theme.css .msg-textarea 说明） */
-        private void applyScenarioClass(String tagColorClass) {
-            if (tagColorClass == null) return; // 无场景色：只有基础 .log-body 白字
-            if (collapsible != null) {
-                if ("log-tool".equals(tagColorClass)) collapsible.getStyleClass().add("tool-card");
-                else if ("log-think".equals(tagColorClass)) collapsible.getStyleClass().add("think-block");
-                else if ("log-error".equals(tagColorClass)) collapsible.getStyleClass().add("notice-error");
-                else if ("log-warn".equals(tagColorClass)) collapsible.getStyleClass().add("notice-warn");
-                else if ("log-subagent".equals(tagColorClass)) collapsible.getStyleClass().add("subagent-card");
-                else if ("log-sys".equals(tagColorClass)) collapsible.getStyleClass().add("stats-line");
-            } else {
-                if ("log-error".equals(tagColorClass)) body.getStyleClass().add("notice-error");
-                else if ("log-warn".equals(tagColorClass)) body.getStyleClass().add("notice-warn");
-                else if ("log-sys".equals(tagColorClass)) body.getStyleClass().add("sys-line");
-            }
-            if ("log-tool".equals(tagColorClass)) body.getStyleClass().add("tool-body");
-        }
-
-        /** 用户气泡段：无标签（tag=null）、无流身份（NONE，恒静态行）；气泡不铺满行宽、不参与流式就地更新。
-         *  静态工厂避免与 String 构造器的 null 歧义 */
-        private Seg(Label tagNode, String tagColorClass, MessageTextArea body, StreamKind kind, int subAgentId) {
-            this.tag = tagNode;
-            this.collapsible = null;
-            this.body = body;
-            this.kind = kind;
-            this.subAgentId = subAgentId;
-            this.thinkFinalized = false;
-            this.row = null;
-        }
-
-        /** 用户消息气泡段（tagColorClass 恒 null：气泡无标签） */
-        static Seg userBubble(MessageTextArea body, int subAgentId) {
-            return new Seg(null, null, body, StreamKind.NONE, subAgentId);
-        }
-
         /** 加入段行的节点：折叠段为 CollapsibleText 整体，普通段为正文 */
         Node node() { return collapsible != null ? collapsible : body; }
     }
@@ -198,36 +144,13 @@ public class ChatView extends VBox {
     private final List<Seg> segs = new ArrayList<Seg>();
     private boolean empty = true; // 无任何消息段（仍显示占位提示）
 
-    /** AI 身份行闸门：每条用户消息后的第一段 AI 输出前插一行「m minion」，一轮只插一次（纯逻辑，见 IdentityGate） */
-    private final IdentityGate identityGate = new IdentityGate();
-
     public ChatView(EventList events, SessionHandle handle) {
         this.events = events;
         this.handle = handle;
         getStyleClass().add("panel-dark"); // 背景 rgb(18,19,20)，随 ScrollPane fitToHeight 铺满正文窗口
         setSpacing(0); // 段间无缝紧贴（控制台连续输出）
-        // 正文限宽居中：窗口变宽时侧边留白把正文压到 MAX_CONTENT_WIDTH，窄窗口回到 MIN_SIDE_PADDING
-        widthProperty().addListener((obs, ov, nv) -> updateContentPadding());
-        updateContentPadding();
+        setStyle("-fx-padding: 16 16 40 16;"); // 底部 40px：为左下角运行状态指示器让位（覆盖距底 10~27px），滚动到底不遮挡最后一行
         clear();
-    }
-
-    /** 侧边留白（package-private 供单测）：正文按 828px 居中；窗口装不下 828+2×20 时贴最小留白 */
-    static double contentPadding(double width) {
-        return Math.max(MIN_SIDE_PADDING, (width - MAX_CONTENT_WIDTH) / 2.0);
-    }
-
-    /** 用户气泡宽度（package-private 供单测）：按字符数估算（中英混排取均值 14.5px/字，对应正文 15px），
-     *  下限 120px 防短消息被压成窄条，上限 620px 防长消息铺满整行（失去气泡形态） */
-    static double bubbleWidth(String text) {
-        int len = text == null ? 0 : text.length();
-        return Math.min(620, Math.max(120, 40 + len * 14.5));
-    }
-
-    /** 同步内边距：两端对称留白（取整避免半像素导致正文发虚），顶部 16px，底部 40px 为左下角运行状态指示器让位 */
-    private void updateContentPadding() {
-        double pad = Math.round(contentPadding(getWidth()));
-        setPadding(new Insets(16, pad, 40, pad));
     }
 
     /**
@@ -317,7 +240,6 @@ public class ChatView extends VBox {
         segs.clear();
         streams.clear();
         activeStreams.clear();
-        identityGate.reset(); // 清空会话后闸门不残留武装态（重建视图/删除会话后新内容不误插身份行）
         empty = true;
         replayed = 0; // 清空后游标归零：下次 bind 从 0 全量重放（clear 仅删除会话回收路径调用）
         getChildren().add(hint());
@@ -347,13 +269,11 @@ public class ChatView extends VBox {
         if (e.kind != EventList.Kind.THINKING) finalizeThinking(id);
         switch (e.kind) {
             case USER_MESSAGE:
-                identityGate.onUserMessage(); // 本轮 AI 输出的第一段前插「m minion」身份行
-                appendUserBubble(e.text, id);
+                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
                 if (scrollBottomRequest != null) scrollBottomRequest.run(); // 发送消息后强制滚动到底
                 break;
             case USER_SUPPLEMENT:
-                // 补充输入同样以气泡展示；不重开身份行（仍属同一轮，首段 AI 输出只需一次身份行）
-                appendUserBubble(e.text, id);
+                append(tagOf(id, "【输入】"), "log-input", e.text, StreamKind.NONE, id);
                 break;
             case THINKING: {
                 // 空思考增量不渲染（与 CONTENT 分支空防御对称）：qwen 流式每 chunk 带
@@ -377,24 +297,21 @@ public class ChatView extends VBox {
                 if ("AskUserQuestion".equals(e.text)) {
                     // 提问段无视长度阈值恒展开（长选项被折叠 = 「看不见提问内容」的第二类成因）
                     String askBody = askQuestionOf(e.data);
-                    Seg ask = appendCollapsible(tagOf(id, null), "log-tool",
+                    appendCollapsible(tagOf(id, "【工具】"), "log-tool",
                             statusSummary(IconFactory.help(), askSummaryText(e.data)),
                             askBody, StreamKind.NONE, askExpanded(askBody), id);
-                    ask.addBodyClass("ask-body");
                     // 提问必须可见：模型在等回答，滚出视口会静默卡住整个流程
                     if (scrollBottomRequest != null) scrollBottomRequest.run();
                 } else {
-                    String body = toolCallBody(e.text, e.data);
-                    // 摘要行右侧显示 diff 统计（Edit/Write 的行级 diff；非 diff 正文 stat=null 不显示）
-                    appendCollapsible(tagOf(id, null), "log-tool",
-                            toolSummary(toolCallSummary(e.text, e.data), diffStat(body)), body, id);
+                    appendCollapsible(tagOf(id, "【工具】"), "log-tool",
+                            toolSummary(toolCallSummary(e.text, e.data)), toolCallBody(e.text, e.data), id);
                 }
                 break;
             }
             case TOOL_RESULT: {
                 String data = e.data == null ? "" : e.data.toString();
                 boolean ok = data.startsWith("ok");
-                appendCollapsible(tagOf(id, null),
+                appendCollapsible(tagOf(id, ok ? "【工具】" : "【系统】"),
                         ok ? "log-tool" : "log-error",
                         statusSummary(ok ? IconFactory.success() : IconFactory.error(),
                                 e.text + (ok ? " 成功" : " 失败")),
@@ -402,15 +319,15 @@ public class ChatView extends VBox {
                 break;
             }
             case ERROR:
-                append(tagOf(id, null), "log-error", e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-error", e.text, StreamKind.NONE, id);
                 break;
             case WARNING:
-                append(tagOf(id, null), "log-warn", e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-warn", e.text, StreamKind.NONE, id);
                 break;
             case STATS: {
                 // 统计行 "⏱ " 前缀由 GUI 剥离展示（core StatsLine 保持原样；不匹配则原样展示）
                 String stats = e.text != null && e.text.startsWith("⏱ ") ? e.text.substring(2) : e.text;
-                appendCollapsible(tagOf(id, null), "log-sys",
+                appendCollapsible(tagOf(id, "【系统】"), "log-sys",
                         statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE, id);
                 // 轮次结束（AgentLoop 末尾发统计行）：强制回到底部，让回复末尾与统计行可见
                 if (scrollBottomRequest != null) scrollBottomRequest.run();
@@ -422,17 +339,17 @@ public class ChatView extends VBox {
                 break;
             }
             case SYSTEM: // 斜杠命令结果等 GUI 本地事件（不入 LLM 历史）
-                append(tagOf(id, null), "log-sys", e.text, StreamKind.NONE, id);
+                append(tagOf(id, "【系统】"), "log-sys", e.text, StreamKind.NONE, id);
                 break;
             case SUB_AGENT_START:
-                appendCollapsible(tagOf(id, null), "log-subagent",
+                appendCollapsible(tagOf(id, "【工具】"), "log-subagent",
                         statusSummary(IconFactory.play(), "子任务: " + e.text), null, StreamKind.NONE, false, id);
                 break;
             case SUB_AGENT_DONE:
                 // 报告全文进可折叠正文（长报告沿用既有折叠机制，展开可见全文与落盘路径）；
                 // 摘要只留「完成」——原实现把 8000+ 字符报告塞进单个不可换行/不可选中的 Label，
                 // 超宽截断且路径在末尾最易被裁掉（Fix Round 1 P1，对齐 spec:156-157）
-                appendCollapsible(tagOf(id, null), "log-subagent",
+                appendCollapsible(tagOf(id, "【工具】"), "log-subagent",
                         statusSummary(IconFactory.check(), "完成"), e.text, StreamKind.NONE, false, id);
                 // 完成后回收缓冲与流段引用（子代理不再发事件；防会话内条目随派发数增长，Fix Round 1 P3）
                 streams.remove(id);
@@ -443,43 +360,15 @@ public class ChatView extends VBox {
         }
     }
 
-    /** 系统行（错误横幅等，MainWindow.showError 入口）：无事件主人（id=0 但不带标签） */
+    /** 系统行（错误横幅等，MainWindow.showError 入口） */
     public void appendSystemLine(String text) {
-        append(null, "log-error", text, StreamKind.NONE, 0);
+        append("【系统】", "log-error", text, StreamKind.NONE, 0);
     }
 
-    /** 空会话占位：Label 包在容器里水平居中、顶部留白 80px（占位文本无需选中复制，Label 才能吃到对齐/留白样式） */
     private Node hint() {
-        Label label = new Label(EMPTY_HINT);
-        label.getStyleClass().add("empty-hint");
-        VBox host = new VBox(label);
-        host.setAlignment(Pos.TOP_CENTER);
-        host.setPadding(new Insets(80, 0, 0, 0));
-        return host;
-    }
-
-    /** 追加一条用户消息气泡（右对齐、无标签、不消费 AI 身份行）：气泡段恒静态（StreamKind.NONE），
-     *  不经 addSeg（气泡不是 AI 输出，不得触发身份行）；首段先清掉占位提示 */
-    private Seg appendUserBubble(String text, int subAgentId) {
-        if (empty) {
-            getChildren().clear();
-            empty = false;
-        }
-        MessageTextArea body = new MessageTextArea(text);
-        body.getStyleClass().add("msg-user-bubble");
-        body.setPrefWidth(bubbleWidth(text));
-        body.setMinWidth(120);
-        body.setMaxWidth(620);
-        Seg seg = Seg.userBubble(body, subAgentId);
-        HBox row = new HBox(body);
-        row.setAlignment(Pos.CENTER_RIGHT);
-        row.getStyleClass().add("msg-user-row");
-        seg.row = row;
-        attachFocusGovernance(seg);
-        segs.add(seg);
-        getChildren().add(row);
-        trimHead();
-        return seg;
+        MessageTextArea ta = new MessageTextArea(EMPTY_HINT);
+        ta.getStyleClass().add("log-sys");
+        return ta;
     }
 
     /** 追加一段控制台输出（首段先清掉占位提示；kind 仅记录流身份，NONE 静态行恒新起一段）；
@@ -492,51 +381,9 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, text, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        addSeg(seg, tagColorClass);
+        getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
         return seg;
-    }
-
-    /** 段挂载（唯一入口，保证 segs 与 getChildren 一一对应，trimHead 的按位删除才成立）：
-     *  每条用户消息后的第一段主代理 AI 输出（非用户回显/本地系统行）前插入「m minion」身份行；
-     *  身份行关在闸门内消费，子代理输出与用户气泡不占名额 */
-    private void addSeg(Seg seg, String tagColorClass) {
-        Node head = identityGate.consume(seg.subAgentId, consumesIdentity(tagColorClass))
-                ? identityHead() : null;
-        seg.row = buildRow(seg, head);
-        getChildren().add(seg.row);
-    }
-
-    /** 该样式类的段是否算「AI 输出」（决定能否消费身份行名额，纯静态可单测）：
-     *  用户回显（log-input）、GUI 本地系统行（log-sys：斜杠命令结果、统计行等）、
-     *  本地警告/错误提示（log-warn/log-error：模型空回复重试等）都不是 AI 输出，
-     *  否则 /help、/tokens、重试提示上方会错误出现「m minion」；tagColorClass=null 兜底为非 AI。 */
-    static boolean consumesIdentity(String tagColorClass) {
-        return tagColorClass != null
-                && !"log-input".equals(tagColorClass)
-                && !"log-sys".equals(tagColorClass)
-                && !"log-warn".equals(tagColorClass)
-                && !"log-error".equals(tagColorClass);
-    }
-
-    /** 段行构建：无身份行时保持原结构（有标签=标签+正文的 HBox，无标签=正文本身）；
-     *  有身份行时竖排「身份行 + 内容」（间距 8px） */
-    private static Node buildRow(Seg seg, Node head) {
-        Node content = seg.tag == null ? seg.node() : new HBox(seg.tag, seg.node());
-        return head == null ? content : new VBox(8, head, content);
-    }
-
-    /** AI 身份行：头像（m）+ 名称（minion）——只在每条用户消息后的首段 AI 输出前出现一次，
-     *  不显示时间/模型名（EventList.Ev 无时间戳字段） */
-    private static Node identityHead() {
-        Label avatar = new Label("m");
-        avatar.getStyleClass().add("ai-avatar");
-        Label name = new Label("minion");
-        name.getStyleClass().add("ai-name");
-        HBox head = new HBox(6, avatar, name);
-        head.getStyleClass().add("ai-head");
-        head.setAlignment(Pos.CENTER_LEFT);
-        return head;
     }
 
     /** 焦点治理：任一段获得焦点即清除其他段选区（选区是 TextInputControl 私有状态，多块同时显示选中
@@ -579,7 +426,7 @@ public class ChatView extends VBox {
             Seg seg = new Seg(tagText, tagColorClass, summary, "", false, kind, subAgentId);
             attachFocusGovernance(seg);
             segs.add(seg);
-            addSeg(seg, tagColorClass);
+            getChildren().add(new HBox(seg.tag, seg.node()));
             trimHead();
             return seg;
         }
@@ -591,7 +438,7 @@ public class ChatView extends VBox {
         Seg seg = new Seg(tagText, tagColorClass, summary, text, expanded, kind, subAgentId);
         attachFocusGovernance(seg);
         segs.add(seg);
-        addSeg(seg, tagColorClass);
+        getChildren().add(new HBox(seg.tag, seg.node()));
         trimHead();
         return seg;
     }
@@ -697,7 +544,7 @@ public class ChatView extends VBox {
         for (Integer id : think) {
             String text = streams.of(id).thinking();
             if (text.isEmpty()) continue;
-            stream(tagOf(id, null), "log-think", text, StreamKind.THINK, id);
+            stream(tagOf(id, "【思考】"), "log-think", text, StreamKind.THINK, id);
         }
     }
 
@@ -717,7 +564,7 @@ public class ChatView extends VBox {
         for (Integer id : think) {
             String text = streams.of(id).thinking();
             if (text.isEmpty()) continue;
-            stream(tagOf(id, null), "log-think", text, StreamKind.THINK, id);
+            stream(tagOf(id, "【思考】"), "log-think", text, StreamKind.THINK, id);
         }
         for (Integer id : reply) {
             // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
@@ -725,7 +572,7 @@ public class ChatView extends VBox {
             // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
             // 不打印【回复】标签——空标签+空白正文的"幽灵段"
             if (plain.trim().isEmpty()) continue;
-            stream(tagOf(id, null), "log-reply", plain, StreamKind.REPLY, id);
+            stream(tagOf(id, "【回复】"), "log-reply", plain, StreamKind.REPLY, id);
         }
     }
 
@@ -777,33 +624,9 @@ public class ChatView extends VBox {
         return box;
     }
 
-    /** 工具调用摘要行：扳手图标 + 纯文本摘要（原 "⛭ " 前缀）；stat 非 null 时右侧显示 diff 统计（+N −M） */
-    private static Node toolSummary(String text, String stat) {
-        Node base = statusSummary(IconFactory.build(), text);
-        if (stat == null) return base;
-        Label statLabel = new Label(stat);
-        statLabel.getStyleClass().add("tool-diffstat");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox row = new HBox(8, base, spacer, statLabel);
-        row.setAlignment(Pos.CENTER_LEFT);
-        // 摘要行在折叠容器里要吃掉整行宽度：否则内部 spacer 分不到空隙，统计紧贴工具名而非靠右
-        row.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(row, Priority.ALWAYS);
-        return row;
-    }
-
-    /** diff 正文的增删行统计（package-private 供单测）：只数 "+ "/"- " 开头的行（SimpleDiff 的变更行格式），
-     *  无正文或无变更返回 null（摘要行不显示统计；普通 JSON 参数正文不会误判为 diff） */
-    static String diffStat(String diffBody) {
-        if (diffBody == null || diffBody.isEmpty()) return null;
-        int add = 0, del = 0;
-        for (String line : diffBody.split("\n", -1)) {
-            if (line.startsWith("+ ")) add++;
-            else if (line.startsWith("- ")) del++;
-        }
-        if (add == 0 && del == 0) return null;
-        return "+" + add + " \u2212" + del;
+    /** 工具调用摘要行：扳手图标 + 纯文本摘要（原 "⛭ " 前缀） */
+    private static Node toolSummary(String text) {
+        return statusSummary(IconFactory.build(), text);
     }
 
     /** TOOL_RESULT 数据 → 展示正文："ok\n" 前缀后为成功输出，"error:" 前缀后为失败原因；
@@ -822,27 +645,6 @@ public class ChatView extends VBox {
     static String toolResultBody(String name, String data) {
         if ("AskUserQuestion".equals(name) && data != null && data.startsWith("ok")) return "";
         return toolResultBody(data);
-    }
-
-    /** AI 身份行闸门（纯逻辑、无 JavaFX 依赖，可单测）：每条用户消息武装一次，
-     *  只允许「该轮第一段主代理 AI 输出」消费——一个用户回合只出现一次「m minion」，不刷屏。
-     *  子代理输出（subAgentId>0）与用户段（aiSegment=false）不消费名额（否则子代理先说话就把
-     *  主代理的身份行吃掉；后续主代理输出反而没有身份）。 */
-    static final class IdentityGate {
-        private boolean pending;
-
-        /** 用户消息到达：武装闸门（新回合） */
-        void onUserMessage() { pending = true; }
-
-        /** 尝试取走身份行名额：命中（已武装 + 主代理 + AI 段）返回 true 并解除武装，之后同轮恒 false */
-        boolean consume(int subAgentId, boolean aiSegment) {
-            if (!pending || !aiSegment || subAgentId != 0) return false;
-            pending = false;
-            return true;
-        }
-
-        /** 清空会话时复位（否则 clear 后残留武装态，重建视图的首段无用户消息也会插身份行） */
-        void reset() { pending = false; }
     }
 
     /**

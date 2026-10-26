@@ -4,7 +4,6 @@ import com.minion.Boot;
 import com.minion.core.config.Config;
 import com.minion.core.config.ModelManager;
 import com.minion.core.config.WorkspaceManager;
-import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.session.SessionManager;
 import com.minion.gui.theme.Theme;
 import javafx.application.Application;
@@ -47,8 +46,6 @@ public class MinionApp extends Application {
                 ButtonType.OK);
         alert.initModality(Modality.NONE);   // 非模态：主界面可继续交互
         Theme.style(alert);                  // 深色样式表挂载（同 SettingsDialog/ConfirmSheet）
-        alert.setTitle("JDK 版本提示");
-        DarkDialogs.decorate(alert, alert.getTitle()); // 非模态提示同样走无边框深色（show() 前装配）
         alert.show();
     }
 

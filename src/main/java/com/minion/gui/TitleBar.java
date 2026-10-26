@@ -13,7 +13,7 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 /**
- * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为描边 SVG，IconFactory 集中管理）。
+ * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为 SVG，IconFactory 集中管理）。
  * 拖动标题栏移动窗口；双击空白区切换最大化。关闭走 confirmClose（与系统关闭共用退出确认）。
  * 最大化不用 stage.setMaximized（无边框窗口在 Windows 上会覆盖任务栏），改手动定位到
  * Screen.getPrimary().getVisualBounds()（系统已排除任务栏区域），还原时恢复记录的原 bounds。
@@ -33,13 +33,6 @@ public class TitleBar extends HBox {
         this.modelLabel = modelLabel; // 设置窗关闭后 MainWindow 刷新顶部模型名用
         getStyleClass().add("topbar");
         setSpacing(10);
-        setFillHeight(false); // HBox 默认拉伸子节点到 46 高，关掉后 -fx-alignment: center-left 才使胶囊/按钮保持内容高
-
-        Region logo = new Region();
-        logo.getStyleClass().add("brand-logo");
-        logo.setMinSize(18, 18);
-        logo.setPrefSize(18, 18);
-        logo.setMaxSize(18, 18);
 
         Label app = new Label("minion");
         app.getStyleClass().add("topbar-title");
@@ -48,12 +41,12 @@ public class TitleBar extends HBox {
         HBox.setHgrow(spacer, Priority.ALWAYS); // 原页签区弹性占位：模型名与右侧按钮之间留白
 
         Button gear = new Button();
-        gear.setGraphic(sized(IconFactory.strokeSettings()));
+        gear.setGraphic(sized(IconFactory.settings()));
         gear.getStyleClass().add("btn-ghost");
         gear.setOnAction(e -> openSettings.run());
 
         Button min = new Button();
-        min.setGraphic(sized(IconFactory.strokeMinus()));
+        min.setGraphic(sized(IconFactory.remove()));
         min.getStyleClass().add("btn-ghost");
         min.setOnAction(e -> stage.setIconified(true));
 
@@ -63,11 +56,11 @@ public class TitleBar extends HBox {
         max.setOnAction(e -> toggleMaximize()); // 手动最大化（不挡任务栏）
 
         Button close = new Button();
-        close.setGraphic(sized(IconFactory.strokeClose()));
+        close.setGraphic(sized(IconFactory.close()));
         close.getStyleClass().add("btn-close");
         close.setOnAction(e -> confirmClose.run());
 
-        getChildren().addAll(logo, app, modelLabel, spacer, gear, min, max, close);
+        getChildren().addAll(app, modelLabel, spacer, gear, min, max, close);
 
         // 拖动移动窗口（记录按下偏移，拖拽按屏幕坐标差值移动）
         setOnMousePressed(e -> {
@@ -92,15 +85,15 @@ public class TitleBar extends HBox {
         return visual;
     }
 
-    /** 标题栏描边图标：按图形实际 bounds 缩放到 14px 显示（path 只占 24 viewport 一部分，size 会实显偏小） */
+    /** 标题栏图标：24 viewport 缩放到 14px 显示 */
     private static Node sized(SVGPath icon) {
-        IconFactory.sizeVisual(icon, 14);
+        IconFactory.size(icon, 14);
         return icon;
     }
 
     /** 最大化/还原图标（maxed=true 显示还原双框，否则最大化方框） */
     private static Node maximizeIcon(boolean maxed) {
-        return sized(maxed ? IconFactory.strokeRestore() : IconFactory.strokeMaximize());
+        return sized(maxed ? IconFactory.filterNone() : IconFactory.cropSquare());
     }
 
     /** 切换最大化：未最大化 → 记录当前 bounds 并移动到可视区；已最大化 → 还原记录 */

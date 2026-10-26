@@ -6,7 +6,6 @@ import com.minion.core.tools.ssh.SshExecutor;
 import com.minion.core.tools.ssh.SshPlugin;
 import com.minion.core.tools.ssh.SshValidator;
 import com.minion.core.tools.plugin.ToolPluginManager;
-import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -94,7 +93,6 @@ public class SshConnectionsDialog {
                     "删除连接「" + sel + "」？", ButtonType.OK, ButtonType.CANCEL);
             a.setTitle("删除连接");
             Theme.style(a);
-            DarkDialogs.decorate(a, a.getTitle());
             if (owner != null) a.initOwner(owner);
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
@@ -134,7 +132,6 @@ public class SshConnectionsDialog {
         root.setPadding(PluginUi.padding());
         d.getDialogPane().setContent(root);
         d.getDialogPane().setPrefWidth(560);
-        DarkDialogs.decorate(d, "ssh 连接管理");
 
         refreshList(ssh, list, detail);
         d.showAndWait();
@@ -217,7 +214,6 @@ public class SshConnectionsDialog {
                 passphraseRow);
         d.getDialogPane().setContent(rows);
         d.getDialogPane().setPrefWidth(560);
-        DarkDialogs.decorate(d, original == null ? "新建 ssh 连接" : "修改 ssh 连接");
 
         final SshConnection[] out = new SshConnection[1];
         // 校验失败必须 consume 掉 OK 事件，否则 DialogPane 会直接关窗（resultConverter 返回 null 也关窗）

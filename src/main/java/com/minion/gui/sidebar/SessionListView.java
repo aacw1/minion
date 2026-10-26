@@ -2,7 +2,6 @@ package com.minion.gui.sidebar;
 
 import com.minion.core.llm.Message;
 import com.minion.gui.StatusDot;
-import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
@@ -33,9 +32,6 @@ public class SessionListView extends ListView<SessionHandle> {
     private final SessionManager manager;
     /** 删除联动回调（MainWindow 用于移除页签）；创建/删除无 Listener 通知，UI 层自行刷新 */
     private final Consumer<SessionHandle> onDeleted;
-    /** 会话条数（侧栏分组标题右侧计数胶囊绑定用；随 items 增删自动更新） */
-    private final javafx.beans.property.ReadOnlyIntegerWrapper count =
-            new javafx.beans.property.ReadOnlyIntegerWrapper(0);
 
     public SessionListView(final SessionManager manager, final Consumer<SessionHandle> onDeleted) {
         this.manager = manager;
@@ -53,12 +49,7 @@ public class SessionListView extends ListView<SessionHandle> {
             if (h != null && e.getClickCount() == 1) manager.activateSession(h);
         });
         Platform.runLater(() -> refresh()); // 初始恢复列表（restoreSessions 无 Listener 通知）
-        // 计数跟随列表项增删（refresh/setAll、新建、删除都会走到；分组标题的计数胶囊绑此属性）
-        getItems().addListener((javafx.collections.ListChangeListener<SessionHandle>) c -> count.set(getItems().size()));
     }
-
-    /** 会话条数（只读属性，供侧栏分组标题计数 Label 绑定） */
-    public javafx.beans.property.ReadOnlyIntegerProperty countProperty() { return count.getReadOnlyProperty(); }
 
     /** 事件目标（或其父链）是否为悬停操作按钮（btn-cell）：按钮内部命中 LabeledText 等子节点，故沿父链逐层判断 */
     private boolean isHoverButton(Object target) {
@@ -148,7 +139,7 @@ public class SessionListView extends ListView<SessionHandle> {
             String summary = lastSummary(h);
             if (summary != null) {
                 Label sum = new Label(summary);
-                sum.getStyleClass().add("cell-summary"); // 摘要行独立样式：不能复用 .section-title（暖石主题下已改为分组标题 11px 加粗）
+                sum.getStyleClass().add("section-title");
                 sum.setTextOverrun(OverrunStyle.ELLIPSIS);
                 sum.setMinWidth(0);
                 cellBox.getChildren().add(sum);
@@ -161,11 +152,9 @@ public class SessionListView extends ListView<SessionHandle> {
     private void doRename(SessionHandle h) {
         TextInputDialog d = new TextInputDialog(h.title);
         d.setTitle("重命名会话");
-        d.setHeaderText("输入新标题"); // decorate 会把 headerText 降为内容区顶部副标题，勿置 null
+        d.setHeaderText("输入新标题");
         d.getDialogPane().setGraphic(null); // 去掉叹号圆圈图标（同需求 6 精简处理）
-        d.getDialogPane().setPrefWidth(380);
         Theme.style(d); // 弹窗深色
-        DarkDialogs.decorate(d, "重命名会话");
         d.showAndWait().ifPresent(t -> manager.renameSession(h, t));
     }
 
@@ -198,7 +187,7 @@ public class SessionListView extends ListView<SessionHandle> {
             if (m.role == Message.Role.TOOL) continue;
             if (m.content == null || m.content.trim().isEmpty()) continue;
             String text = m.content.replace('\n', ' ').replace('\r', ' ').trim();
-            return text.length() > 40 ? text.substring(0, 40) + "…" : text;
+            return text.length() > 40 ? text.substring(0, 40) + "..." : text;
         }
         return null;
     }

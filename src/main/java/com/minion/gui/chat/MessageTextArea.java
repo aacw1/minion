@@ -15,8 +15,8 @@ import javafx.scene.text.Text;
  * 1. 构造即设显式 prefHeight（防 Parent.prefHeightCache 缓存旧值）：prefHeightProperty 永不为
  *    USE_COMPUTED_SIZE，布局早期 Region.prefHeight(-1) 就不会经 Parent.prefHeightCache 缓存
  *    TextAreaSkin 的默认 10 行高度；否则缓存永不失效 → 长消息被 VBox 按旧值压缩（探针实证）。
- * 2. 保守测量（防内部滚动条自反馈死锁）：measurer 的 wrap 宽度预留内部滚动条槽位（边框 1px×2 + 滚动条 9px，
- *    共 11px）——TextArea 内部文本 wrap 在滚动条出现时会变窄、行数变多、内容变高，
+ * 2. 保守测量（防内部滚动条自反馈死锁）：measurer 的 wrap 宽度预留内部滚动条槽位（边框+滚动条，
+ *    实测 12px）——TextArea 内部文本 wrap 在滚动条出现时会变窄、行数变多、内容变高，
  *    若按全宽测量则高度低估 → 滚动条出现 → wrap 更窄 → 死锁。保守窄宽测量使高度恒 ≥ 内容。
  * 3. 布局后精校（消除保守测量的空隙）：双 runLater 在布局 pass 后读内部 Text 节点
  *    （TextAreaSkin 实际渲染）的真实高度，setPrefHeight 精确收敛；临界 wrap 行差/行高差完全消除。
@@ -29,8 +29,8 @@ public class MessageTextArea extends TextArea {
     /** 宽度未定（构造/首次布局前）时的测量兜底；布局后宽度监听会用真实宽度更新，此值只影响早期临时高度 */
     private static final double FALLBACK_WIDTH = 600;
 
-    /** 内部文本 wrap 比控件内容区窄的固定槽位（内部 ScrollPane 边框 1px×2 + 垂直滚动条 9px） */
-    private static final double INNER_SLOT = 11;
+    /** 内部文本 wrap 比控件内容区窄的固定槽位（内部 ScrollPane 边框 1px×2 + 垂直滚动条 10px，实测 12px@modena/主题） */
+    private static final double INNER_SLOT = 12;
 
     /** 行高比初始值：TextAreaView 内部 Text 行高与普通 Text 行高的实测比值
      *  （1.0686@14px YaHei，探针 31 在 22 行/42 行处均复现）——measurer 直测低估约 7%/行，

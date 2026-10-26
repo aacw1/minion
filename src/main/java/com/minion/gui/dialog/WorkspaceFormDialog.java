@@ -122,9 +122,6 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
             return new WorkspaceConfig(name.getText().trim(), workDir.getText().trim(),
                     projectMd.getText().trim(), skillsDir.getText().trim());
         });
-
-        // 无边框深色弹窗：自绘标题栏（拖动 + 关闭），去掉 Windows 浅色系统标题栏
-        DarkDialogs.decorate(this, title);
     }
 
     /**
@@ -161,7 +158,6 @@ public class WorkspaceFormDialog extends Dialog<WorkspaceConfig> {
         a.setTitle("路径无效");
         a.setHeaderText(null);
         Theme.style(a);
-        DarkDialogs.decorate(a, a.getTitle());
         if (getOwner() != null) a.initOwner(getOwner());
         a.showAndWait();
     }

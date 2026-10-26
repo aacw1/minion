@@ -41,8 +41,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ 下方居中提示行
- *  （按键位/ @ 引用 / 命令，随发送键配置切换）+ /命令与 @文件补全弹层。
+/** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  @文件确认后内联进输入框（@路径 文本，所见即所得；扫描异步后台线程，不卡输入）；/命令、/技能、粘贴、图片为块。
  *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（**终止仅鼠标点击方块按钮**，
  *  任何键盘键位都不终止——键盘在空输入时改为 3 秒提示「输入内容为空」）；
@@ -69,14 +68,11 @@ public class InputView extends VBox {
     private final Button uploadButton = new Button();
     /** 键盘空输入提示浮层：悬浮输入框上方居中，3 秒自动淡出（不占布局、鼠标穿透） */
     private final Label inputToast = new Label();
-    /** 输入框下方提示行（11px 辅助色居中）：文案随设置里的发送键切换 */
-    private Label composerHint;
     private final FadeTransition toastIn = new FadeTransition(Duration.millis(150), inputToast);
     private final PauseTransition toastHold = new PauseTransition(Duration.millis(3000));
     private final FadeTransition toastOut = new FadeTransition(Duration.millis(250), inputToast);
     private final ContextRing contextRing = new ContextRing();
-    /** 发送箭头：描边图标（16px，线宽随缩放同比 2.2×16/24≈1.47px），填充态由 theme.css 的 .icon-stroke 控制 */
-    private final SVGPath arrowIcon = arrowIcon();
+    private final SVGPath arrowIcon = IconFactory.send();
     private final SVGPath stopIcon = IconFactory.stop();
     private final SVGPath uploadIcon = IconFactory.attachFile();
     private final SuggestionPopup popup = new SuggestionPopup();
@@ -127,8 +123,7 @@ public class InputView extends VBox {
         input.caretPositionProperty().addListener((obs, ov, nv) -> onTextChanged());
         // 弹层显示改为输入内容驱动：输入框失焦（点击聊天区/侧栏）时关闭，点击输入框本身不关；
         // 焦点进入时刷新文案——设置窗勾选发送键后点回输入框，提示与 tooltip 立即正确
-        // 聚焦边框：聚焦时大框边框 #d97757（主色 1px 边框，不加光晕效果——dropshadow 会让 TextArea
-        // 整棵子树离屏渲染、丢失 LCD 子像素抗锯齿导致正文发虚），失焦还原 #3a362f（frame 构造晚于本监听注册，判空）
+        // 聚焦边框：聚焦时大框边框 #f48771，失焦还原 #232733（frame 构造晚于本监听注册，判空）
         input.focusedProperty().addListener((obs, ov, nv) -> {
             if (frame != null) {
                 if (nv) frame.getStyleClass().add("input-frame-focused");
@@ -140,14 +135,14 @@ public class InputView extends VBox {
 
         // 上箭头（Claude Code 同款语义：可发送）；方块 = 终止（图形与样式类由 IconFactory 提供）
         uploadButton.setGraphic(uploadIcon);
-        uploadButton.setMinSize(26, 26);
-        uploadButton.setPrefSize(26, 26);
+        uploadButton.setMinSize(30, 30);
+        uploadButton.setPrefSize(30, 30);
         uploadButton.getStyleClass().add("btn-upload");
         uploadButton.setTooltip(new Tooltip("上传图片 (最多" + ImagePart.MAX_IMAGES + "张, 每张≤" + (ImagePart.MAX_FILE_BYTES / 1024 / 1024) + "MB)"));
         uploadButton.setOnAction(e -> chooseImages());
 
-        sendButton.setMinSize(30, 30);
-        sendButton.setPrefSize(30, 30);
+        sendButton.setMinSize(36, 36);
+        sendButton.setPrefSize(36, 36);
         sendButton.setOnAction(e -> onAction(true)); // 鼠标点击：唯一可触发 STOP 的路径
         // 方块按钮鼠标专用：按钮聚焦时 Space/Enter 的键盘激活在 STOP 模式一律拦截（其他模式保持 JavaFX 默认行为）
         sendButton.addEventFilter(KeyEvent.ANY, e -> {
@@ -271,21 +266,8 @@ public class InputView extends VBox {
         right.setPercentWidth(19.1);
         root.getColumnConstraints().addAll(left, center, right);
         root.add(frameHost, 1, 0);
-        // 提示行：输入框下方居中（11px 辅助色，文案随发送键配置切换）
-        Label composerHint = new Label();
-        composerHint.getStyleClass().add("composer-hint");
-        GridPane.setHalignment(composerHint, javafx.geometry.HPos.CENTER);
-        root.add(composerHint, 1, 1);
-        this.composerHint = composerHint;
         getChildren().add(root);
         updatePrompt(); // askPending 默认 false，显示正常发送键提示
-    }
-
-    /** 描边发送箭头（16px 显示尺寸）：按图形实际 bounds 归一化（IconFactory.sizeVisual） */
-    private static SVGPath arrowIcon() {
-        SVGPath icon = IconFactory.strokeSend();
-        IconFactory.sizeVisual(icon, 16);
-        return icon;
     }
 
     /** 确认插入的最终文本：@ 文件补全补回 @ 前缀（FileSuggester 的 insertText 为纯路径）。
@@ -685,12 +667,6 @@ public class InputView extends VBox {
             input.setPromptText("回答: " + (q.length() > 40 ? q.substring(0, 40) + "…" : q));
         } else {
             input.setPromptText("输入消息…  (@ 引用文件  / 命令  " + sendKeyLabel(config.enterSends()) + " 发送)");
-        }
-        // 提示行：与输入框占位文案同源（设置里切换发送键后立即生效）
-        if (composerHint != null) {
-            composerHint.setText(config.enterSends()
-                    ? "Enter 发送 · Ctrl+Enter 换行 · @ 引用文件 · / 命令"
-                    : "Ctrl+Enter 发送 · Enter 换行 · @ 引用文件 · / 命令");
         }
     }
 

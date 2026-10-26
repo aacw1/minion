@@ -19,21 +19,21 @@ import java.util.Random;
 
 /**
  * 运行状态指示器：正文区左下角悬浮（齿轮旋转 + 文案轮换）。
- * 齿轮 2s/圈旋转；文案每 10s 随机轮换（正在加载中…/可随时补充信息…）；
- * 上下文压缩中固定显示「上下文压缩中…」（不参与轮换，压缩结束恢复）。
- * 停止收尾期固定显示「正在停止…」（优先于重试/压缩与轮换）；等待用户（提问挂起/确认卡片）时隐藏但保留运行态。
+ * 齿轮 2s/圈旋转；文案每 10s 随机轮换（正在加载中.../可随时补充信息...）；
+ * 上下文压缩中固定显示「上下文压缩中...」（不参与轮换，压缩结束恢复）。
+ * 停止收尾期固定显示「正在停止...」（优先于重试/压缩与轮换）；等待用户（提问挂起/确认卡片）时隐藏但保留运行态。
  * 弹窗遮挡（suspend/resume）与等待用户是两个独立隐藏原因，任一存在即隐藏，互不覆盖。
  * 动画规约同 StatusDot：隐藏前必须停全部 Timeline，防动画引用节点泄漏。
- * 挂载方式：放入 VBox 独立一行（隐藏时 unmanaged 不占布局，显示时贴输入框上边线；本组件不管理布局）。
+ * 挂载方式：放入 StackPane 并 setAlignment(BOTTOM_LEFT)（本组件不管理布局）。
  */
 public class RunningIndicator extends HBox {
 
     /** 轮换文案池（随机选择，允许连续相同） */
-    static final String[] ROTATING_TEXTS = {"正在加载中…", "可随时补充信息…"};
+    static final String[] ROTATING_TEXTS = {"正在加载中...", "可随时补充信息..."};
     /** 压缩固定文案（只在压缩时显示，不参与轮换） */
-    static final String COMPRESSING_TEXT = "上下文压缩中…";
+    static final String COMPRESSING_TEXT = "上下文压缩中...";
     /** 停止请求已发出、等待工具/请求收尾的固定文案（优先于压缩与轮换） */
-    static final String STOPPING_TEXT = "正在停止…";
+    static final String STOPPING_TEXT = "正在停止...";
     /** 错误体在指示器内的最大显示长度（500/502 展示服务返回的报错，防单行爆宽） */
     static final int BODY_MAX_CHARS = 200;
     /** 点击复制后的反馈文案与显示时长（ms）：短暂提示后按当前状态重绘 */
@@ -206,7 +206,7 @@ public class RunningIndicator extends HBox {
     }
 
     /** 停止态：显示固定文案（齿轮继续转），false 时按当前状态重绘；
-     *  未运行时忽略（不写字段，避免跨回合残留「正在停止…」） */
+     *  未运行时忽略（不写字段，避免跨回合残留「正在停止...」） */
     public void setStopping(boolean stopping) {
         if (!running) return; // 未运行：字段保持复位值，下一回合不受本回合调用影响
         this.stopping = stopping;

@@ -5,7 +5,6 @@ import com.minion.core.tools.db.DataSourceValidator;
 import com.minion.core.tools.db.DbType;
 import com.minion.core.tools.plugin.DbPlugin;
 import com.minion.core.tools.plugin.ToolPluginManager;
-import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.theme.Theme;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -84,7 +83,6 @@ public class DataSourceDialog {
                     "删除数据源「" + sel + "」？", ButtonType.OK, ButtonType.CANCEL);
             a.setTitle("删除数据源");
             Theme.style(a);
-            DarkDialogs.decorate(a, a.getTitle());
             if (owner != null) a.initOwner(owner);
             Optional<ButtonType> r = a.showAndWait();
             if (r.isPresent() && r.get() == ButtonType.OK) {
@@ -124,7 +122,6 @@ public class DataSourceDialog {
         root.setPadding(PluginUi.padding());
         d.getDialogPane().setContent(root);
         d.getDialogPane().setPrefWidth(560);
-        DarkDialogs.decorate(d, db.displayName() + " 数据源管理");
 
         refreshList(db, list, detail);
         d.showAndWait();
@@ -156,7 +153,6 @@ public class DataSourceDialog {
                 PluginUi.row("密码:", password));
         d.getDialogPane().setContent(rows);
         d.getDialogPane().setPrefWidth(600);
-        DarkDialogs.decorate(d, original == null ? "新建数据源" : "修改数据源");
 
         final DataSourceConfig[] out = new DataSourceConfig[1];
         // 校验失败必须 consume 掉 OK 事件，否则 DialogPane 会直接关窗（resultConverter 返回 null 也关窗）

@@ -1,6 +1,5 @@
 package com.minion.gui.plugin;
 
-import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.theme.Theme;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
@@ -59,7 +58,6 @@ final class PluginUi {
         Alert a = new Alert(type, message, ButtonType.OK);
         a.setTitle(title);
         Theme.style(a);
-        DarkDialogs.decorate(a, a.getTitle());
         if (owner != null) a.initOwner(owner);
         a.showAndWait();
     }
