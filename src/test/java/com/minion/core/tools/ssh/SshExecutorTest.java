@@ -4,8 +4,10 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-/** SshExecutor：本测试不依赖真实 sshd。用 127.0.0.1:1（必然拒绝）验证
- *  「不会死等」：connect 失败应秒回且文案可读（若实现真的去等 10s 会暴露）。 */
+/** SshExecutor：本测试不依赖真实 sshd。用 127.0.0.1:1（本机无监听）验证
+ *  「不会死等」：connect 失败必须在连接超时（CONNECT_TIMEOUT_MS）内返回且文案可读。
+ *  端口 1 是否立即 ECONNREFUSED 取决于本机网络栈：部分环境（本机防火墙/WFP 丢弃本机 SYN）
+ *  不回 RST，只能等满超时，故上限取 CONNECT_TIMEOUT_MS + 3s 余量——实现若真无限挂起仍会失败。 */
 public class SshExecutorTest {
 
     private static SshConnection unreachable(String mode) {
@@ -33,7 +35,9 @@ public class SshExecutorTest {
             assertTrue("应含失败原因", e.getMessage().length() > 0);
         }
         long cost = System.currentTimeMillis() - t0;
-        assertTrue("拒绝连接应在 3 秒内返回（实测 5s 超时上限）", cost < 3000);
+        assertTrue("连接失败应在连接超时内返回（实测 " + cost + "ms，上限 "
+                + SshExecutor.CONNECT_TIMEOUT_MS + "ms + 3s 余量）",
+                cost < SshExecutor.CONNECT_TIMEOUT_MS + 3000);
     }
 
     @Test

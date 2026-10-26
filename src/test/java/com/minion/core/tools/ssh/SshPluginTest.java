@@ -73,8 +73,11 @@ public class SshPluginTest {
         p.addConnection(conn("bad"));
         long t0 = System.currentTimeMillis();
         SshExecutor.TestResult r = p.testConnection("bad");
+        long cost = System.currentTimeMillis() - t0;
         assertFalse(r.ok);
-        assertTrue(System.currentTimeMillis() - t0 < 3000);
+        // 端口 1 在部分环境不回 RST（SYN 被丢弃），只能等满连接超时，故上限取超时 + 3s 余量
+        assertTrue("连接失败应在连接超时内返回（实测 " + cost + "ms）",
+                cost < SshExecutor.CONNECT_TIMEOUT_MS + 3000);
     }
 
     @Test
