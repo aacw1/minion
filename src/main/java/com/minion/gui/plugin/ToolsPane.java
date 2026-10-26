@@ -146,6 +146,9 @@ public class ToolsPane {
 
             // 启用开关第一列（最左）；数据库/ssh 行状态列恒空——当前选中/（无连接）均由下拉框表达
             HBox line = new HBox(8, row.enabled, name, row.status, configArea);
+            line.getStyleClass().add("plugin-row");
+            name.getStyleClass().add("plugin-name");
+            row.status.getStyleClass().add("plugin-status");
             HBox.setHgrow(row.status, Priority.ALWAYS);
             line.setPadding(new Insets(4, 0, 4, 0));
             rows.add(row);

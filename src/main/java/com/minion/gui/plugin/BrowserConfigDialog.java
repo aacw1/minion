@@ -3,6 +3,7 @@ package com.minion.gui.plugin;
 import com.minion.core.tools.plugin.BrowserConfig;
 import com.minion.core.tools.plugin.BrowserPlugin;
 import com.minion.core.tools.plugin.ToolPluginManager;
+import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.theme.Theme;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
@@ -76,6 +77,7 @@ public class BrowserConfigDialog {
                 PluginUi.row("超时(ms):", timeoutMs));
         d.getDialogPane().setContent(rows);
         d.getDialogPane().setPrefWidth(600);
+        DarkDialogs.decorate(d, "浏览器操作 配置");
 
         // DialogPane 对任意按钮点击都会关窗，校验失败必须用捕获阶段 filter 先 consume（同「应用」按钮技巧）
         Button ok = (Button) d.getDialogPane().lookupButton(ButtonType.OK);

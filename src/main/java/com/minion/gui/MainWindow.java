@@ -5,6 +5,7 @@ import com.minion.core.config.ModelConfig;
 import com.minion.core.config.WorkspaceConfig;
 import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.ConfirmSheet;
+import com.minion.gui.dialog.DarkDialogs;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.dialog.WorkspaceFormDialog;
 import com.minion.gui.input.InputView;
@@ -40,6 +41,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -106,7 +108,7 @@ public class MainWindow {
         // 自绘标题栏：应用名 | 模型标签 | 留白 | ⚙ | 窗口按钮
         Label modelLabel = new Label(modelLabelText());
         modelLabel.getStyleClass().add("topbar-model");
-        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.ALL_TABS);
         // 需求：标题栏页签点击激活对应会话（userData 存会话 id）；跨工作空间的页签点击先自动切回该空间
         tabs.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> {
             if (nv == null) return;
@@ -138,24 +140,44 @@ public class MainWindow {
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                     sessionList.refresh();
                 });
-        VBox.setVgrow(sessionList, Priority.ALWAYS);
-        Button newSession = new Button("＋ 新建会话");
-        newSession.getStyleClass().add("btn-ghost");
-        newSession.setMaxWidth(Double.MAX_VALUE);
+        Label sessionTitle = new Label("会话");
+        sessionTitle.getStyleClass().add("section-title");
+        Label sessionCount = new Label("0");
+        sessionCount.getStyleClass().add("section-count");
+        sessionCount.textProperty().bind(sessionList.countProperty().asString());
+        Region sessionSpacer = new Region();
+        HBox.setHgrow(sessionSpacer, Priority.ALWAYS);
+        Button newSession = new Button();
+        SVGPath plusIcon = com.minion.gui.icon.IconFactory.strokePlus();
+        com.minion.gui.icon.IconFactory.sizeVisual(plusIcon, 13);
+        newSession.setGraphic(plusIcon);
+        newSession.getStyleClass().add("btn-cell");
+        newSession.setTooltip(new Tooltip("新建会话"));
         newSession.setOnAction(e -> onNewSession());
-        VBox sessionBox = new VBox(6);
-        sessionBox.getChildren().addAll(newSession, sessionList);
+        HBox sessionHead = new HBox(8, sessionTitle, sessionCount, sessionSpacer, newSession);
+        sessionHead.getStyleClass().add("side-head");
+        VBox sessionBox = new VBox(6, sessionHead, sessionList);
+        VBox.setVgrow(sessionList, Priority.ALWAYS);
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
         final WorkspaceListView wsList = new WorkspaceListView(manager);
-        VBox.setVgrow(wsList, Priority.ALWAYS);
-        Button newWs = new Button("＋ 新建工作空间");
-        newWs.getStyleClass().add("btn-ghost");
-        newWs.setMaxWidth(Double.MAX_VALUE);
+
+        Label wsTitle = new Label("工作空间");
+        wsTitle.getStyleClass().add("section-title");
+        Region wsSpacer = new Region();
+        HBox.setHgrow(wsSpacer, Priority.ALWAYS);
+        Button newWs = new Button();
+        SVGPath wsPlusIcon = com.minion.gui.icon.IconFactory.strokePlus();
+        com.minion.gui.icon.IconFactory.sizeVisual(wsPlusIcon, 13);
+        newWs.setGraphic(wsPlusIcon);
+        newWs.getStyleClass().add("btn-cell");
+        newWs.setTooltip(new Tooltip("新建工作空间"));
         newWs.setOnAction(e -> onNewWorkspace(wsList));
-        VBox wsBox = new VBox(6);
-        wsBox.getChildren().addAll(newWs, wsList);
+        HBox wsHead = new HBox(8, wsTitle, wsSpacer, newWs);
+        wsHead.getStyleClass().add("side-head");
+        VBox wsBox = new VBox(6, wsHead, wsList);
+        VBox.setVgrow(wsList, Priority.ALWAYS);
         VBox.setVgrow(wsBox, Priority.ALWAYS);
-        // VBox(8) 间距自然分隔上下两区，不加分隔线
+        // 上下两区靠 VBox 间距（CSS .panel 的 -fx-spacing）自然分隔，不加分隔线
         sidebar.getChildren().setAll(sessionBox, wsBox);
         // 需求：会话/工作空间高度固定黄金比例 0.618:0.382（VBox 无权重 API，监听高度动态设 prefHeight 实现）
         sidebar.heightProperty().addListener((obs, ov, nv) -> {
@@ -176,14 +198,14 @@ public class MainWindow {
         setupAutoScroll();
         WheelScrollAccelerator.attach(chatScroll); // 滚轮加速：每格固定像素滚动（替换 JavaFX 8 默认慢速比例滚动）
         inputView = new InputView(manager, MinionApp.config());
-        // 运行状态指示器：正文区左下角悬浮（齿轮+动态文案），StackPane 叠加于消息区之上，不占布局
+        // 运行状态指示器：独立一行，放在消息区与输入框之间（不再悬浮覆盖正文；
+        // 隐藏时不占布局，显示时贴输入框上边线）
         runningIndicator = new RunningIndicator();
-        StackPane chatHost = new StackPane(chatScroll, runningIndicator);
-        StackPane.setAlignment(runningIndicator, Pos.BOTTOM_LEFT);
-        StackPane.setMargin(runningIndicator, new Insets(0, 0, 10, 14));
+        runningIndicator.managedProperty().bind(runningIndicator.visibleProperty());
+        VBox.setMargin(runningIndicator, new Insets(0, 0, -8, 14));
         // JavaFX 8 无 StackPane.setFillWidth/Height（12+ 才有）：用 max 钳制防默认 fill 拉伸铺满
         runningIndicator.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        VBox.setVgrow(chatHost, Priority.ALWAYS); // 原 chatScroll 的 vgrow 约束移交 chatHost
+        VBox.setVgrow(chatScroll, Priority.ALWAYS);
         // 页签栏（右侧顶部，下带 1px 分隔线；页签为空时整行隐藏）
         tabsBar = new HBox(tabs);
         tabsBar.getStyleClass().add("tabs-bar");
@@ -195,7 +217,7 @@ public class MainWindow {
         // 启动时无页签（懒加载）；注册监听后立即同步一次初始可见性
         tabsBar.setVisible(!tabs.getTabs().isEmpty());
         tabsBar.setManaged(!tabs.getTabs().isEmpty());
-        right.getChildren().setAll(tabsBar, chatHost, inputView);
+        right.getChildren().setAll(tabsBar, chatScroll, runningIndicator, inputView);
 
         // 右侧面板外包 StackPane：ConfirmSheet 遮罩与卡片挂其顶层（遮罩范围即右侧，不越分隔线）
         StackPane rightStack = new StackPane(right);
@@ -230,7 +252,10 @@ public class MainWindow {
                 });
             }
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
-                Platform.runLater(() -> updateTab(h));
+                Platform.runLater(() -> {
+                    updateTab(h);
+                    sessionList.refresh(); // 运行态变化：侧栏运行点即时变绿/变灰（TabPane/列表各自维护 graphic）
+                });
                 if (inputView != null) inputView.onRunningChanged(h, running);
                 // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写，统一 runLater 访问）
                 Platform.runLater(() -> {
@@ -402,6 +427,7 @@ public class MainWindow {
         a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
         Theme.style(a);
         a.setTitle("退出确认");
+        DarkDialogs.decorate(a, a.getTitle());
         a.showAndWait();
         if (a.getResult() == ButtonType.OK) {
             manager.shutdown();
@@ -531,6 +557,7 @@ public class MainWindow {
                             + "（后两项留空视为合法）", ButtonType.OK);
             Theme.style(a);
             a.setTitle("新建失败");
+            DarkDialogs.decorate(a, a.getTitle());
             a.showAndWait();
         }
         wsList.refresh();
@@ -552,6 +579,7 @@ public class MainWindow {
                 String title = h.title == null ? "(新会话)" : h.title;
                 t.setText(tabTitle(title));
                 t.setTooltip(new Tooltip(title)); // 完整标题提示
+                StatusDot.stopPulseIn(t.getGraphic()); // 回收旧状态点的无限 Timeline（替换 graphic 前必须停）
                 t.setGraphic(runningIndicator(h));
                 return;
             }
@@ -578,6 +606,7 @@ public class MainWindow {
                 a.getDialogPane().getStyleClass().add("dialog-exit"); // 正文居中
                 Theme.style(a);
                 a.setTitle("关闭会话");
+                DarkDialogs.decorate(a, a.getTitle());
                 a.showAndWait();
                 if (a.getResult() != ButtonType.OK) return; // 取消：页签保留、运行继续
                 manager.stop(h); // 中断运行（会话不删除，保留在列表）
@@ -585,6 +614,7 @@ public class MainWindow {
             // 关闭流程：卸载视图缓存（再次从左侧打开时重新加载）+ 移除页签
             openedIds.remove(h.id);
             viewCache.remove(h.id);
+            StatusDot.stopPulseIn(t.getGraphic()); // 页签离场：回收状态点无限 Timeline（不停则动画持续跑）
             tabs.getTabs().remove(t);
             if (chatView != null && chatView.handle() == h) {
                 manager.deactivateSession(h); // 幂等守卫不再拦截再次激活
@@ -599,6 +629,7 @@ public class MainWindow {
     private void removeTabById(String id) {
         for (Tab t : tabs.getTabs()) {
             if (id.equals(t.getUserData())) {
+                StatusDot.stopPulseIn(t.getGraphic()); // 删除会话联动移页签：先回收状态点动画
                 tabs.getTabs().remove(t);
                 return;
             }

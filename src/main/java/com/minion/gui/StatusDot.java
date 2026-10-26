@@ -13,7 +13,8 @@ import javafx.util.Duration;
  * 运行中状态点：呼吸动画（opacity 0.35↔1.0 往复）。
  * JavaFX 8 不支持 CSS keyframe 动画（-fx-animation 无效），故用 Timeline 实现。
  * 动画 Timeline 以 KeyValue 强引用节点，节点被丢弃前必须 stopPulseIn 回收，
- * 否则每次重建状态点都泄漏一个无限动画（ListView updateItem / tab 重建高频路径）。
+ * 否则每次重建状态点都泄漏一个无限动画（ListView updateItem / 页签 tab graphic 替换与移除等高频路径；
+ * 侧栏 SessionListView 与主窗口 MainWindow 的页签更新/关闭/删除均已接入回收）。
  */
 public final class StatusDot {
 
@@ -29,7 +30,10 @@ public final class StatusDot {
     public static Circle create(boolean running) {
         Circle dot = new Circle(4);
         dot.getStyleClass().add("status-dot");
-        if (running) startPulse(dot);
+        if (running) {
+            dot.getStyleClass().add("status-dot-running");
+            startPulse(dot);
+        }
         return dot;
     }
 
@@ -51,7 +55,7 @@ public final class StatusDot {
         if (t instanceof Timeline) ((Timeline) t).stop();
     }
 
-    /** 递归停止节点子树内全部状态点动画（ListView 旧 graphic / tab 旧头回收用） */
+    /** 递归停止节点子树内全部状态点动画（ListView 旧 graphic / tab 旧 graphic 替换或移除时回收） */
     public static void stopPulseIn(Node root) {
         if (root == null) return;
         stopPulse(root);

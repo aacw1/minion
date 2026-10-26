@@ -29,39 +29,39 @@ public class RunningIndicatorTest {
     @Test
     public void rotatingPool_hasTwoEntries() {
         assertEquals(2, RunningIndicator.ROTATING_TEXTS.length);
-        assertEquals("正在加载中...", RunningIndicator.ROTATING_TEXTS[0]);
-        assertEquals("可随时补充信息...", RunningIndicator.ROTATING_TEXTS[1]);
+        assertEquals("正在加载中…", RunningIndicator.ROTATING_TEXTS[0]);
+        assertEquals("可随时补充信息…", RunningIndicator.ROTATING_TEXTS[1]);
     }
 
     /** 压缩中固定显示压缩文案，不参与轮换 */
     @Test
     public void displayText_compressingOverrides() {
-        assertEquals("上下文压缩中...", RunningIndicator.COMPRESSING_TEXT);
-        assertEquals("上下文压缩中...", RunningIndicator.displayText(true, "正在加载中..."));
-        assertEquals("正在加载中...", RunningIndicator.displayText(false, "正在加载中..."));
+        assertEquals("上下文压缩中…", RunningIndicator.COMPRESSING_TEXT);
+        assertEquals("上下文压缩中…", RunningIndicator.displayText(true, "正在加载中…"));
+        assertEquals("正在加载中…", RunningIndicator.displayText(false, "正在加载中…"));
     }
 
     /** 重试文案：冻结基础文案 + 429 限流后缀（明确限流，不显示错误体） */
     @Test
     public void retryText_429_noBody() {
-        assertEquals("正在加载中...(429限流，重试第3次)",
-                RunningIndicator.retryText(RetryProgress.of(3, 429, null), "正在加载中..."));
-        assertEquals("可随时补充信息...(429限流，重试第1次)",
-                RunningIndicator.retryText(RetryProgress.of(1, 429, ""), "可随时补充信息..."));
+        assertEquals("正在加载中…(429限流，重试第3次)",
+                RunningIndicator.retryText(RetryProgress.of(3, 429, null), "正在加载中…"));
+        assertEquals("可随时补充信息…(429限流，重试第1次)",
+                RunningIndicator.retryText(RetryProgress.of(1, 429, ""), "可随时补充信息…"));
     }
 
     /** 500 服务报错：附带服务返回的错误体 */
     @Test
     public void retryText_500_withBody() {
-        assertEquals("正在加载中...(500服务报错，重试第2次{\"error\":\"boom\"})",
-                RunningIndicator.retryText(RetryProgress.of(2, 500, "{\"error\":\"boom\"}"), "正在加载中..."));
+        assertEquals("正在加载中…(500服务报错，重试第2次{\"error\":\"boom\"})",
+                RunningIndicator.retryText(RetryProgress.of(2, 500, "{\"error\":\"boom\"}"), "正在加载中…"));
     }
 
     /** 502 网关报错：附带错误体 */
     @Test
     public void retryText_502_withBody() {
-        assertEquals("可随时补充信息...(502网关报错，重试第1次bad gateway)",
-                RunningIndicator.retryText(RetryProgress.of(1, 502, "bad gateway"), "可随时补充信息..."));
+        assertEquals("可随时补充信息…(502网关报错，重试第1次bad gateway)",
+                RunningIndicator.retryText(RetryProgress.of(1, 502, "bad gateway"), "可随时补充信息…"));
     }
 
     /** 错误体截断：只显示前 200 字符（429/500/502 一致） */
@@ -72,7 +72,7 @@ public class RunningIndicatorTest {
         String longBody = sb.toString();
         assertEquals(200, RunningIndicator.bodyPart(RetryProgress.of(1, 500, longBody)).length());
         assertEquals(200, RunningIndicator.bodyPart(RetryProgress.of(1, 429, longBody)).length());
-        assertTrue(RunningIndicator.retryText(RetryProgress.of(1, 500, longBody), "正在加载中...")
+        assertTrue(RunningIndicator.retryText(RetryProgress.of(1, 500, longBody), "正在加载中…")
                 .contains(longBody.substring(0, 200)));
     }
 
@@ -88,16 +88,16 @@ public class RunningIndicatorTest {
     @Test
     public void retryText_networkTimeout() {
         RetryProgress p = RetryProgress.ofNetwork(3, "网络超时", "请求超时：60 秒内未收到模型输出");
-        assertEquals("正在加载中...(网络超时，重试第3次：60 秒内未收到模型输出)",
-                RunningIndicator.retryText(p, "正在加载中..."));
+        assertEquals("正在加载中…(网络超时，重试第3次：60 秒内未收到模型输出)",
+                RunningIndicator.retryText(p, "正在加载中…"));
     }
 
     /** 网络错误：剥 "网络错误: " 前缀 */
     @Test
     public void retryText_networkError() {
         RetryProgress p = RetryProgress.ofNetwork(7, "网络错误", "网络错误: Failed to connect to api.xx.com");
-        assertEquals("可随时补充信息...(网络错误，重试第7次：Failed to connect to api.xx.com)",
-                RunningIndicator.retryText(p, "可随时补充信息..."));
+        assertEquals("可随时补充信息…(网络错误，重试第7次：Failed to connect to api.xx.com)",
+                RunningIndicator.retryText(p, "可随时补充信息…"));
     }
 
     /** 半角冒号前缀同样剥除（okhttp 消息形态不一） */
@@ -130,12 +130,12 @@ public class RunningIndicatorTest {
     @Test
     public void retryText_withDelay_appendsWaitHint() {
         RetryProgress p = RetryProgress.from(2, LlmException.of(500, "{\"error\":\"boom\"}"), 30000);
-        assertEquals("正在加载中...(500服务报错，重试第2次{\"error\":\"boom\"}，约 30 秒后重试)",
-                RunningIndicator.retryText(p, "正在加载中..."));
+        assertEquals("正在加载中…(500服务报错，重试第2次{\"error\":\"boom\"}，约 30 秒后重试)",
+                RunningIndicator.retryText(p, "正在加载中…"));
         RetryProgress q = RetryProgress.from(1,
                 new LlmException(LlmException.Type.RATE_LIMIT, "429", true), 5000);
-        assertEquals("可随时补充信息...(429限流，重试第1次，约 5 秒后重试)",
-                RunningIndicator.retryText(q, "可随时补充信息..."));
+        assertEquals("可随时补充信息…(429限流，重试第1次，约 5 秒后重试)",
+                RunningIndicator.retryText(q, "可随时补充信息…"));
     }
 
     /** 不足 1 秒向上取整到 1 秒；无等待时长（<=0）不追加 */
@@ -151,49 +151,49 @@ public class RunningIndicatorTest {
     public void retryText_duringCompressing_usesCompressingBase() {
         RetryProgress p = RetryProgress.from(1,
                 new LlmException(LlmException.Type.EMPTY_RESPONSE, "空响应", true), 30000);
-        assertEquals("上下文压缩中...(空响应，重试第1次，约 30 秒后重试)",
+        assertEquals("上下文压缩中…(空响应，重试第1次，约 30 秒后重试)",
                 RunningIndicator.retryText(p, RunningIndicator.COMPRESSING_TEXT));
     }
 
     /** 状态优先级：等待用户（隐藏）> 正在停止 > 压缩 > 轮换 */
     @Test
     public void statusText_stoppingOverridesCompressing() {
-        assertEquals("正在停止...", RunningIndicator.STOPPING_TEXT);
-        assertEquals("正在停止...", RunningIndicator.statusText(true, true, "正在加载中..."));
-        assertEquals("正在停止...", RunningIndicator.statusText(true, false, "可随时补充信息..."));
-        assertEquals("上下文压缩中...", RunningIndicator.statusText(false, true, "正在加载中..."));
-        assertEquals("正在加载中...", RunningIndicator.statusText(false, false, "正在加载中..."));
+        assertEquals("正在停止…", RunningIndicator.STOPPING_TEXT);
+        assertEquals("正在停止…", RunningIndicator.statusText(true, true, "正在加载中…"));
+        assertEquals("正在停止…", RunningIndicator.statusText(true, false, "可随时补充信息…"));
+        assertEquals("上下文压缩中…", RunningIndicator.statusText(false, true, "正在加载中…"));
+        assertEquals("正在加载中…", RunningIndicator.statusText(false, false, "正在加载中…"));
     }
 
     /** 真实优先级链：停止高于重试（即使 retryBase 已冻结、压缩中） */
     @Test
     public void renderTextFor_stoppingBeatsRetry() {
         RetryProgress p = RetryProgress.of(2, 500, "{\"e\":1}");
-        assertEquals("正在停止...", RunningIndicator.STOPPING_TEXT);
-        assertEquals("正在停止...", RunningIndicator.renderTextFor(
-                true, "正在加载中...", p, false, "可随时补充信息..."));
-        assertEquals("正在停止...", RunningIndicator.renderTextFor(
-                true, "正在加载中...", p, true, "正在加载中..."));
+        assertEquals("正在停止…", RunningIndicator.STOPPING_TEXT);
+        assertEquals("正在停止…", RunningIndicator.renderTextFor(
+                true, "正在加载中…", p, false, "可随时补充信息…"));
+        assertEquals("正在停止…", RunningIndicator.renderTextFor(
+                true, "正在加载中…", p, true, "正在加载中…"));
     }
 
     /** 非停止态且 retryBase 非空：返回重试文案（重试高于压缩；base 用冻结文案而非当前轮换文案） */
     @Test
     public void renderTextFor_retryBeatsCompressing() {
         RetryProgress p = RetryProgress.of(2, 500, "{\"e\":1}");
-        assertEquals("正在加载中...(500服务报错，重试第2次{\"e\":1})",
-                RunningIndicator.renderTextFor(false, "正在加载中...", p, false, "可随时补充信息..."));
-        assertEquals("上下文压缩中...(429限流，重试第1次)",
+        assertEquals("正在加载中…(500服务报错，重试第2次{\"e\":1})",
+                RunningIndicator.renderTextFor(false, "正在加载中…", p, false, "可随时补充信息…"));
+        assertEquals("上下文压缩中…(429限流，重试第1次)",
                 RunningIndicator.renderTextFor(false, RunningIndicator.COMPRESSING_TEXT,
-                        RetryProgress.of(1, 429, null), true, "正在加载中..."));
+                        RetryProgress.of(1, 429, null), true, "正在加载中…"));
     }
 
     /** 非停止、非重试：压缩固定文案优先，否则原样返回当前轮换文案 */
     @Test
     public void renderTextFor_compressingAndRotatingFallback() {
-        assertEquals("上下文压缩中...",
-                RunningIndicator.renderTextFor(false, null, null, true, "正在加载中..."));
-        assertEquals("可随时补充信息...",
-                RunningIndicator.renderTextFor(false, null, null, false, "可随时补充信息..."));
+        assertEquals("上下文压缩中…",
+                RunningIndicator.renderTextFor(false, null, null, true, "正在加载中…"));
+        assertEquals("可随时补充信息…",
+                RunningIndicator.renderTextFor(false, null, null, false, "可随时补充信息…"));
     }
 
     /** 可见性口径：等待用户与弹窗遮挡是独立隐藏原因，互不覆盖（resume 不得掀开等待用户态，

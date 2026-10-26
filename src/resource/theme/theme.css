@@ -1,13 +1,66 @@
-/* minion 深色科技感主题 */
+/* minion 暖石深色主题（A 方案）
+   令牌：bg #1b1a18 / panel #201e1b / title #24221f / surface #262320
+         border #3a362f / text #f4efe7 / text-2 #b6afa2 / text-3 #857f74
+         accent #d97757 / accent-2 #e3a06b / accent-ink #23130d
+   注意：JavaFX 8 不支持 CSS 变量，以下颜色写死，改色时全局搜索替换。 */
 .root {
-    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
-    -fx-font-size: 16px;
-    -fx-background-color: #0f1115;
+    -fx-font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: #1b1a18;
 }
 
-/* 面板（左侧侧栏 rgb(25,26,27)、右侧正文 rgb(18,19,20)） */
-.panel { -fx-background-color: #191a1b; -fx-border-color: #232733; -fx-border-width: 0 1 0 0; }
-.panel-dark { -fx-background-color: #121314; }
+/* 面板（侧栏 #201e1b、正文 #1b1a18） */
+.panel-dark { -fx-background-color: #1b1a18; }
+.msg-textarea .content {
+    -fx-background-color: #1b1a18;
+    -fx-padding: 0; /* 沿用旧规则：非零内边距会让正文内缩，且与 MessageTextArea 高度测量口径不符 */
+}
+
+/* 按钮（应用按钮统一样式类；注意 JavaFX Button 的默认类名是 button，
+   故字号/内边距必须落在具体按钮类上，另见下方 .btn-* 汇总规则） */
+.btn-primary {
+    -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757);
+    -fx-text-fill: #23130d;
+    -fx-font-weight: bold;
+}
+.btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #e69a78, #e08a66); }
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: #b6afa2;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 7;
+}
+.btn-ghost:hover { -fx-text-fill: #f4efe7; -fx-border-color: #4a453c; -fx-background-color: #2c2925; }
+.btn-send-empty, .btn-send-full {
+    -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757);
+    -fx-text-fill: #23130d;
+    -fx-font-weight: bold;
+    -fx-background-radius: 9;
+}
+.btn-send-empty:hover, .btn-send-full:hover { -fx-background-color: #e69a78; }
+/* 按钮字号/内边距：JavaFX Button 默认类名是 button（.btn 无节点使用），此处按具体样式类补齐 */
+.btn-primary, .btn-ghost, .btn-send-empty, .btn-send-full,
+.btn-approve, .btn-cell, .btn-close { -fx-font-size: 12px; }
+/* .btn-primary 只出现在 InputView 的 removeAll 清理列表里（从无节点携带），
+   故不参与内边距汇总（避免死规则）；字号汇总保留它无副作用 */
+.btn-ghost, .btn-send-empty, .btn-send-full, .btn-approve { -fx-padding: 6 13 6 13; }
+.btn-ghost { -fx-background-radius: 7; }
+
+/* 滚动条（变窄；箭头按钮隐藏） */
+.scroll-bar:vertical { -fx-background-color: transparent; -fx-pref-width: 9px; }
+.scroll-bar:vertical .thumb { -fx-background-color: #3a362f; -fx-background-radius: 5; }
+.scroll-bar:vertical .thumb:hover { -fx-background-color: #4a453c; }
+.scroll-bar:vertical .increment-button, .scroll-bar:vertical .decrement-button { -fx-pref-height: 0; -fx-opacity: 0; }
+.tooltip { -fx-background-color: #2c2925; -fx-text-fill: #f4efe7; -fx-font-size: 11.5px; -fx-background-radius: 6; -fx-padding: 5 8 5 8; }
+
+/* 侧栏面板（左侧；暖石：底 #201e1b、右侧 1px 高光分隔线、padding 14 12 12 12） */
+.panel {
+    -fx-background-color: #201e1b;
+    -fx-border-color: transparent rgba(255,255,255,0.07) transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 14 12 12 12;
+    -fx-spacing: 6;
+}
 .card {
     -fx-background-color: #1a1d24;
     -fx-background-radius: 8;
@@ -17,46 +70,42 @@
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 10, 0, 0, 2);
 }
 
-/* 顶部栏 */
+/* 顶部栏（暖石：标题栏底色 #24221f，底部 1px 高光分隔线）
+   注：HBox 默认对齐 TOP_LEFT，标题栏固定 46 高后须显式垂直居中，否则内容贴顶 */
 .topbar {
-    -fx-background-color: #12141a;
-    -fx-border-color: transparent transparent #232733 transparent;
+    -fx-background-color: #24221f;
+    -fx-border-color: transparent transparent rgba(255,255,255,0.07) transparent;
     -fx-border-width: 0 0 1 0;
-    -fx-padding: 8 12 8 12;
+    -fx-padding: 0 10 0 14;
+    -fx-pref-height: 46;
+    -fx-spacing: 10;
+    -fx-alignment: center-left;
 }
-.topbar-title { -fx-text-fill: #f0f2f6; -fx-font-size: 16px; -fx-font-weight: bold; }
-.topbar-model { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; }
-
-/* 按钮 */
-.btn { -fx-background-radius: 6; -fx-padding: 6 14 6 14; -fx-cursor: hand; }
-.btn-primary {
-    -fx-background-color: linear-gradient(to bottom, #4f8cff, #3b6fe0);
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
+/* 应用标志：18×18 渐变方块（外框尺寸由 TitleBar 的 Region min/pref/max 控制） */
+.brand-logo {
+    -fx-background-color: linear-gradient(to bottom right, #d97757, #e3a06b);
+    -fx-background-radius: 5;
 }
-.btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
-/* 发送/确认按钮三态色：空内容与运行中 #f48771，有内容非运行 #ff947c（hover 向浅微调） */
-.btn-send-empty {
-    -fx-background-color: #f48771;
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-background-radius: 8;
+.topbar-title { -fx-text-fill: #f4efe7; -fx-font-size: 15px; -fx-font-weight: bold; }
+.topbar-model {
+    -fx-text-fill: #b6afa2;
+    -fx-font-size: 11.5px;
+    -fx-background-color: #262320;
+    -fx-background-radius: 999;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 999;
+    -fx-padding: 4 9 4 9;
 }
-.btn-send-empty:hover { -fx-background-color: #f69b85; }
-.btn-send-full {
-    -fx-background-color: #ff947c;
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-background-radius: 8;
+/* 标题栏纯图标按钮（设置/最小化/最大化/还原/关闭）：设计稿统一 30×30。
+   2 类选择器压过上方按钮汇总规则的通用内边距（6 13）与 modena 默认 padding，
+   否则 14px 图标被横向撑成 40px 宽、关闭键又按文字内边距排出另一尺寸。
+   只设尺寸不碰底色：关闭键 hover 红底仍由 .btn-close:hover 决定 */
+.topbar .btn-ghost, .topbar .btn-close {
+    -fx-padding: 3 5 3 5;
+    -fx-background-radius: 7;
+    -fx-min-width: 30; -fx-pref-width: 30; -fx-max-width: 30;
+    -fx-min-height: 30; -fx-pref-height: 30; -fx-max-height: 30;
 }
-.btn-send-full:hover { -fx-background-color: #ffa894; }
-.btn-ghost {
-    -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
-    -fx-border-color: #232733;
-    -fx-border-radius: 6;
-}
-.btn-ghost:hover { -fx-text-fill: #f0f2f6; -fx-border-color: #4f8cff; }
 
 /* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
    通用色 #a8b0bb（同按钮文字色）；hover 由所在按钮容器联动变白/变色 */
@@ -72,6 +121,28 @@
 .btn-cell:hover .icon-edit { -fx-fill: #4f8cff; }
 .icon-delete { -fx-fill: #a8b0bb; }
 .btn-cell:hover .icon-delete { -fx-fill: #e05b5b; }
+/* 侧栏分组标题右侧「新建」加号（text-2 → hover text-1） */
+.icon-plus { -fx-fill: #b6afa2; }
+.btn-cell:hover .icon-plus { -fx-fill: #f4efe7; }
+
+/* ===== 描边图标（关键按钮：标题栏窗口按钮/设置、新建、发送箭头）=====
+   fill 透明 + 描边取色；2.2 线宽在 24 viewport 下绘制，显示时按 14/16px 缩放（线宽同比约 1.3~1.5px）。
+   放在填充图标规则之后：同特异度时以后置规则覆盖 -fx-fill（避免 .icon-send/.icon-plus 等把叉/箭头填成实心）。 */
+.icon-stroke {
+    -fx-fill: transparent;
+    -fx-stroke: #b6afa2;
+    -fx-stroke-width: 2.2;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+}
+/* hover 变色（fill 一并钉死 transparent：.btn-close:hover .icon-close 等既有规则会填实描边路径） */
+.btn-ghost:hover .icon-stroke, .btn-cell:hover .icon-stroke, .btn-close:hover .icon-stroke {
+    -fx-fill: transparent;
+    -fx-stroke: #f4efe7;
+}
+/* 发送键（主色底）：深色箭头/方块，保证对比度 */
+.btn-send-full .icon-stroke, .btn-send-empty .icon-stroke { -fx-stroke: #23130d; }
+.btn-send-full .icon-stop, .btn-send-empty .icon-stop { -fx-fill: #23130d; }
 
 /* 当前标记圆点（工作空间列表/设置窗模型列表） */
 .icon-dot { -fx-fill: #4f8cff; }
@@ -88,7 +159,7 @@
 .log-collapse-toggle:hover .icon-chevron { -fx-fill: #f0f2f6; }
 
 /* 正文摘要行文本（图标+文字组合） */
-.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 13px; }
+.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 12.5px; }
 
 /* 窗口关闭按钮（无边框窗口） */
 .btn-close {
@@ -99,43 +170,51 @@
 }
 .btn-close:hover { -fx-background-color: #c93a39; -fx-text-fill: white; }
 
-/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
+/* ===== 输入区大框（暖石：surface 底 + 1px border + 圆角 14，61.8% 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
 .input-frame {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 8;
-    -fx-border-color: #232733;
-    -fx-border-radius: 8;
-    -fx-padding: 8 10 8 14;
+    -fx-background-color: #262320;
+    -fx-background-radius: 14;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 14;
+    -fx-padding: 9 10 8 14;
     -fx-font-smoothing-type: lcd;
 }
+/* 输入框聚焦：仅主色 1px 边框（1.5px 会改变 border insets，触发 1px 布局抖动；不用 dropshadow：
+   effect 会让 TextArea 整棵子树离屏渲染，丢失 LCD 子像素抗锯齿导致正文发虚。InputView focus 监听切换样式类，失焦还原 border #3a362f） */
+.input-frame-focused {
+    -fx-border-color: #d97757;
+    -fx-border-width: 1;
+}
+/* transparent 底与 control-inner-background 保留：防 modena 默认白底在暖石 surface 上露白 */
 .input-frame .input-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
-    -fx-text-fill: #f0f2f6;
-    -fx-prompt-text-fill: #7a828e;
+    -fx-text-fill: #f4efe7;
+    -fx-prompt-text-fill: #857f74;
     -fx-highlight-fill: #3b6fe0;
+    -fx-font-size: 14px;
 }
 .input-frame .input-textarea .content { -fx-background-color: transparent; }
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
-/* 输入框聚焦：大框边框 #f48771（InputView focus 监听切换样式类，失焦还原 #232733） */
-.input-frame-focused { -fx-border-color: #f48771; }
-.input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
+.input-divider { -fx-background-color: #3a362f; }
+/* 提示行（InputView.composerHint）：输入框下方居中 11px 辅助色，文案随设置里的发送键切换 */
+.composer-hint { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-padding: 6 0 0 0; }
 
 /* 键盘空输入提示（InputView toast）：悬浮输入框上方居中，3 秒自动淡出，不占布局不挡鼠标 */
 .input-toast {
-    -fx-background-color: #232733;
-    -fx-border-color: #3a4050;
+    -fx-background-color: #332f2a;
+    -fx-border-color: #4a453c;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
-    -fx-padding: 5 12 5 12;
-    -fx-font-size: 12px;
-    -fx-text-fill: #a8b0bb;
+    -fx-padding: 5 12 5 12; /* 沿用旧规则：胶囊内边距 */
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #b6afa2;
 }
 
-/* 上传按钮（输入框底部操作行左）：回形针图标（Material 线性填充，同 icon-settings 色系） */
+/* 上传按钮（输入框底部操作行左）：回形针图标（26×26 由 Java 定尺寸，CSS 不设宽高） */
 .btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
-.icon-upload { -fx-fill: #a8b0bb; }
-.btn-upload:hover .icon-upload { -fx-fill: #f0f2f6; }
+.icon-upload { -fx-fill: #857f74; }
+.btn-upload:hover .icon-upload { -fx-fill: #f4efe7; }
 
 /* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
 .chip-row { -fx-hgap: 8; -fx-vgap: 8; }
@@ -145,69 +224,58 @@
     -fx-border-width: 1;
     -fx-padding: 2 4 2 8;
 }
-.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 14px; }
+.chip-label { -fx-text-fill: #f4efe7; -fx-font-size: 11.5px; }
 .chip-close {
     -fx-background-color: transparent;
     -fx-padding: 0 4 0 4;
     -fx-background-radius: 4;
     -fx-cursor: hand;
 }
-.chip-close .icon-close { -fx-fill: #98a0ab; }
-.chip-close:hover { -fx-background-color: rgba(248, 81, 73, 0.15); }
-.chip-close:hover .icon-close { -fx-fill: #f85149; }
-.input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
-.input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
-.input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
-.input-chip-image { -fx-background-color: #241f38; -fx-border-color: #7c5cd6; }
+.chip-close .icon-close { -fx-fill: #b6afa2; }
+.chip-close:hover { -fx-background-color: rgba(224, 130, 114, 0.15); }
+.chip-close:hover .icon-close { -fx-fill: #e08272; }
+.input-chip-command, .input-chip-skill { -fx-background-color: #2f2723; -fx-border-color: #5d4034; }
+.input-chip-file { -fx-background-color: #25301f; -fx-border-color: #4a5d3a; }
+.input-chip-paste { -fx-background-color: #2a2723; -fx-border-color: #3a362f; }
+.input-chip-image { -fx-background-color: #2b2430; -fx-border-color: #55405f; }
 
-/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
-.suggest-list {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 8;
-    -fx-border-color: #2a2f3a;
-    -fx-border-radius: 8;
-    -fx-font-smoothing-type: lcd;
-    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
-       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
-       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
-    -fx-padding: 0;
-}
-.suggest-list .list-cell { -fx-background-color: transparent; -fx-padding: 6 10 6 10; }
-.suggest-list .list-cell:hover { -fx-background-color: #20242e; }
-.suggest-list .list-cell:selected { -fx-background-color: #2a3344; }
-.suggest-label { -fx-text-fill: #d3d7de; }
-.suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #f0f2f6; }
-.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 14px; }
+/* 补全弹层（/命令、@文件）样式统一放到文件末尾：
+   .list-view .list-cell 与本弹层的 cell 规则特异度相同，靠「后置」+「:filled 态」双保险，避免被列表样式串色 */
 
-/* 列表 */
-.list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
-/* 抄 Claude VSCode 插件侧栏页签：背景内缩成胶囊（上下 1px、左右 2px）+ 圆角；
-   hover/selected 只对 filled cell 生效——列表底部空白区域由空 cell 填充，保持透明不变色 */
+/* 列表（暖石：透明底；行背景内缩成 8 圆角胶囊，hover/selected 仅对 filled cell 生效——
+   列表底部空白区域由空 cell 填充，保持透明不变色） */
+.list-view { -fx-background-color: transparent; }
 .list-view .list-cell {
     -fx-background-color: transparent;
-    -fx-background-insets: 1 4 1 4;
+    -fx-background-insets: 1 2 1 2;
     -fx-background-radius: 8;
-    -fx-text-fill: #d3d7de;
-    -fx-padding: 9 12 9 12;
+    -fx-padding: 8 10 8 10;
+    -fx-text-fill: #b6afa2;
 }
-.list-view .list-cell:filled { -fx-background-color: #1a1d24; }
-.list-view .list-cell:filled:hover { -fx-background-color: #20242e; }
-.list-view .list-cell:filled:selected { -fx-background-color: #232a38; -fx-text-fill: #f0f2f6; }
+.list-view .list-cell:filled:hover { -fx-background-color: #2c2925; }
+.list-view .list-cell:filled:selected { -fx-background-color: #332f2a; -fx-border-color: transparent transparent transparent #d97757; -fx-border-width: 0 0 0 2; }
 
-/* 页签 */
+/* 页签（暖石：无底色，选中项底部 2px 陶土橙线） */
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
 .tab-pane > .tab-content-area { -fx-min-height: 0; -fx-pref-height: 0; -fx-max-height: 0; }
-/* 抄 Claude VSCode 插件页签：椭圆圆角 左右 2px / 上下 1px（须显式 8 值：JavaFX 8 对 `2 / 1` 简写丢垂直半径） */
-.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 2 2 2 2 / 1 1 1 1; -fx-padding: 4 12; }
-.tab-pane .tab:hover { -fx-background-color: #1a1d24; } /* 去掉未选中页签 hover 变色（固定底色） */
-.tab-pane .tab:selected { -fx-background-color: #232a38; }
-.tab-pane .tab:selected:hover { -fx-background-color: #232a38; } /* 选中页签 hover 同样固定 */
-.tab-pane .tab-label { -fx-text-fill: #a8b0bb; }
-.tab-pane .tab:selected .tab-label { -fx-text-fill: #f0f2f6; }
+.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 11 12 9 12;
+    -fx-min-width: 0;
+}
+.tab-pane .tab:hover { -fx-background-color: #2c2925; }
+.tab-pane .tab:selected { -fx-background-color: transparent; -fx-border-color: transparent transparent #d97757 transparent; }
+.tab-pane .tab-label { -fx-text-fill: #857f74; -fx-font-size: 12.5px; }
+.tab-pane .tab:selected .tab-label { -fx-text-fill: #f4efe7; }
+/* 关闭按钮的 × 由 modena 的 -fx-shape + -fx-background-color 绘制，置 transparent 会让 × 消失，故显式给可见前景色 */
+.tab-pane .tab .tab-close-button { -fx-background-color: #857f74; }
+.tab-pane .tab .tab-close-button:hover { -fx-background-color: #f4efe7; }
 
 /* 页签溢出：隐藏控制按钮（下拉箭头/滚动），超出宽度由 header 裁剪，不显示滚动条 */
 .tab-pane > .tab-header-area > .control-buttons-tab { visibility: hidden; }
-.tab-pane .tab { -fx-min-width: 0; }
 
 /* 消息 */
 .msg-user {
@@ -243,7 +311,7 @@
    背景策略（探针 2026-08-15 实证，纠正 8-13「显式 LCD」假阳性）：
    - JavaFX 8 Prism 对透明表面只做灰阶抗锯齿（-fx-font-smoothing-type: lcd 属性
      在透明层上被压制），Windows 125% 缩放把灰阶柔边放大 → 正文发虚根因；
-   - .content 用不透明 #121314（与 .panel-dark 同色无缝）→ Prism 恢复 LCD 子像素
+   - .content 用不透明 #1b1a18（与 .panel-dark 同色无缝）→ Prism 恢复 LCD 子像素
      渲染（实测边缘彩色条纹 0% → 53%）；.scroll-pane/.viewport 保持透明即可；
    - 自身 background transparent + control-inner-background transparent 仍保留：
      防 modena 默认白底（-fx-text-box-border/-fx-control-inner-background）在
@@ -256,16 +324,13 @@
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
     -fx-font-smoothing-type: lcd;
+    -fx-font-size: 15px;
 }
 .msg-textarea:focused { -fx-highlight-fill: #3b6fe0; } /* 聚焦选区亮蓝（现状色） */
-.msg-textarea .content {
-    -fx-background-color: #121314;
-    -fx-padding: 0;
-}
 .msg-textarea .scroll-pane { -fx-background-color: transparent; }
 .msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
 
-/* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
+/* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #1b1a18 由 .panel-dark 提供） ===== */
 .log-input { -fx-text-fill: #75aaff; } /* 输入 柔和蓝 */
 .log-think { -fx-text-fill: #8c8c8c; } /* 思考 灰白 */
 .log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
@@ -286,42 +351,60 @@
 .log-body-subagent { -fx-text-fill: #b3e5fc; } /* 子代理边界正文 浅青（仅子任务完成报告） */
 .log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
 
-/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
-.status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
-.status-dot-running { -fx-background-color: #3fb950; }
+/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe）
+   节点是 Circle（Shape），填充色用 -fx-fill；-fx-background-* 对 Shape 无效，勿用。
+   暖石：静态点暖灰 #857f74，运行中点苔绿 #8fbb7f（原 GitHub 绿 #3fb950 在暖色底上偏冷） */
+.status-dot { -fx-fill: #857f74; }
+.status-dot-running { -fx-fill: #8fbb7f; }
 
-/* ===== 运行状态指示器（正文区左下角齿轮+文案） ===== */
-.running-indicator { -fx-spacing: 8; }
-.running-indicator-gear { -fx-fill: #8a8f98; }
-.running-indicator-text { -fx-text-fill: #8a8f98; -fx-font-size: 12px; }
+/* ===== 运行状态指示器（正文区左下角齿轮+文案；暖石胶囊：surface 底 + 1px border + 全圆角） =====
+   不加 dropshadow：effect 会让整棵子树离屏渲染、丢失 LCD 子像素抗锯齿，11.5px 小字会发虚
+   （同 .input-frame-focused 的取舍）；胶囊已有底色+描边，与正文区分足够 */
+.running-indicator {
+    -fx-spacing: 8;
+    -fx-alignment: center-left;
+    -fx-background-color: #262320;
+    -fx-background-radius: 999;
+    -fx-border-color: #3a362f;
+    -fx-border-width: 1;
+    -fx-border-radius: 999;
+    -fx-padding: 5 12 5 12;
+}
+.running-indicator-gear { -fx-fill: #d97757; }
+.running-indicator-text { -fx-text-fill: #b6afa2; -fx-font-size: 11.5px; }
 
-/* 滚动条 */
+/* 滚动面板（滚动条外观见文件头） */
 .scroll-pane { -fx-background-color: transparent; }
 .scroll-pane > .viewport { -fx-background-color: transparent; }
-.scroll-bar:vertical { -fx-background-color: transparent; -fx-pref-width: 10px; }
-.scroll-bar:vertical .thumb { -fx-background-color: #2a2f3a; -fx-background-radius: 5; }
 
-.tooltip { -fx-background-color: #232a38; -fx-text-fill: #c9cdd6; -fx-background-radius: 4; }
+/* ===== 侧栏分组标题行（分组名 + 计数胶囊 + 图标新建按钮） ===== */
+.side-head { -fx-padding: 6 6 4 6; -fx-alignment: center-left; }
+.section-title { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-font-weight: bold; }
+.section-count {
+    -fx-text-fill: #857f74; -fx-font-size: 10.5px;
+    -fx-background-color: #262320; -fx-background-radius: 999;
+    -fx-border-color: rgba(255,255,255,0.07); -fx-border-radius: 999;
+    -fx-padding: 1 5 1 5;
+}
 
-/* 侧栏分区标题 */
-.section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; -fx-font-weight: bold; }
-
-/* 侧栏行内悬停小按钮（会话 重命名/删除；工作空间 修改/删除；SVG 图标，无文本） */
+/* 侧栏行内悬停小按钮（会话 重命名/删除；工作空间 修改/删除；分组标题右侧「新建」；SVG 图标，无文本） */
 .btn-cell {
     -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
-    -fx-background-radius: 4;
-    -fx-padding: 2 6 2 6;
+    -fx-text-fill: #b6afa2;
+    -fx-background-radius: 5;
+    -fx-padding: 2 5 2 5;
     -fx-cursor: hand;
 }
-.btn-cell:hover { -fx-background-color: #2a2f3a; }
+.btn-cell:hover { -fx-background-color: #2c2925; }
 
 /* 侧栏消息时间（5m/3h/2d） */
-.cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 13px; } /* 原 #7a828e 过暗看不清 */
+.cell-time { -fx-text-fill: #857f74; -fx-font-size: 11px; }
 
 /* 侧栏列表项名称文字：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill（继承默认黑色），须显式上色 */
-.cell-text { -fx-text-fill: #d3d7de; }
-.list-view .list-cell:selected .cell-text { -fx-text-fill: #f0f2f6; }
+.cell-text { -fx-text-fill: #b6afa2; -fx-font-size: 13px; }
+.list-view .list-cell:selected .cell-text { -fx-text-fill: #f4efe7; }
+/* 会话行第二行摘要（单行省略；不能复用 .section-title——那是分组标题样式） */
+.cell-summary { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
 
 /* 无边框窗口边缘（Task 9 拖拽用） */
 .resize-edge { -fx-background-color: transparent; }
@@ -383,38 +466,40 @@
 /* ===== 危险操作确认底部卡片（ConfirmSheet，右侧面板内） ===== */
 .sheet-scrim { -fx-background-color: rgba(0,0,0,0.55); }
 .sheet-card {
-    -fx-background-color: #1a1d24;
+    -fx-background-color: #262320;
     -fx-background-radius: 12;
-    -fx-border-color: #2a2f3a;
+    -fx-border-color: #3a362f;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 24, 0, 0, 8);
-    -fx-font-size: 14px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 24, 0, 0, 8);
+    -fx-font-size: 12.5px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
 }
-.sheet-accent { -fx-background-color: #e3b341; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
-.sheet-warn { -fx-text-fill: #e3b341; -fx-font-size: 16px; }
-.sheet-title { -fx-text-fill: #f0f2f6; -fx-font-size: 14px; -fx-font-weight: bold; }
+.sheet-accent { -fx-background-color: #d8ab5f; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
+.sheet-warn { -fx-text-fill: #d8ab5f; -fx-font-size: 13px; -fx-font-weight: bold; }
+.sheet-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
 .sheet-message {
-    -fx-background-color: #13161c;
+    -fx-background-color: #151412;
     -fx-background-radius: 8;
-    -fx-padding: 10 12 10 12;
-    -fx-text-fill: #d3d7de;
-    -fx-font-size: 13px;
+    -fx-padding: 9 11 9 11;
+    -fx-text-fill: #c9c1b4;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 11.5px;
 }
-.sheet-hint { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
+.sheet-hint { -fx-text-fill: #857f74; -fx-font-size: 11px; }
 .btn-approve {
-    -fx-background-color: linear-gradient(to bottom, #3fb950, #2ea043);
-    -fx-text-fill: white;
+    -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757);
+    -fx-text-fill: #23130d;
     -fx-font-weight: bold;
-    -fx-background-radius: 6;
-    -fx-padding: 6 14 6 14;
+    -fx-background-radius: 7;
+    -fx-padding: 6 13 6 13;
     -fx-cursor: hand;
 }
-.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #4cc95e, #3fb950); }
+.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #e89b7a, #e08a66); }
 
 /* ===== 右侧顶部页签栏（tabs-bar，正文上方分隔线） ===== */
 .tabs-bar {
-    -fx-padding: 4 8 0 8;
-    -fx-border-color: transparent transparent #232733 transparent;
+    -fx-padding: 0 12 0 12;
+    -fx-background-color: #1b1a18;
+    -fx-border-color: transparent transparent rgba(255,255,255,0.07) transparent;
     -fx-border-width: 0 0 1 0;
 }
 
@@ -423,5 +508,255 @@
 
 /* ===== 折叠文本（CollapsibleText）：摘要行可点击切换，hover 提亮 ===== */
 .log-collapsible { -fx-padding: 0; }
-.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; }
+.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; -fx-font-size: 12.5px; }
 .log-collapse-toggle:hover { -fx-text-fill: #f0f2f6; }
+
+/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽）=====
+   必须放在文件末尾（.list-view .list-cell 之后）：两者特异度相同，靠后置取胜；
+   hover/选中态一律用 :filled 且特异度提到 3 类，防止被列表行背景串色 */
+.suggest-list {
+    -fx-background-color: #262320;
+    -fx-background-radius: 10;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 10;
+    -fx-font-smoothing-type: lcd;
+    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
+       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
+       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
+    -fx-padding: 0;
+}
+/* insets/radius 归零：抵消 .list-view .list-cell 的胶囊内缩（弹层行须整行通栏），
+   否则选中行背景比橙条左移 2px、上下缩 1px */
+.suggest-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 7 12 7 12;
+}
+.suggest-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
+.suggest-list .list-cell:filled:selected {
+    -fx-background-color: #2f2723;
+    -fx-border-color: transparent transparent transparent #d97757;
+    -fx-border-width: 0 0 0 2;
+}
+.suggest-label { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; }
+.suggest-desc { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
+
+/* ===== 用户气泡与 AI 身份行（暖石）=====
+   用户消息 = 右对齐暖褐气泡（右上/左下圆角收窄，指向发送者）；AI 输出前的「m minion」身份行
+   （暖橙渐变头像 + 名称）每条用户消息后只出现一次。气泡内容区仍走 .msg-textarea 的
+   LCD/透明策略，此处只覆盖底色与内边距（置文件末尾保证与 .msg-textarea 同特异度时生效）。 */
+.msg-user-bubble {
+    -fx-background-color: #332a22;
+    -fx-background-radius: 13 13 4 13;
+    -fx-border-color: #45382c;
+    -fx-border-radius: 13 13 4 13;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #f7f0e6;
+    -fx-font-size: 15px;
+}
+.msg-user-bubble .content { -fx-background-color: #332a22; }
+.msg-user-bubble .scroll-pane, .msg-user-bubble .viewport { -fx-background-color: transparent; }
+.msg-user-row { -fx-padding: 6 0 16 0; }
+.ai-head { -fx-padding: 10 0 2 0; }
+.ai-avatar {
+    -fx-background-color: linear-gradient(to bottom right, #d97757, #e3a06b);
+    -fx-background-radius: 6;
+    -fx-text-fill: #23130d;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-min-width: 19; -fx-min-height: 19;
+    -fx-max-width: 19; -fx-max-height: 19;
+    -fx-alignment: center;
+}
+.ai-name { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; -fx-font-weight: bold; }
+
+/* ===== 消息场景卡片 / 提示条（暖石）=====
+   工具调用 = surface 卡片、思考 = 左侧细线灰字、错误/警告 = 左侧色条提示条、
+   系统行/统计行/空态 = 辅助色灰字。所有嵌入卡片/提示条的 .content 背景都与所在卡片同色：
+   不透明 .content 是 LCD 子像素渲染的前提（见 .msg-textarea 说明），透明会退回灰阶抗锯齿、正文发虚。 */
+.tool-card {
+    -fx-background-color: #262320;
+    -fx-background-radius: 9;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 9;
+    -fx-padding: 2 0 2 0;
+}
+.tool-card .log-collapse-toggle { -fx-padding: 0 10 0 10; }
+.tool-body { -fx-font-family: "Consolas", "Courier New", monospace; -fx-font-size: 12px; }
+.tool-body .content { -fx-background-color: #151412; }
+.tool-diffstat { -fx-text-fill: #857f74; -fx-font-family: "Consolas", monospace; -fx-font-size: 11.5px; }
+.think-block { -fx-border-color: transparent transparent transparent #3a362f; -fx-border-width: 0 0 0 2; -fx-padding: 2 0 2 12; }
+.think-block .log-collapse-toggle { -fx-text-fill: #857f74; -fx-padding: 1 0 1 0; }
+.think-block .log-body, .think-block .msg-textarea { -fx-text-fill: #857f74; }
+.think-block .content { -fx-background-color: #1b1a18; }
+.notice-error {
+    -fx-background-color: #342321;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent transparent transparent #e08272;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 8 10 8 10;
+}
+.notice-error .content { -fx-background-color: #342321; }
+.notice-warn {
+    -fx-background-color: #332b1e;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent transparent transparent #d8ab5f;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 8 10 8 10;
+}
+.notice-warn .content { -fx-background-color: #332b1e; }
+.sys-line { -fx-text-fill: #857f74; -fx-font-size: 12.5px; }
+.sys-line .content { -fx-background-color: #1b1a18; }
+.stats-line .log-summary-text { -fx-text-fill: #857f74; -fx-font-size: 11.5px; }
+.subagent-card { -fx-background-color: #20242a; -fx-background-radius: 8; -fx-border-color: #2f3d44; -fx-border-radius: 8; -fx-padding: 2 0 2 0; }
+.subagent-card .log-summary-text { -fx-text-fill: #b3e5fc; -fx-font-size: 12px; }
+.subagent-card .content { -fx-background-color: #20242a; }
+.empty-hint { -fx-text-fill: #857f74; -fx-font-size: 13px; }
+
+/* ===== 无边框深色弹窗（DarkDialogs：自绘 .dark-titlebar，DialogPane 内容区 padding 归零） =====
+   Dialog 不继承主界面 Scene 样式表，仍由 Theme.style(d) 挂载本文件；.dialog-pane.dark-dialog
+   特异度高于 .dialog-pane，覆盖旧弹窗底色/边框。ButtonBar 的 .container 用后代选择器（对应
+   modena 的 .dialog-pane > .button-bar > .container）。内容区 padding 用直接子选择器（对应
+   modena 的 .dialog-pane > .content）：不能写成 .dark-dialog .content——那会命中 TextArea 内部
+   的 .content（modena 给 3 7 的内边距），把弹窗内文本框文字压到边框上。
+   标题/副标题选择器带上 .dialog-pane.dark-dialog 前缀：既有 .dialog-pane .label（2 个类）特异度
+   高于单类 .dark-title/.dark-subtitle，否则文字色会被旧弹窗灰 #e6e8ee 接管（副标题失去层级）。 */
+.dialog-pane.dark-dialog {
+    -fx-background-color: #201e1b;
+    -fx-background-radius: 12;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 12;
+    -fx-padding: 0;
+}
+.dark-titlebar {
+    -fx-background-color: #24221f;
+    -fx-background-radius: 12 12 0 0;
+    -fx-border-color: transparent transparent rgba(255,255,255,0.07) transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 10 0 16;
+    -fx-pref-height: 44;
+}
+.dialog-pane.dark-dialog .dark-title { -fx-text-fill: #f4efe7; -fx-font-size: 13px; -fx-font-weight: bold; }
+.dialog-pane.dark-dialog .dark-subtitle { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; -fx-padding: 0 16 0 16; }
+/* 自绘根容器（标题栏 + 内容）：padding 归零，圆角全部由 .dialog-pane.dark-dialog 负责 */
+.dark-wrap { -fx-padding: 0; }
+/* 标题栏可拖动，给手型/移动光标提示 */
+.dialog-pane.dark-dialog .dark-titlebar { -fx-cursor: move; }
+/* 标题栏关闭按钮：modena 的 .dialog-pane .button（2 个类）会抢走 padding/border 与 hover 底色，
+   这里用 4 个类的高特异度规则压回去，保证透明底 + 紧凑内边距 + hover 红底生效 */
+.dialog-pane.dark-dialog .dark-titlebar .btn-close {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4 6 4 6;
+    -fx-background-radius: 6;
+}
+.dialog-pane.dark-dialog .dark-titlebar .btn-close:hover {
+    -fx-background-color: #c93a39;
+}
+.dark-dialog .button-bar .container {
+    -fx-background-color: #1b1a18;
+    -fx-padding: 12 20 12 20;
+    -fx-border-color: rgba(255,255,255,0.07) transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    /* 按钮栏是窗体内最后一块，底角跟随外层 12px 圆角，否则深色底板在四角戳出来 */
+    -fx-background-radius: 0 0 12 12;
+}
+.dark-dialog > .content { -fx-padding: 0; }
+/* Alert 正文：Alert 只有 setContentText 时 pane.getContent() 为 null，DarkDialogs 会把正文
+   转成带 .content.label 的 Label 放进自绘 body。旧规则 .dialog-pane .content.label（3 类）比
+   .dark-dialog .label（2 类）特异度高，必须用 4 类选择器 + 后置才能改回暖石主文字色。 */
+.dialog-pane.dark-dialog .content.label { -fx-text-fill: #f4efe7; }
+
+/* ===== 列表 / 表单弹窗（数据源、ssh、浏览器、模型、MCP、工作空间表单）=======
+   追加位置（不是文件末尾）：.dark-dialog .label 与 .form-label/.plugin-name/.plugin-status 同为
+   2 个类的特异度，靠后置覆盖——放末尾会把工具页插件名（#f4efe7）与状态行（#857f74 11px）压回
+   次要灰。列表 cell 规则（5 类）特异度高于设置窗导航列旧规则（4 类），故导航列选择器统一加
+   .dark-dialog 前缀补到 5 类并后置，保持 Task 10 的选中态配色不被这里的新规则串色。 */
+.dark-dialog .list-view { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-border-width: 1; -fx-border-radius: 9; -fx-background-radius: 9; }
+.dark-dialog .list-view .list-cell { -fx-background-color: transparent; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .list-view .list-cell:filled:hover { -fx-background-color: #2c2925; }
+.dark-dialog .list-view .list-cell:filled:selected { -fx-background-color: #332f2a; -fx-text-fill: #f4efe7; }
+.dark-dialog .label { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+/* 提示块（数据源/ssh 列表底部详情、浏览器配置说明、模型/MCP 表单提示）沿用 .msg-thinking 类：
+   该类自带冷蓝胶囊底 #13161c。上方 .dark-dialog .label 已把文字改成暖石次要灰，底色却仍是冷蓝，
+   这里补一条 2 类选择器（后置）把底换成暖石深色 #24221f，与整体底色同系。
+   注意：工具页 .plugin-status 也带 .msg-thinking 类，其规则在下方后置且声明 transparent（纯文字），不受影响 */
+.dark-dialog .msg-thinking { -fx-background-color: #24221f; -fx-text-fill: #b6afa2; }
+/* 弹窗内错误行：旧 .log-error 为冷红 #f85149，改暖石暖红 */
+.dark-dialog .log-error { -fx-text-fill: #e08272; }
+.dark-dialog .radio-button { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+/* 选中圆点：旧 .dialog-pane .radio-button:selected .radio .dot（5 类）比单靠 .dark-dialog 前缀的
+   3 类规则特异度高，并列写全路径（同为 5 类 + 后置）才能把蓝点改成陶土橙 */
+.dark-dialog .radio-button:selected .dot,
+.dialog-pane.dark-dialog .radio-button:selected .radio .dot { -fx-background-color: #d97757; }
+/* 焦点环：旧 .dialog-pane .radio-button:focused .radio 仍是冷蓝边框，改暖石橙（与输入框焦点口径一致） */
+.dialog-pane.dark-dialog .radio-button:focused .radio { -fx-border-color: #d97757; }
+.dark-dialog .combo-box { -fx-background-color: #1b1a18; -fx-border-color: #3a362f; -fx-background-radius: 7; }
+/* 下拉框显示区是 ListCell，不被 .dark-dialog .label 命中：旧规则（3 类）冷白，这里（4 类）改暖石主文字色 */
+.dialog-pane.dark-dialog .combo-box .list-cell { -fx-text-fill: #f4efe7; }
+
+/* ===== 设置窗（暖石：左列导航 172px 独立底，右侧内容 748px；表单标签右上对齐） =====
+   选择器统一带 .dark-dialog 前缀：上方「列表 / 表单弹窗」的 .dark-dialog .list-view .list-cell
+   系列比旧写法（.settings-nav-list .list-cell，4 类）多一个类，不加前缀会被其串色；
+   加前缀后同为 5 类，靠后置覆盖主列表胶囊样式，保留导航选中块的橙字 + 1px 描边。
+   导航列容器自身压过 .dark-dialog .list-view 的通用描边/圆角：只留右边线，圆角归零。 */
+.dark-dialog .settings-nav-list { -fx-pref-width: 172px; -fx-background-color: #1b1a18; -fx-padding: 13 10 13 10; -fx-border-color: transparent rgba(255,255,255,0.07) transparent transparent; -fx-border-width: 0 1 0 0; -fx-border-radius: 0; -fx-background-radius: 0; }
+.dark-dialog .settings-nav-list .list-cell { -fx-background-color: transparent; -fx-background-insets: 0 0 3 0; -fx-background-radius: 7; -fx-padding: 8 11 8 11; -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .settings-nav-list .list-cell:filled:hover { -fx-background-color: #2c2925; }
+/* 选中态：底 #2f2723 + 1px 边框（补 -fx-border-width：不写会继承 .list-view .list-cell:filled:selected
+   的 0 0 0 2，变成主列表同款左侧粗条；设计稿为四边 1px 描边） */
+.dark-dialog .settings-nav-list .list-cell:filled:selected { -fx-background-color: #2f2723; -fx-background-insets: 0; -fx-text-fill: #d97757; -fx-border-color: #d97757; -fx-border-width: 1; -fx-border-radius: 7; }
+.dark-dialog .text-field, .dark-dialog .text-area {
+    -fx-background-color: #1b1a18; -fx-text-fill: #f4efe7; -fx-prompt-text-fill: #857f74;
+    -fx-border-color: #3a362f; -fx-border-radius: 7; -fx-background-radius: 7;
+    -fx-control-inner-background: #1b1a18; -fx-font-size: 12.5px; -fx-padding: 5 8 5 8;
+}
+/* 输入框焦点提示：深底上仅靠 modena 默认焦点环不明显，边框转主色 */
+.dark-dialog .text-field:focused, .dark-dialog .text-area:focused { -fx-border-color: #d97757; }
+.dark-dialog .check-box { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.dark-dialog .check-box .box { -fx-background-color: #1b1a18; -fx-border-color: #4a453c; -fx-border-radius: 4; -fx-background-radius: 4; }
+.dark-dialog .check-box:selected .box { -fx-background-color: #d97757; -fx-border-color: #d97757; }
+.dark-dialog .check-box:selected .mark { -fx-background-color: #23130d; }
+.dark-dialog .button { -fx-background-color: transparent; -fx-text-fill: #b6afa2; -fx-border-color: #3a362f; -fx-border-radius: 7; -fx-background-radius: 7; -fx-padding: 6 13 6 13; -fx-font-size: 12px; }
+.dark-dialog .button:hover { -fx-text-fill: #f4efe7; -fx-border-color: #4a453c; }
+/* hover 态：声明与上面 .dark-dialog .button:hover 相同，再用 .dialog-pane.dark-dialog 前缀补一份，
+   确保不被旧 .dialog-pane .button:hover（同为 3 类、位于文件前部）在任何加载顺序下压回冷白/蓝边框 */
+.dialog-pane.dark-dialog .button:hover {
+    -fx-text-fill: #f4efe7;
+    -fx-border-color: #4a453c;
+}
+/* 默认按钮（「应用」）：旧 .dialog-pane .button:default 为 3 个类的特异度，单靠 .dark-dialog .button:default
+   会被其蓝底压回；并列写上 .dialog-pane.dark-dialog 前缀（4 类）确保暖石橙底生效 */
+.dark-dialog .button:default, .dialog-pane.dark-dialog .button:default { -fx-background-color: linear-gradient(to bottom, #e08a66, #d97757); -fx-text-fill: #23130d; -fx-font-weight: bold; -fx-border-color: transparent; }
+/* 同上：旧 .dialog-pane .button:default:hover（4 类）为蓝底，默认按钮 hover 时用暖石橙深色渐变 */
+.dialog-pane.dark-dialog .button:default:hover {
+    -fx-background-color: linear-gradient(to bottom, #e69a78, #e08a66);
+    -fx-text-fill: #23130d;
+    -fx-border-color: transparent;
+}
+/* 表单标签/工具行文字：旧 .dialog-pane .label（2 类）与单类规则同特异度但更靠前，靠 .dark-dialog 前缀
+   （2 类 + 后置）覆盖，否则文字仍是旧弹窗冷白 #e6e8ee */
+.dark-dialog .form-label { -fx-text-fill: #b6afa2; -fx-font-size: 12.5px; }
+.plugin-row {
+    -fx-background-color: #1b1a18;
+    -fx-background-radius: 9;
+    -fx-border-color: #3a362f;
+    -fx-border-radius: 9;
+    -fx-padding: 10 12 10 12;
+}
+.dark-dialog .plugin-name { -fx-text-fill: #f4efe7; -fx-font-size: 12.5px; -fx-font-weight: bold; }
+/* 状态行沿用 .msg-thinking 类（取灰字，但该类自带 #13161c 胶囊底）：在 plugin-row 内应为纯文字，
+   这里清掉底色；text-fill/font-size 后置覆盖 .msg-thinking 的 14px 蓝色调灰。
+   前缀 .dark-dialog 用于压过旧 .dialog-pane .label（2 类）的冷白字色 */
+.dark-dialog .plugin-status { -fx-text-fill: #857f74; -fx-font-size: 11px; -fx-background-color: transparent; }
+
+/* ===== 提问卡片（AskUserQuestion）：工具正文的等宽 12px 对提问过小，改为比例字体 14px =====
+   ask-body 同时挂在 CollapsibleText（摘要行）与正文 TextArea 上：
+   - .msg-textarea.ask-body（2 类）压过 .tool-body（1 类）的 Consolas/12px；
+   - .content 用卡片同色 #262320（LCD 规则）并补内边距，避免问题/选项贴边。 */
+.msg-textarea.ask-body { -fx-font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif; -fx-font-size: 14px; }
+.msg-textarea.ask-body .content { -fx-background-color: #262320; -fx-padding: 2 12 10 12; }
+.ask-body .log-summary-text { -fx-font-size: 13px; }
+.ask-body .log-collapse-toggle { -fx-font-size: 13px; }
