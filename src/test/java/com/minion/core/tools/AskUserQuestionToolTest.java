@@ -256,4 +256,17 @@ public class AskUserQuestionToolTest {
         assertEquals("array", props.getAsJsonObject("options").get("type").getAsString());
         assertEquals("boolean", props.getAsJsonObject("multiSelect").get("type").getAsString());
     }
+
+    /** 编号口径回归（会话 20261026-103804-859-0001）：界面按 [1][2][3] 渲染，用户回 "1" 时
+     *  模型曾按 0-based 索引理解成第二个选项并照做。工具描述与 schema 必须显式声明 1-based，
+     *  让模型有据可依（不再靠猜）。 */
+    @Test
+    public void descriptionAndSchema_declareOneBasedOptionIndexing() {
+        AskUserQuestionTool tool = new AskUserQuestionTool(new RecordingUi());
+        assertTrue("工具描述须声明选项编号从 1 开始",
+                tool.description().contains("从 1 开始"));
+        JsonObject options = tool.schema().getAsJsonObject("properties").getAsJsonObject("options");
+        assertTrue("schema 的 options 说明须声明编号口径",
+                options.get("description").getAsString().contains("从 1 开始"));
+    }
 }

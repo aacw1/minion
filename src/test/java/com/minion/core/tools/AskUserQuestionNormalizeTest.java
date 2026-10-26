@@ -273,6 +273,75 @@ public class AskUserQuestionNormalizeTest {
         assertFalse(AskUserQuestionTool.normalize(new JsonObject()).placeholder().isEmpty());
     }
 
+    /** 线上实证（会话 20261026-103804-859-0001 末尾）：模型把整份参数又包了一层 arguments
+     *  （字符串形态）→ 旧实现判「提不出提问内容」，用户完全看不到那次提问 */
+    @Test
+    public void nestedArgumentsString_isUnwrapped() {
+        JsonArray opts = new JsonArray();
+        opts.add(opt("全部还原", "回到样式改动前的界面"));
+        opts.add(opt("仅还原代码与样式", "保留设计文档与原型"));
+        JsonObject inner = new JsonObject();
+        inner.addProperty("question", "确认还原范围？");
+        inner.addProperty("header", "确认范围");
+        inner.add("options", opts);
+
+        JsonObject args = new JsonObject();
+        args.addProperty("arguments", inner.toString()); // 整份参数被序列化成字符串塞进 arguments
+
+        AskUserQuestionTool.Ask a = AskUserQuestionTool.normalize(args);
+        assertFalse("嵌套 arguments 不应判定为提不出内容", a.isEmpty());
+        assertEquals("确认还原范围？", a.question);
+        assertEquals("确认范围", a.header);
+        assertEquals(2, a.options.size());
+        assertTrue(a.renderText().contains("[1] 全部还原 — 回到样式改动前的界面"));
+    }
+
+    /** 嵌套对象形态同理（arguments 是对象而非字符串） */
+    @Test
+    public void nestedArgumentsObject_isUnwrapped() {
+        JsonArray opts = new JsonArray();
+        opts.add(opt("A", null));
+        opts.add(opt("B", null));
+        JsonObject inner = new JsonObject();
+        inner.addProperty("question", "选哪个？");
+        inner.add("options", opts);
+
+        JsonObject args = new JsonObject();
+        args.add("arguments", inner);
+
+        AskUserQuestionTool.Ask a = AskUserQuestionTool.normalize(args);
+        assertEquals("选哪个？", a.question);
+        assertEquals(2, a.options.size());
+        assertEquals("B", a.options.get(1).label);
+    }
+
+    /** 本层已有合法提问时不得被 arguments 键覆盖（外层优先） */
+    @Test
+    public void ownQuestion_winsOverNestedArguments() {
+        JsonObject inner = new JsonObject();
+        inner.addProperty("question", "内层问题");
+        JsonObject args = new JsonObject();
+        args.addProperty("question", "外层问题");
+        args.add("arguments", inner);
+
+        assertEquals("外层问题", AskUserQuestionTool.normalize(args).question);
+    }
+
+    /** 病态自嵌套：深度上限内解包，超限也不抛异常 */
+    @Test
+    public void deeplyNestedArguments_noOverflow() {
+        JsonObject inner = new JsonObject();
+        inner.addProperty("question", "最里层问题");
+        JsonObject cur = inner;
+        for (int i = 0; i < 8; i++) {
+            JsonObject outer = new JsonObject();
+            outer.add("arguments", cur);
+            cur = outer;
+        }
+        AskUserQuestionTool.Ask a = AskUserQuestionTool.normalize(cur);
+        assertNotNull(a); // 不抛异常即可；超限后按提不出内容处理
+    }
+
     /** 畸形 JSON（模型截断/多吐逗号）经字符串入口不炸，兜底原文仍可见 */
     @Test
     public void malformedJsonString_rejectedGracefully() {

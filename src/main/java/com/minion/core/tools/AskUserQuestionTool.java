@@ -54,7 +54,9 @@ public class AskUserQuestionTool implements Tool {
         return "向用户提问或请求选择。当缺少完成任务所需信息、需要用户确认方案或做出选择时调用。"
                 + "参数 question 为必填问题文本；header 为可选简短标题；options 为可选答案列表"
                 + "（2-4 个，每项含 label/description）；multiSelect 表示是否可多选。"
-                + "调用后将挂起等待用户回答，回答会作为工具结果返回。";
+                + "调用后将挂起等待用户回答，回答会作为工具结果返回。"
+                + "用户回答可能是选项编号：界面按 [1][2][3] 渲染，数字 N 指第 N 个选项（从 1 开始计，"
+                + "1 = options 的第一项），请勿按 0-based 索引理解。";
     }
 
     @Override
@@ -71,7 +73,8 @@ public class AskUserQuestionTool implements Tool {
         header.addProperty("description", "简短标题（可选）");
         JsonObject options = new JsonObject();
         options.addProperty("type", "array");
-        options.addProperty("description", "可选答案列表，2-4 个");
+        options.addProperty("description",
+                "可选答案列表，2-4 个（顺序即界面 [N] 编号，从 1 开始；用户回数字 N 时 N=1 是第一个选项）");
         JsonObject items = new JsonObject();
         items.addProperty("type", "object");
         JsonObject itemProps = new JsonObject();
@@ -241,11 +244,22 @@ public class AskUserQuestionTool implements Tool {
         return new Ask(null, null, Collections.<Option>emptyList(), false, json);
     }
 
+    /** 嵌套参数键：模型偶发把整份参数再包一层（{"arguments": "{…}"} 或 {"arguments": {…}}，
+     *  线上实证 20261026 会话末尾）——旧实现只认本层键 → 判「提不出提问内容」，
+     *  用户看不到那次提问。仅在本层提不出有效提问时解包（外层优先），深度上限防病态自嵌套 */
+    private static final int MAX_NESTED_DEPTH = 3;
+
     /** 规范化模型给出的工具参数：question/options/header/multiSelect 逐级降级提取 */
     public static Ask normalize(JsonObject args) {
+        return normalize(args, 0);
+    }
+
+    private static Ask normalize(JsonObject args, int depth) {
         if (args == null) {
             return new Ask(null, null, Collections.<Option>emptyList(), false, "{}");
         }
+        Ask unwrapped = unwrapNested(args, depth);
+        if (unwrapped != null) return unwrapped;
         String raw = args.toString();
         String question = str(args, "question");
         String header = str(args, "header");
@@ -270,6 +284,35 @@ public class AskUserQuestionTool implements Tool {
         if (question == null) question = fromLeakedTag(args); // 标签泄漏吞掉的正文救回
         if (question == null) question = header;              // 标题也比空白强
         return new Ask(question, header, options, multi, raw);
+    }
+
+    /** 嵌套 arguments 解包：本层提不出有效提问且存在 arguments 键（字符串 JSON / 对象）→ 递归规范化；
+     *  无可解包返回 null（调用方继续按本层处理）。 */
+    private static Ask unwrapNested(JsonObject args, int depth) {
+        if (depth >= MAX_NESTED_DEPTH) return null;
+        if (hasOwnAsk(args)) return null;
+        JsonElement nested = args.get("arguments");
+        if (nested == null || nested.isJsonNull()) return null;
+        JsonObject inner = asObject(nested);
+        return inner == null ? null : normalize(inner, depth + 1);
+    }
+
+    /** 本层是否已有可用提问内容（question 非空 / options 有项 / questions 键有内容） */
+    private static boolean hasOwnAsk(JsonObject args) {
+        if (str(args, "question") != null) return true;
+        if (!readOptions(args.get("options")).isEmpty()) return true;
+        JsonElement qs = args.get("questions");
+        if (qs == null || qs.isJsonNull()) return false;
+        if (!readOptions(qs).isEmpty()) return true;
+        JsonObject first = firstObject(qs);
+        return first != null && (str(first, "question") != null
+                || !readOptions(first.get("options")).isEmpty());
+    }
+
+    /** 值 → JsonObject：对象直取；字符串形态 JSON 对象反解（复用 unwrap）；其余返回 null */
+    private static JsonObject asObject(JsonElement v) {
+        JsonElement e = unwrap(v);
+        return e != null && e.isJsonObject() ? e.getAsJsonObject() : null;
     }
 
     /** 值 → 选项列表：数组逐项；对象按单项；字符串先反解（含内嵌数组抽取）后逐项 */
