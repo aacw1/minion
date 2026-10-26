@@ -5,7 +5,7 @@ import com.minion.core.tools.confirm.ConfirmGate;
 
 /**
  * 插件创建工具时需要的会话级依赖（由 SessionManager.newRegistry 每会话构造一次）。
- * 不含 ToolPluginManager 引用：现有插件都不需要它（DbTool 读 DbConfig、浏览器工具读 BrowserManager），
+ * 不含 ToolPluginManager 引用：现有插件都不需要它（DbTool 读 DbConfig、SshPlugin 读 SshConfig），
  * 少一个循环引用点。
  */
 public class ToolContext {

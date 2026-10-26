@@ -11,16 +11,16 @@ import java.util.List;
  */
 public interface ToolPlugin {
 
-    /** tools.json 的段名，也是 ToolRegistry 的插件标签：browser / mysql / postgresql / oracle */
+    /** tools.json 的段名，也是 ToolRegistry 的插件标签：mysql / postgresql / oracle / ssh */
     String id();
 
     /** 设置页显示名 */
     String displayName();
 
-    /** 设置页状态文案（如浏览器行「未配置」「端口 9222」；db/ssh 行恒空，由下拉框表达） */
+    /** 设置页状态文案（db/ssh 行恒空，由下拉框表达） */
     String statusText();
 
-    /** 是否允许勾选「启用」：缺关键配置（浏览器无路径/数据库无数据源）时为 false——先配置后启用 */
+    /** 是否允许勾选「启用」：缺关键配置（数据库无数据源/ssh 无连接）时为 false——先配置后启用 */
     boolean canEnable();
 
     boolean enabled();
@@ -31,6 +31,6 @@ public interface ToolPlugin {
     /** 产出本插件的工具实例（每会话调用一次；无条件创建，启停交给 gate 过滤） */
     List<Tool> createTools(ToolContext ctx);
 
-    /** 配置保存后钩子：浏览器插件用它重建 Chrome，数据库插件无需动作 */
+    /** 配置保存后钩子：需重建运行期资源（如连接池）的插件用它，数据库/ssh 插件无需动作 */
     default void onConfigChanged() { }
 }

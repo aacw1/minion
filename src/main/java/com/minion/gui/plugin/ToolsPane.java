@@ -21,10 +21,10 @@ import java.util.List;
 
 /**
  * 设置窗「工具」页：每个可插拔工具一行 = 启用开关 + 显示名 + 状态文案 + 该工具专属配置入口。
- * 行数固定（浏览器 + 三个数据库 + ssh）、每行控件不同，故用 VBox 直接拼装而非 ListView。
+ * 行数固定（三个数据库 + ssh）、每行控件不同，故用 VBox 直接拼装而非 ListView。
  * 启用开关与数据源下拉改动即落 tools.json —— 生效由 ToolRegistry 的 gate 在下一轮 schemas() 判定
  * （拉模式），本页不需要通知任何会话。
- * 缺关键配置（浏览器无路径/数据库无数据源）时「启用」置灰（canEnable），先配置后启用。
+ * 缺关键配置（数据库无数据源/ssh 无连接）时「启用」置灰（canEnable），先配置后启用。
  */
 public class ToolsPane {
 
@@ -93,10 +93,9 @@ public class ToolsPane {
         root.setPadding(PluginUi.padding());
         for (ToolPlugin p : plugins.plugins()) {
             DbPlugin db = plugins.dbPlugin(p.id());
-            // 置灰原因（悬停提示）：数据库行需先有数据源；ssh 行需先有连接；浏览器行需先配路径
+            // 置灰原因（悬停提示）：数据库行需先有数据源；ssh 行需先有连接
             final String tip = db != null ? "需先在「数据源管理」新建数据源才能启用"
-                    : "ssh".equals(p.id()) ? "需先在「连接管理」新建连接才能启用"
-                    : "需先在「配置」中填写浏览器路径才能启用";
+                    : "需先在「连接管理」新建连接才能启用";
             final Row row = new Row(p, tip);
 
             Label name = new Label(p.displayName());
@@ -138,10 +137,6 @@ public class ToolsPane {
                 Button manage = ghost("连接管理");
                 manage.setOnAction(e -> SshConnectionsDialog.show(owner, plugins, row.ssh));
                 configArea.getChildren().addAll(row.sources, manage);
-            } else {
-                Button cfg = ghost("配置");
-                cfg.setOnAction(e -> BrowserConfigDialog.show(owner, plugins));
-                configArea.getChildren().add(cfg);
             }
 
             // 启用开关第一列（最左）；数据库/ssh 行状态列恒空——当前选中/（无连接）均由下拉框表达
@@ -160,12 +155,12 @@ public class ToolsPane {
         try {
             for (Row row : rows) {
                 row.status.setText(row.plugin.statusText());
-                // 缺关键配置（无数据源/无浏览器路径）→ 置灰不可勾选，悬停说明原因
+                // 缺关键配置（无数据源/无连接）→ 置灰不可勾选，悬停说明原因
                 boolean canEnable = row.plugin.canEnable();
                 row.enabled.setDisable(!canEnable);
                 row.enabled.setTooltip(canEnable ? null : new javafx.scene.control.Tooltip(row.cannotEnableTip));
                 if (row.plugin.enabled() && !canEnable) {
-                    // 已启用却把配置清空（数据源删光/路径清空）→ 自动停用；落盘通知再来一轮即稳定
+                    // 已启用却把配置清空（数据源/连接删光）→ 自动停用；落盘通知再来一轮即稳定
                     row.plugin.setEnabled(false);
                 }
                 row.enabled.setSelected(row.plugin.enabled());

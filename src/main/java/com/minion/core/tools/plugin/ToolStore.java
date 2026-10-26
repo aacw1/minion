@@ -24,7 +24,6 @@ public class ToolStore {
 
     /** gson 映射根对象：字段名即 JSON 顶层键名 */
     private static class Root {
-        BrowserConfig browser = new BrowserConfig();
         DbConfig mysql = new DbConfig();
         DbConfig postgresql = new DbConfig();
         DbConfig oracle = new DbConfig();
@@ -60,8 +59,6 @@ public class ToolStore {
         return store;
     }
 
-    public BrowserConfig browserConfig() { return root.browser; }
-
     /** mysql / postgresql / oracle；未知 id 返回 null */
     public DbConfig dbConfig(String id) {
         if ("mysql".equals(id)) return root.mysql;
@@ -70,17 +67,11 @@ public class ToolStore {
         return null;
     }
 
-    /** tools.json 的 ssh 段（可插拔工具第 5 个） */
+    /** tools.json 的 ssh 段（可插拔工具第 4 个） */
     public SshConfig sshConfig() { return root.ssh; }
 
     /** gson 可能把显式 null 写进字段（手改文件/旧版本），统一归一化为可用默认值 */
     private void normalize() {
-        if (root.browser == null) root.browser = new BrowserConfig();
-        BrowserConfig b = root.browser;
-        if (b.path == null) b.path = "";
-        if (b.userDataDir == null) b.userDataDir = "./.minion/browser-profile";
-        if (b.port <= 0) b.port = 9222;
-        if (b.timeoutMs <= 0) b.timeoutMs = 30000;
         for (String id : new String[]{"mysql", "postgresql", "oracle"}) {
             DbConfig db = dbConfig(id);
             if (db == null) continue;

@@ -26,7 +26,7 @@ public class ToolPluginManagerTest {
         ToolPluginManager m = new ToolPluginManager(ToolStore.load(dir()));
         List<String> ids = new ArrayList<String>();
         for (ToolPlugin p : m.plugins()) ids.add(p.id());
-        assertEquals("[browser, mysql, postgresql, oracle, ssh]", ids.toString());
+        assertEquals("[mysql, postgresql, oracle, ssh]", ids.toString());
     }
 
     @Test
@@ -38,9 +38,11 @@ public class ToolPluginManagerTest {
     @Test
     public void gateRejectsDisabledAndAcceptsEnabled() throws Exception {
         ToolPluginManager m = new ToolPluginManager(ToolStore.load(dir()));
-        assertFalse(m.enabled("browser"));
-        m.setEnabled("browser", true);
-        assertTrue(m.enabled("browser"));
+        m.dbPlugin("mysql").addDataSource(
+                new com.minion.core.tools.db.DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u", "p"));
+        assertFalse(m.enabled("mysql"));
+        m.setEnabled("mysql", true);
+        assertTrue(m.enabled("mysql"));
     }
 
     @Test
@@ -71,10 +73,9 @@ public class ToolPluginManagerTest {
         m.setEnabled("sqlserver", true);   // 不抛异常
         m.setEnabled(null, true);
         assertNull(m.plugin("sqlserver"));
-        assertNull(m.dbPlugin("browser"));
+        assertNull("ssh 不是数据库插件", m.dbPlugin("ssh"));
         assertNotNull(m.dbPlugin("postgresql"));
-        assertNotNull(m.browserPlugin());
-        assertNotNull(m.browserManager());
+        assertNotNull(m.sshPlugin());
         assertNotNull(m.store());
     }
 
@@ -83,7 +84,7 @@ public class ToolPluginManagerTest {
         ToolPluginManager m = new ToolPluginManager(ToolStore.load(dir()));
         final int[] hits = {0};
         m.addListener(new Runnable() { @Override public void run() { hits[0]++; } });
-        m.setEnabled("browser", true);
+        m.setEnabled("ssh", true);
         assertEquals(1, hits[0]);
         m.dbPlugin("oracle").addDataSource(
                 new com.minion.core.tools.db.DataSourceConfig("orcl", "jdbc:oracle:thin:@h:1521:ORCL", "u", "p"));
@@ -99,32 +100,23 @@ public class ToolPluginManagerTest {
             for (Tool t : p.createTools(ctx)) reg.register(p.id(), t);
         }
         reg.setGate(m);
-        // 默认全不启用：7 个插件工具一个都不该出现
+        // 默认全不启用：插件工具一个都不该出现
         assertEquals(0, reg.schemas().size());
         assertEquals(0, reg.all().size());
-        assertNull(reg.get("Browser"));
         assertNull(reg.get("DbMysql"));
 
-        m.setEnabled("browser", true);
-        assertEquals(4, reg.schemas().size());
-        assertNotNull(reg.get("Browser"));
-        assertNotNull(reg.get("BrowserScreenshot"));
-        assertNull("数据库插件仍未启用", reg.get("DbMysql"));
-
         m.setEnabled("mysql", true);
-        assertEquals(5, reg.schemas().size());
-        assertNotNull(reg.get("DbMysql"));
-
-        m.setEnabled("browser", false);
         assertEquals(1, reg.schemas().size());
-        assertNull(reg.get("Browser"));
         assertNotNull(reg.get("DbMysql"));
-    }
+        assertNull("数据库插件仍未启用", reg.get("DbPostgres"));
 
-    @Test
-    public void shutdownDoesNotThrow() throws Exception {
-        ToolPluginManager m = new ToolPluginManager(ToolStore.load(dir()));
-        m.shutdown();     // 未启动 Chrome 时是空操作
-        m.shutdown();     // 幂等
+        m.setEnabled("postgresql", true);
+        assertEquals(2, reg.schemas().size());
+        assertNotNull(reg.get("DbPostgres"));
+
+        m.setEnabled("mysql", false);
+        assertEquals(1, reg.schemas().size());
+        assertNull(reg.get("DbMysql"));
+        assertNotNull(reg.get("DbPostgres"));
     }
 }

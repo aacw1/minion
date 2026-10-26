@@ -9,15 +9,13 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 可插拔工具门面：装配 5 个插件、实现 ToolRegistry.PluginGate（拉模式过滤的判定源）、
+ * 可插拔工具门面：装配 4 个插件、实现 ToolRegistry.PluginGate（拉模式过滤的判定源）、
  * 统一落盘 tools.json、向 GUI 广播变更（监听只用于刷面板，不参与生效链路）。
  * 全局单例，所有会话的 registry 共享同一个 gate 实例 → 改开关后下一轮请求即生效，无需遍历会话。
  */
 public class ToolPluginManager implements ToolRegistry.PluginGate {
 
     private final ToolStore store;
-    private final BrowserManager browserManager;
-    private final BrowserPlugin browserPlugin;
     private final List<DbPlugin> dbPlugins = new ArrayList<DbPlugin>();
     private final SshPlugin sshPlugin;
     private final List<ToolPlugin> all;
@@ -32,21 +30,18 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
 
     public ToolPluginManager(ToolStore store) {
         this.store = store;
-        this.browserManager = new BrowserManager(store.browserConfig());
-        this.browserPlugin = new BrowserPlugin(store.browserConfig(), browserManager, saver);
         for (DbType t : DbType.values()) {
             DbConfig c = store.dbConfig(t.id());
             if (c != null) dbPlugins.add(new DbPlugin(t, c, saver));
         }
         this.sshPlugin = new SshPlugin(store.sshConfig(), saver);
         List<ToolPlugin> list = new ArrayList<ToolPlugin>();
-        list.add(browserPlugin);
         list.addAll(dbPlugins);
         list.add(sshPlugin);
         this.all = Collections.unmodifiableList(list);
     }
 
-    /** 设置页行顺序：浏览器操作 / mysql / postgresql / oracle / ssh */
+    /** 设置页行顺序：mysql / postgresql / oracle / ssh */
     public List<ToolPlugin> plugins() { return all; }
 
     public ToolPlugin plugin(String id) {
@@ -75,10 +70,6 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
         p.setEnabled(on);
     }
 
-    public BrowserManager browserManager() { return browserManager; }
-
-    public BrowserPlugin browserPlugin() { return browserPlugin; }
-
     /** mysql / postgresql / oracle；非数据库插件 id 返回 null */
     public DbPlugin dbPlugin(String id) {
         for (DbPlugin p : dbPlugins) {
@@ -87,7 +78,7 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
         return null;
     }
 
-    /** ssh 插件（设置页第 5 行） */
+    /** ssh 插件（设置页第 4 行） */
     public SshPlugin sshPlugin() { return sshPlugin; }
 
     public ToolStore store() { return store; }
@@ -108,7 +99,4 @@ public class ToolPluginManager implements ToolRegistry.PluginGate {
     private void notifyListeners() {
         for (Runnable l : new ArrayList<Runnable>(listeners)) l.run();
     }
-
-    /** 退出钩子：关掉 minion 自启的 Chrome */
-    public void shutdown() { browserManager.shutdown(); }
 }

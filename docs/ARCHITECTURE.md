@@ -13,7 +13,7 @@ com.minion
 └── core/
     ├── agent/              AgentLoop（主循环）、SubAgentLoop（子 agent，报告落盘+带编号事件+上下文压缩）、Session、TodoList、SystemPromptBuilder、TitleGenerator、RetryPolicy（重试策略：按类别 5s/30s、墙钟 12 分钟）、RetryProgress（重试进度值对象）
     ├── llm/                DeepSeekClient（SSE 流式，内置 deepseek/qwen 思考参数适配）、Message、ImagePart（图片内容块，content 数组化）、ToolCall、Usage、UsageTracker
-    ├── tools/              Tool 接口、ToolRegistry（带插件 gate）、13 个内置工具、db/（只读数据库）、plugin/（可插拔工具）、browser/、mcp/（McpProxyTool）、PathsGuard
+    ├── tools/              Tool 接口、ToolRegistry（带插件 gate）、9 个内置工具、db/（只读数据库）、plugin/（可插拔工具）、mcp/（McpProxyTool）、PathsGuard
     ├── mcp/                MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，传输工厂+重试+诊断）、MinionStdioTransport（stdio 传输：读循环容错/UTF-8/LF 帧/握手通知脱离读线程/退出诊断）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
     ├── skills/             SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
     ├── context/            ContextManager、ContextCompressor、TokenCounter
@@ -26,7 +26,7 @@ com.minion
 ### com.minion（根）
 
 - `Boot`：shade 打包入口（自举启动器：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环），直启或子进程调用 `Main` 进入正常装配
-- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ McpManager（MCP，惰性连接）/ ChromeLauncher+CdpClient+BrowserSession（浏览器，`browser.path` 未配置则不创建，CDP 工具不加载）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。退出钩子统一收口：manager.shutdown（会话+LLM+MCP 子进程）→ chrome.stop。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
+- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ McpManager（MCP，惰性连接）/ ToolPluginManager（可插拔工具）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。退出钩子统一收口：manager.shutdown（会话+LLM+MCP 子进程）。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
 
 ### gui/
 
@@ -43,7 +43,7 @@ com.minion
 | input/SuggestionPopup、CompletionParser、Slash/FileSuggester | 补全弹层（Popup+ListView 锚定大框上方同宽；↑↓/Enter/Tab/Esc/鼠标 cell 级确认）+ 触发解析（/、@ 词首、/skill 前一词三模式）+ 数据提供（5 内置命令+技能条目、工作空间全量文件遍历：跳过点目录与 .gitignore 忽略、字典序、每工作空间独立 5 分钟缓存，会话绑定预热/过期先用旧缓存异步刷新）+ 过滤排序（前缀优先→短路径→字典序） |
 | input/InputChip | 输入块模型与纯逻辑（compose 组装发送文本、粘贴 >1000 字符变块阈值、粘贴块光标处占位符原位展开、弹层模式→块类型映射） |
 | command/CommandDispatcher | 斜杠命令本地分发（/help /skills /skill /compact /tokens）：结果经 SYSTEM 事件渲染，永不发给 LLM；/compact 提交会话工作线程执行 |
-| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点（SVG 圆点）绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；模型页已激活模型名称右侧主色圆点标记（SVG）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗）与 browser.path 文件浏览 |
+| dialog/SettingsDialog、ConfirmSheet | 设置窗（左列 ListView 导航：基础设置/模型/MCP/关于 + StackPane 内容切换；导航列 minWidth 120 防 HBox 空间不足时被 HGrow 内容压塌；基础设置 HBox 行布局标签固定 160 宽（去 ScrollPane——裁剪内灰阶 AA 致发虚），skills.dir 可浏览选取）；MCP 页：服务器列表（状态点（SVG 圆点）绿/橙/红/灰 + 传输 + 工具数/失败原因 + 启用开关）+ 新建/编辑/删除/重连，表单支持 stdio 命令/参数/环境变量与 sse URL/请求头（传输切换联动禁用）；模型页已激活模型名称右侧主色圆点标记（SVG）；连接线程回调经 Platform.runLater 刷新列表；高危操作确认底部卡片（右侧底部两行紧凑小卡滑入，距底 1 行（24px），遮罩仅右侧，Esc 拒绝/Enter 同意，并发串行排队）；基础页按钮栏「应用」（保存不关窗） |
 | theme/Theme | 弹窗深色样式挂载（Dialog 不继承 Scene 样式表） |
 | icon/IconFactory | SVG 图标工厂：21 个 Material Symbols Outlined 24×24 path 常量 + 工厂方法（每图标带 .icon-* 样式类）+ size() 等比缩放；全部界面图标集中于此，颜色/尺寸由 theme.css 控制，不依赖系统字体（Win7 缺字形环境不再显示方块）；RunningIndicator 齿轮亦经此迁移（IconFactory.gear + .running-indicator-gear） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
@@ -53,7 +53,7 @@ com.minion
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放）；`Ev.subAgentId`（0=主代理）区分事件主人，供渲染层加【子代理N】前缀与按 id 隔离流式缓冲 |
 | session/AutoScrollPolicy | 消息区自动滚动贴底策略（纯逻辑，无 JavaFX 依赖，归一化语义）：sync(vvalue,eps) 滚动位置变化重算贴底（动态容差 eps=screens×视口高/可滚动行程，screens 由 MainWindow.FOLLOW_SCREENS=2.0 给定，随内容变长收窄；eps>=1 恒贴底），forceFollow() 用户发消息强制贴底；MainWindow 监听 vvalue + 内容节点 layoutBounds 高度变化驱动置底（vmax 恒 1.0 不可用，无 onVmaxChanged） |
 | WheelScrollAccelerator | 正文消息区滚轮加速：ScrollEvent 过滤器把滚轮增量换算为固定像素（每格 100px，Windows WHEEL_DELTA=40 基准，平滑滚轮小数增量连续换算），setVvalue + consume 阻止皮肤默认比例滚动；Ctrl/Shift 修饰或无滚动行程放行皮肤；MainWindow 构造 chatScroll 后 attach 一次（换 content 无需重挂） |
-| plugin/ToolsPane、DataSourceDialog、BrowserConfigDialog、PluginUi | 设置窗「工具」页（每行=显示名+状态文案+启用开关+配置入口；开关/下拉改动即落 tools.json）+ 数据源管理弹窗（新建/修改/删除/测试连接）+ 浏览器配置弹窗（保存即重建 Chrome）+ 表单共用件（row/errorLabel/alert/parsePositiveInt） |
+| plugin/ToolsPane、DataSourceDialog、SshConnectionsDialog、PluginUi | 设置窗「工具」页（每行=显示名+状态文案+启用开关+配置入口；开关/下拉改动即落 tools.json）+ 数据源管理弹窗（新建/修改/删除/测试连接）+ ssh 连接管理弹窗 + 表单共用件（row/errorLabel/alert/parsePositiveInt） |
 
 ### core/agent/
 
@@ -77,7 +77,7 @@ com.minion
 
 ### core/tools/
 
-- `Tool` 接口（name/description/schema/execute/isHighRisk）→ 13 个实现：ReadTool、WriteTool、EditTool、GlobTool、GrepTool、BashTool、WebFetchTool、TaskTool、TodoWriteTool、BrowserTool、BrowserEvalTool、BrowserScreenshotTool、BrowserDebugTool
+- `Tool` 接口（name/description/schema/execute/isHighRisk）→ 9 个实现：ReadTool、WriteTool、EditTool、GlobTool、GrepTool、BashTool、WebFetchTool、TaskTool、TodoWriteTool
 - `ToolRegistry`：注册表（name 小写索引）；`schemas()` 生成 OpenAI function calling 格式
 - `SchemaGenerator`：Java 结构 → JSON Schema
 - `ConfirmGate`：高危确认（Write 覆盖已有文件 / Edit 始终 / Bash 命中危险命令表）；确认交互经 `ConfirmUi` 接口注入（GUI 下为 GuiConfirmUi）
@@ -91,10 +91,9 @@ com.minion
 - `OutputDump`：工具输出超限 / 子代理报告落盘公共类——写会话临时目录 `<jarDir>/.session/tmp/<sessionId>/`（`write(Path tmpDir, ...)` 失败返回 null 降级）、`tail` 供截断显示读取；**清理不做**：文件生命周期=会话生命周期（SessionManager 删会话递归删除；启动孤儿兜底 `SessionTempCleaner.cleanOrphans(sessionRoot, tmpRoot, 1h)`）
 - `ToolOutputGate`：**入历史闸门**（AgentLoop/SubAgentLoop 工具结果写历史前唯一入口）——单条上限 MAX_CHARS=30000（与 Bash/Grep/DB 同口径），未超原样返回；Read 放宽至 READ_FULL_MAX_CHARS=100000（仍不落盘）；Grep/Glob 与生产类维持 30000；读取类白名单 {Read, Grep, Glob} 只截断 + 「请用 offset/limit 分页继续读取」**不落盘**（防"读→落盘→再读"套娃）；其余截断 + `OutputDump.write` 落盘 + 路径提示（落盘失败降级文案）；代理对边界安全（高代理回退一位）。GUI 展示不受影响（闸门只改入历史副本）
 - `ReadTool`：UTF-8 严格解码优先；失败（如 GBK 文件）自动降级重读，输出首行标注「[GBK 编码文件，已自动转码显示]」，标注不占行号与 offset/limit 计数。**自限**：单次输出上限 MAX_OUTPUT_CHARS=30000（超出提示「已显示第 A-B 行（共 N 行），请用 offset=B 继续读取」）、单行上限 MAX_LINE_CHARS=2000（超长行截断并标注总长），default limit=2000 行；**`full=true`**：单次上限 FULL_MAX_OUTPUT_CHARS=100000，单行上限由 2000 放宽到约 100000（**超过约 10 万字符的单行仍截断并提示改用 Bash**，不支持行内续读）；正文按 `FULL_MAX_OUTPUT_CHARS - FULL_TAIL_RESERVE(128)` 累积，保证「内容 + 全部尾提示」≤ 100000 从而逐字通过入历史闸门（首行即装不下时兜底裁剪到同一预算内，保留行号前缀与「交 Bash」说明）。**不存在文件提示**：目标在任一读放行范围内（工作区/额外放行/只读放行/技能目录/会话临时目录，或越界读开关开、本会话已放行 `ConfirmGate.readOutsideAllowed`）→ 纯「文件不存在: p」；范围之外才附「路径在工作目录之外，访问将被拒绝」+ 当前工作目录（防模型编造路径误入其他项目）
-- `core/tools/browser/` 子包：ChromeLauncher(Chrome 进程管理)、CdpClient(CDP WebSocket 协议)、BrowserSession(浏览器会话与事件缓冲)、Browser/BrowserEval/BrowserScreenshot/BrowserDebug 四个工具
 - `core/tools/mcp/` 子包：`McpProxyTool`（MCP 工具适配器——元数据透传 + 调用委托 McpManager 路由，失败映射 ToolResult.error 给模型自调；不弹高危确认）
 - `core/tools/db/` 子包：**只读数据库**（mysql/postgresql/oracle）。`SqlGuard` SQL 白名单（去前导注释、拒多语句/INTO OUTFILE/FOR UPDATE/LOCK IN SHARE MODE）；`DbExecutor`（新建连接即用即关、setReadOnly(true)、maxRows=100 探测截断、queryTimeout=300s、Oracle 表清单限定 getUserName()）；`DbTool` 三个工具实例（动态 description 带当前数据源与按类型的 action 能力提示）；`DataSourceConfig`/`DataSourceValidator`（标识名唯一、URL 须 `jdbc:` 前缀）；`DbType` 枚举（MySQL 8.0.33 / PostgreSQL 42.7.4 / Oracle 21 OJDBC 驱动，双保险显式 Class.forName）
-- `core/tools/plugin/` 子包：**可插拔工具**。`ToolPlugin` 接口（id/displayName/statusText/enabled/setEnabled/createTools/onConfigChanged）；`ToolContext`（workspace/skillsDir/tmpDir/confirmGate，不含 manager——避免循环引用）；`BrowserPlugin`（4 浏览器工具 + 配置变更重建 Chrome）、`DbPlugin`（数据源 CRUD/当前切换/测试连接，改动即落盘）；`ToolPluginManager`（装配 4 插件 + 实现 `ToolRegistry.PluginGate`：启用判定唯一来源，null/未知 id 保守放行；全局单例，Main 装配，SessionManager 与设置窗共用，监听只用于 GUI 刷新，不参与生效链路）；`ToolStore`（tools.json 原子写，key=browser/mysql/postgresql/oracle，仿 McpStore 的 .bak 损坏备份）；`BrowserConfig`/`DbConfig`（enabled + 数据源列表/当前）。**生效链路（拉模式）**：`SessionManager.newRegistry` 无条件把插件工具注册进每会话 registry 并打 pluginId 标签 + `registry.setGate(manager)`；`schemas()/get()/all()` 取用时按 gate 过滤——改开关后已运行会话的下一轮 AgentLoop 请求自然只取到已启用的工具，无需遍历会话、无竞态
+- `core/tools/plugin/` 子包：**可插拔工具**。`ToolPlugin` 接口（id/displayName/statusText/enabled/setEnabled/createTools/onConfigChanged）；`ToolContext`（workspace/skillsDir/tmpDir/confirmGate，不含 manager——避免循环引用）；`DbPlugin`（数据源 CRUD/当前切换/测试连接，改动即落盘）、`SshPlugin`（连接 CRUD/当前切换）；`ToolPluginManager`（装配 4 插件 + 实现 `ToolRegistry.PluginGate`：启用判定唯一来源，null/未知 id 保守放行；全局单例，Main 装配，SessionManager 与设置窗共用，监听只用于 GUI 刷新，不参与生效链路）；`ToolStore`（tools.json 原子写，key=mysql/postgresql/oracle/ssh，仿 McpStore 的 .bak 损坏备份）；`DbConfig`（enabled + 数据源列表/当前）。**生效链路（拉模式）**：`SessionManager.newRegistry` 无条件把插件工具注册进每会话 registry 并打 pluginId 标签 + `registry.setGate(manager)`；`schemas()/get()/all()` 取用时按 gate 过滤——改开关后已运行会话的下一轮 AgentLoop 请求自然只取到已启用的工具，无需遍历会话、无竞态
 - `example/ExampleTool`：新工具模板示例（未注册）
 
 ### core/mcp/（MCP 客户端核心，基于 aj-mcp-client 1.5 标准实现，JDK8）
@@ -138,7 +137,7 @@ com.minion
 - **事件缓冲**：工作线程只写 EventList，FX 线程读取渲染（UI 不被工具执行阻塞）
 - **确认交互**：GuiConfirmUi 经 Platform.runLater 投递 ConfirmSheet，工具线程 take() 无限等点击（不阻塞 FX 线程；点击结果即决策，无超时竞态）；无 GUI 环境防御性 REJECT
 - 会话落盘：`loop.setSessionStore(store)` 每轮/退出兜底落盘；关闭窗口 `shutdown()` 终止全部运行中会话（有运行中会话先弹确认）
-- **资源生命周期**：每会话一个 DeepSeekClient（`LlmClient.close()` 取消 in-flight + `dispatcher().executorService().shutdown()` + `connectionPool().evictAll()`，幂等）；会话删除/工作空间删除/`shutdown()` 三处释放，退出钩子统一收口（`manager.shutdown()` + `chrome.stop()`）——否则 okhttp 连接池非 daemon 清理线程把 JVM 拖住约 5 分钟
+- **资源生命周期**：每会话一个 DeepSeekClient（`LlmClient.close()` 取消 in-flight + `dispatcher().executorService().shutdown()` + `connectionPool().evictAll()`，幂等）；会话删除/工作空间删除/`shutdown()` 三处释放，退出钩子统一收口（`manager.shutdown()`）——否则 okhttp 连接池非 daemon 清理线程把 JVM 拖住约 5 分钟
 - **模型变更**：经 `SessionManager.applyModelChanged()` 全量 propagate（换 LlmClient + ContextManager.update，旧客户端延迟回收）
 
 ## 4. 核心数据流
@@ -201,7 +200,6 @@ com.minion
 | Grep/Glob 遍历预算 MAX_MILLIS / MAX_ENTRIES / MAX_DEPTH | 30s / 200000 项 / 64 层 | WalkBudget |
 | HTTP 连接超时 CONNECT_TIMEOUT | 30s | DeepSeekClient.java |
 | HTTP 读取超时 READ_TIMEOUT | 300s | DeepSeekClient.java |
-| CdpClient 连接超时 | 10000ms | Main.java |
 | 数据库连接超时 LOGIN_TIMEOUT_SECONDS | 10s | DbExecutor |
 | 数据库查询超时 QUERY_TIMEOUT_SECONDS | 300s | DbExecutor |
 | 数据库结果行数上限 MAX_ROWS（探测截断 101） | 100 行 | DbExecutor |

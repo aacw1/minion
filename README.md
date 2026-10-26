@@ -27,7 +27,7 @@ jar 自举行为（启动器内置，双击 / 命令行同样生效）：
 | `model.json` | 模型配置（多模型：url/apiKey/modelName/provider/thinking/maxContextTokens 等）；设置窗「模型」页管理 |
 | `config.properties` | confirm（高危确认开关/白名单）、paths（空间外读/空间外写）、agent（工具空输出占位）、skills.dir（技能目录）、boot.console（自举控制台窗口开关，重启生效）；设置窗「基础设置」页可改，skills.dir 可用目录选择器浏览选取 |
 | `mcp.json` | MCP 服务器列表（名称/传输/命令/参数/环境变量/URL/请求头/启用开关）；设置窗「MCP」页管理（列表+状态点+启用开关+新建/编辑/删除/重连） |
-| `tools.json` | 可插拔工具配置：`browser`（路径/端口/用户数据目录/无头/超时 + 启用）、`mysql`/`postgresql`/`oracle`（启用 + 数据源列表 + 当前选中）、`ssh`（启用 + 连接列表 + 当前选中）；设置窗「工具」页管理，改动即落盘、全局会话下一轮生效 |
+| `tools.json` | 可插拔工具配置：`mysql`/`postgresql`/`oracle`（启用 + 数据源列表 + 当前选中）、`ssh`（启用 + 连接列表 + 当前选中）；设置窗「工具」页管理，改动即落盘、全局会话下一轮生效 |
 
 工作空间弹窗（新建/修改）各字段的填写要求与含义：
 
@@ -111,27 +111,6 @@ jar 同目录 `session/<workSpaceName>/`，每会话一个 JSON 文件（每轮�
 - **不写历史**：子代理过程只进当前事件流，不落会话历史；重新加载会话只显示主代理历史（不重演子代理过程）
 - **临时文件**：子代理报告与工具超限落盘同在 `.session/tmp/<会话id>/`，删除会话即删除；启动时清理无对应会话文件的残留目录
 
-## 浏览器工具(登录、点击、查询、调试网页)
-
-对接本机 Chrome(CDP 协议,零额外依赖)。首次使用自动启动 Chrome(默认有头窗口,便于观察调试;自动化场景可配置无头)。**默认不启用**——在 设置 → 工具 勾选「浏览器操作」的启用开关并在「配置」里填好浏览器路径后，模型才看得到这几个工具（改完下一轮对话即生效；配置保存会关闭已由本软件启动的 Chrome 并按新配置重建，已打开的页面随之关闭）。
-
-配置项（存 `tools.json`，设置窗「工具」页管理）：
-
-    path=          # Chrome 可执行文件路径,留空自动探测常见安装位置(也可改配置)
-    port=9222      # 调试端口(Chrome 默认只绑定本机,不暴露局域网)
-    userDataDir=./.minion/browser-profile   # 登录状态持久化目录(清空即重置)
-    headless=false
-    timeoutMs=30000
-
-用法(模型自动调用,也可在对话里描述操作):
-
-- `Browser`  open/back/refresh/status —— 打开页面与导航
-- `BrowserEval`  执行 JS:输入、点击、提取表格数据(SPA 受控组件用 __minion_set_value 辅助)
-- `BrowserScreenshot`  截图存工作区
-- `BrowserDebug`  network/console/page —— 网络请求、控制台日志、页面状态
-
-登录示例:对话里告知账号密码 → 模型用 BrowserEval 填表提交 → 登录态保存在 userDataDir,下次会话保留。
-
 ## MCP 工具扩展（stdio / SSE / Streamable HTTP）
 
 对接 MCP（Model Context Protocol）服务器，把服务器上的工具暴露给模型调用。标准 JSON-RPC 2.0 协议，兼容 Claude Code / 千问等生态的 MCP 服务器。配置在设置窗「MCP」页管理（服务器列表 + 状态点 + 启用开关 + 新建/编辑/删除/重连），落盘 `mcp.json`。列表项失败原因展示截断（40 字符），点击可复制完整失败原因（含多行）。
@@ -159,13 +138,10 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
 1. 设置 → MCP → 新建：名称 `playwright`、传输 `stdio`、命令 `npx`、参数 `@playwright/mcp`，保存后勾选「启用」
 2. 新建会话，对话里让模型「打开 https://www.baidu.com 并返回标题」→ 模型会调用 playwright 的浏览器工具完成操作
 
-与浏览器（CDP）工具的关系：MCP 是独立通道，二者可共存；浏览器工具需在 设置 → 工具 页启用并配置路径后才可用（未启用时模型看不到这些工具，MCP 不受影响）。
-
 ## 可插拔工具与只读数据库工具（设置 → 工具）
 
 默认全部不启用。启用开关就是「工具描述是否注入」的开关——不启用时模型在系统提示与 schemas 里完全看不到该工具，调用返回「工具不存在或已停用」。改动即落盘 `tools.json`，全局会话下一轮请求生效，无需重启。
 
-- **浏览器操作**：启用 + 配置后可用（见上节）
 - **mysql / postgreSQL / oracle**（只读）：`DbMysql` / `DbPostgres` / `DbOracle` 三个工具，只读当前选中的数据源
   - **只支持读操作**：SQL 白名单（SELECT/WITH/SHOW/DESC/DESCRIBE/EXPLAIN，拒绝多语句与 INTO OUTFILE / FOR UPDATE 等；写动词做函数名不误判——`replace(...)`/`insert(...)` 这类紧跟左括号的函数调用放行，`REPLACE INTO` / `WITH ... DELETE` 照旧拒），连接层 setReadOnly(true)，且每次调用**新建连接、用后即关**（不落连接池）——建议给只读账号（低权限）以求纵深防御
   - postgreSQL 仅支持 query；schema/describe 会返回禁用提示（MySQL/Oracle 支持 query+schema+describe）

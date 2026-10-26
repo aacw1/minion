@@ -59,12 +59,12 @@ public class ToolRegistryTest {
         ToolRegistry reg = new ToolRegistry();
         FakeGate gate = new FakeGate();
         reg.setGate(gate);
-        reg.register("browser", named("Browser"));
+        reg.register("postgresql", named("DbPostgresql"));
         reg.register("mysql", named("DbMysql"));
-        gate.state.put("browser", false);
+        gate.state.put("postgresql", false);
 
-        assertNull("禁用插件的工具 get 返回 null", reg.get("Browser"));
-        assertFalse(schemasContain(reg, "Browser"));
+        assertNull("禁用插件的工具 get 返回 null", reg.get("DbPostgresql"));
+        assertFalse(schemasContain(reg, "DbPostgresql"));
         assertEquals(1, reg.all().size());
         assertEquals(1, reg.schemas().size());
         // 另一个插件不受影响
@@ -77,12 +77,12 @@ public class ToolRegistryTest {
         ToolRegistry reg = new ToolRegistry();
         FakeGate gate = new FakeGate();
         reg.setGate(gate);
-        reg.register("browser", named("Browser"));
-        gate.state.put("browser", false);
-        assertNull(reg.get("Browser"));
-        gate.state.put("browser", true);
-        assertNotNull("重新启用后同一 registry 立即可见", reg.get("Browser"));
-        assertTrue(schemasContain(reg, "Browser"));
+        reg.register("postgresql", named("DbPostgresql"));
+        gate.state.put("postgresql", false);
+        assertNull(reg.get("DbPostgresql"));
+        gate.state.put("postgresql", true);
+        assertNotNull("重新启用后同一 registry 立即可见", reg.get("DbPostgresql"));
+        assertTrue(schemasContain(reg, "DbPostgresql"));
     }
 
     @Test
@@ -91,7 +91,7 @@ public class ToolRegistryTest {
         FakeGate gate = new FakeGate();
         reg.setGate(gate);
         reg.register(named("Read"));            // 无 pluginId
-        gate.state.put("browser", false);
+        gate.state.put("postgresql", false);
         gate.state.put("Read", false);          // 即使有同名插件 id 也不影响内置工具
         assertNotNull(reg.get("Read"));
         assertTrue(schemasContain(reg, "Read"));
@@ -101,8 +101,8 @@ public class ToolRegistryTest {
     @Test
     public void nullGateBehavesAsBefore() {
         ToolRegistry reg = new ToolRegistry();
-        reg.register("browser", named("Browser"));   // 打了标签但没有 gate
-        assertNotNull(reg.get("Browser"));
+        reg.register("postgresql", named("DbPostgresql"));   // 打了标签但没有 gate
+        assertNotNull(reg.get("DbPostgresql"));
         assertEquals(1, reg.schemas().size());
         assertEquals(1, reg.all().size());
     }
@@ -112,10 +112,10 @@ public class ToolRegistryTest {
         ToolRegistry reg = new ToolRegistry();
         FakeGate gate = new FakeGate();
         reg.setGate(gate);
-        reg.register("browser", named("Dup"));
+        reg.register("postgresql", named("Dup"));
         reg.register("mysql", named("Dup"));     // 同名覆盖，归属改为 mysql
-        gate.state.put("browser", false);
-        assertNotNull("归属已改为 mysql，browser 的开关不该影响它", reg.get("Dup"));
+        gate.state.put("postgresql", false);
+        assertNotNull("归属已改为 mysql，postgresql 的开关不该影响它", reg.get("Dup"));
         gate.state.put("mysql", false);
         assertNull(reg.get("Dup"));
         assertEquals(0, reg.all().size());       // 两个插件都禁用后 all() 为空

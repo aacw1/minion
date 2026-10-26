@@ -8,7 +8,7 @@ import java.util.Set;
 /** 工具结果入历史闸门：单条输出超上限时，生产类截断 + 落盘留档 + 路径提示；
  *  读取类只截断 + 分页续读提示（**不落盘**，杜绝"读→落盘→再读→再落盘"套娃循环）。
  *  与 BashTool/GrepTool/MarkdownTable 的工具内预算同口径（30000 字符）；工具内预算未覆盖的通道
- *  （Read 全量读回、MCP/浏览器等第三方输出）由本闸门兜底——工具层是各自防线，本类是统一防线。
+ *  （Read 全量读回、MCP 等第三方输出）由本闸门兜底——工具层是各自防线，本类是统一防线。
  *  Read 放宽到 READ_FULL_MAX_CHARS（配合 ReadTool full=true 一次读回大字段原文），
  *  Grep/Glob 与生产类维持 MAX_CHARS。
  *  只作用于"写入历史"的字符串：GUI 展示（ui.onToolResult）仍用原始结果，行为不变。 */

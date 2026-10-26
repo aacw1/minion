@@ -52,7 +52,7 @@ public class ConfirmGate {
         return config.readAllowOutside() || sessionBypass;
     }
 
-    /** 越界写审批（截图等输出类工具）：与越界读同语义，仅弹窗文案区分，避免"越界读取"误导 */
+    /** 越界写审批（输出类工具落盘）：与越界读同语义，仅弹窗文案区分，避免"越界读取"误导 */
     public synchronized boolean checkWriteOutside(Tool tool, JsonObject args, String path) {
         return checkOutside(tool, args, path, "越界写入");
     }
@@ -61,7 +61,7 @@ public class ConfirmGate {
      *  开关关 → 直接拒绝（不弹框，无视会话放行/确认跳过/白名单）；
      *  开关开 → 高危放行链：会话放行/确认跳过/工具白名单命中即放行，否则弹框
      *    （Y 放行本次 / N 拒绝 / W 会话放行）。
-     *  与 checkWriteOutside（BrowserScreenshot 输出、受空间外读开关）语义不同，勿混用。 */
+     *  与 checkWriteOutside（输出类工具的落盘目标、受空间外读开关）语义不同，勿混用。 */
     public synchronized boolean checkEscapeWrite(Tool tool, JsonObject args, String path) {
         if (!config.writeAllowOutside()) return false;
         if (sessionBypass || config.confirmSkip()) return true;

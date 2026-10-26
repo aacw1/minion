@@ -1,6 +1,7 @@
 package com.minion.core.tools.plugin;
 
 import com.minion.core.tools.db.DataSourceConfig;
+import com.minion.core.tools.ssh.SshConnection;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -25,14 +26,6 @@ public class ToolStoreTest {
         Path f = d.resolve("tools.json");
         assertTrue("缺省文件应已生成", Files.exists(f));
 
-        BrowserConfig b = s.browserConfig();
-        assertFalse(b.enabled);
-        assertEquals("", b.path);
-        assertEquals(9222, b.port);
-        assertEquals("./.minion/browser-profile", b.userDataDir);
-        assertFalse(b.headless);
-        assertEquals(30000, b.timeoutMs);
-
         for (String id : new String[]{"mysql", "postgresql", "oracle"}) {
             DbConfig db = s.dbConfig(id);
             assertNotNull(id, db);
@@ -41,7 +34,10 @@ public class ToolStoreTest {
             assertTrue(db.dataSources.isEmpty());
             assertNull(db.currentDataSource());
         }
-        // 生成文件里四项 enabled 都是 false
+        assertFalse("ssh 默认应不启用", s.sshConfig().enabled);
+        assertEquals("", s.sshConfig().current);
+        assertTrue(s.sshConfig().connections.isEmpty());
+        // 生成文件里各项 enabled 都是 false
         String json = new String(Files.readAllBytes(f), StandardCharsets.UTF_8);
         assertFalse(json.contains("\"enabled\":true"));
     }
@@ -50,26 +46,17 @@ public class ToolStoreTest {
     public void saveRoundtripPreservesEverything() throws Exception {
         Path d = dir();
         ToolStore s = ToolStore.load(d);
-        s.browserConfig().enabled = true;
-        s.browserConfig().path = "C:\\chrome\\chrome.exe";
-        s.browserConfig().port = 9333;
-        s.browserConfig().headless = true;
-        s.browserConfig().timeoutMs = 5000;
 
         DbConfig my = s.dbConfig("mysql");
         my.enabled = true;
         my.dataSources.add(new DataSourceConfig("prod", "jdbc:mysql://h:3306/db", "u1", "p@ss"));
         my.dataSources.add(new DataSourceConfig("dev", "jdbc:mysql://h2:3306/db", "u2", ""));
         my.current = "prod";
+        s.sshConfig().enabled = true;
+        s.sshConfig().add(new SshConnection("bastion", "10.0.0.5", 2222, "root", "pwd", "", ""));
         s.save();
 
         ToolStore s2 = ToolStore.load(d);
-        assertTrue(s2.browserConfig().enabled);
-        assertEquals("C:\\chrome\\chrome.exe", s2.browserConfig().path);
-        assertEquals(9333, s2.browserConfig().port);
-        assertTrue(s2.browserConfig().headless);
-        assertEquals(5000, s2.browserConfig().timeoutMs);
-
         DbConfig my2 = s2.dbConfig("mysql");
         assertTrue(my2.enabled);
         assertEquals(2, my2.dataSources.size());
@@ -81,6 +68,15 @@ public class ToolStoreTest {
         assertEquals("p@ss", prod.password);   // 密码明文往返
         assertFalse(s2.dbConfig("oracle").enabled);
         assertTrue(s2.dbConfig("oracle").dataSources.isEmpty());
+
+        assertTrue(s2.sshConfig().enabled);
+        assertEquals("bastion", s2.sshConfig().current);
+        SshConnection c = s2.sshConfig().currentConnection();
+        assertNotNull(c);
+        assertEquals("10.0.0.5", c.host);
+        assertEquals(2222, c.port);
+        assertEquals("root", c.user);
+        assertEquals("pwd", c.password);
     }
 
     @Test
@@ -91,8 +87,8 @@ public class ToolStoreTest {
 
         ToolStore s = ToolStore.load(d);
         assertTrue("损坏文件应备份为 .bak", Files.exists(d.resolve("tools.json.bak")));
-        assertFalse(s.browserConfig().enabled);
-        assertEquals(9222, s.browserConfig().port);
+        assertFalse(s.sshConfig().enabled);
+        assertTrue(s.sshConfig().connections.isEmpty());
         assertTrue(s.dbConfig("mysql").dataSources.isEmpty());
     }
 
@@ -100,14 +96,17 @@ public class ToolStoreTest {
     public void loadNullCollectionsNormalized() throws Exception {
         Path d = dir();
         Files.write(d.resolve("tools.json"),
-                "{\"browser\":{\"enabled\":true,\"path\":null},\"mysql\":{\"dataSources\":null,\"current\":null}}"
+                ("{\"ssh\":{\"enabled\":true,\"current\":null,\"connections\":null},"
+                        + "\"mysql\":{\"dataSources\":null,\"current\":null}}")
                         .getBytes(StandardCharsets.UTF_8));
         ToolStore s = ToolStore.load(d);
-        assertEquals("", s.browserConfig().path);
         assertNotNull(s.dbConfig("mysql").dataSources);
         assertTrue(s.dbConfig("mysql").dataSources.isEmpty());
         assertEquals("", s.dbConfig("mysql").current);
-        assertTrue(s.browserConfig().enabled);   // 已有值不被默认覆盖
+        assertNotNull(s.sshConfig().connections);
+        assertTrue(s.sshConfig().connections.isEmpty());
+        assertEquals("", s.sshConfig().current);
+        assertTrue(s.sshConfig().enabled);   // 已有值不被默认覆盖
     }
 
     @Test

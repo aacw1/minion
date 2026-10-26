@@ -25,12 +25,12 @@ JDK 8 + Maven 单模块。GUI 为唯一界面（JavaFX 8，JDK 自带 jfxrt）�
     │   ├── dialog/           SettingsDialog（设置窗四页签）、ConfirmSheet（高危确认底部卡片）
     │   ├── theme/            Theme（弹窗深色挂载）
     │   ├── confirm/          GuiConfirmUi（Platform.runLater 投递 ConfirmSheet，poll 等待）
-    │   ├── plugin/           ToolsPane（设置窗「工具」页）、DataSourceDialog、BrowserConfigDialog、PluginUi
+    │   ├── plugin/           ToolsPane（设置窗「工具」页）、DataSourceDialog、SshConnectionsDialog、PluginUi
     │   └── session/          SessionManager（多会话并行/工作空间 CRUD）、SessionHandle、EventList
     └── core/
         ├── agent/   AgentLoop（主循环，构造器自动注册 TaskTool/TodoWriteTool）、SubAgentLoop、Session、TodoList
         ├── llm/     DeepSeekClient（SSE 流式，close() 释放 okhttp）、LlmClient 接口（cancel/close 默认空实现）、Message（reasoningContent 原样回传）
-        ├── tools/   Tool 接口 + 13 个内置工具 + ToolRegistry（带插件 gate）+ db/（只读数据库）+ plugin/（可插拔工具）+ browser/（CDP 浏览器）、mcp/（McpProxyTool）、SchemaGenerator、ConfirmGate、PathsGuard
+        ├── tools/   Tool 接口 + 9 个内置工具 + ToolRegistry（带插件 gate）+ db/（只读数据库）+ plugin/（可插拔工具）+ mcp/（McpProxyTool）、SchemaGenerator、ConfirmGate、PathsGuard
         ├── mcp/     MCP 客户端：McpManager（状态机/惰性连接/路由）、AjMcpClient（aj-mcp-client 包装，三传输）、McpCommands、McpJson、McpStore（mcp.json）、McpServer
         ├── skills/  SkillManager（scanTree 递归扫描）、SkillSet（内置+项目合并快照）、Skill（YAML frontmatter 解析）
         ├── context/ 上下文压缩、token 统计

@@ -1121,7 +1121,6 @@ public class SessionManagerTest {
         com.minion.core.tools.ToolRegistry reg = h.loop.registry();
 
         // 默认全不启用：插件工具一个都不可见，内置工具照常
-        assertNull(reg.get("Browser"));
         assertNull(reg.get("DbMysql"));
         assertNull(reg.get("DbPostgres"));
         assertNull(reg.get("DbOracle"));
@@ -1129,18 +1128,18 @@ public class SessionManagerTest {
         assertNotNull(reg.get("Bash"));
 
         // 启用后同一个 registry 立即可见（拉模式：无需重建会话）
-        plugins.setEnabled("browser", true);
-        assertNotNull(reg.get("Browser"));
-        assertNotNull(reg.get("BrowserScreenshot"));
         plugins.setEnabled("oracle", true);
         assertNotNull(reg.get("DbOracle"));
         assertNull("未启用的 mysql 仍不可见", reg.get("DbMysql"));
 
         // schemas 同步反映（这就是「描述词是否注入」的判定处）
-        int withBrowserAndOracle = reg.schemas().size();
-        plugins.setEnabled("browser", false);
-        assertEquals(withBrowserAndOracle - 4, reg.schemas().size());
-        assertNull(reg.get("Browser"));
+        int withOracle = reg.schemas().size();
+        plugins.setEnabled("mysql", true);
+        assertEquals(withOracle + 1, reg.schemas().size());
+        assertNotNull(reg.get("DbMysql"));
+        plugins.setEnabled("mysql", false);
+        assertEquals(withOracle, reg.schemas().size());
+        assertNull(reg.get("DbMysql"));
         assertNotNull(reg.get("DbOracle"));
         assertSame("SessionManager 应暴露同一个 plugins 实例", plugins, m.plugins());
     }
@@ -1151,7 +1150,7 @@ public class SessionManagerTest {
         SessionManager m = newManager((com.minion.core.tools.plugin.ToolPluginManager) null);
         SessionHandle h = m.createSession(null);
         assertNotNull(h.loop.registry().get("Read"));
-        assertNull(h.loop.registry().get("Browser"));
+        assertNull(h.loop.registry().get("DbMysql"));
         assertNull(m.plugins());
     }
 

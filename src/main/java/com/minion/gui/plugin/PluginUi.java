@@ -12,7 +12,7 @@ import javafx.stage.Window;
 
 /**
  * gui/plugin 三个界面共用的小件：表单行、错误提示标签、弹窗提示、正整数解析。
- * 抽出来是为了 DRY——原先 SettingsDialog.row 是 private，浏览器段迁出后这三处都要用同一套布局口径。
+ * 抽出来是为了 DRY——原先 SettingsDialog.row 是 private，工具配置段迁出后这三处都要用同一套布局口径。
  * 表单行不用 GridPane+ColumnConstraints：JavaFX 8 下标签列仍会被挤压截断（基础设置页的历史结论）。
  */
 final class PluginUi {

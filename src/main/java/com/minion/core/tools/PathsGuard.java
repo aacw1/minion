@@ -30,7 +30,7 @@ public class PathsGuard {
                     .startsWith(dirPath.toAbsolutePath().normalize());
         }
         try {
-            // 目标不存在（写新文件/新建目录，如截图保存）时 toRealPath 抛 NoSuchFileException
+            // 目标不存在（写新文件/新建目录）时 toRealPath 抛 NoSuchFileException
             // 会误判越界：向上找最深已存在祖先做真实路径校验（同 WriteTool.outsideGuard 的 T8 约定）。
             // NOFOLLOW_LINKS 探活：断链（指向不存在的目录）视为已存在，toRealPath 解析失败即拒绝，
             // 防止写穿断链逃逸到工作区外。
