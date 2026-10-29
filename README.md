@@ -192,3 +192,18 @@ Playwright 示例（需要 Node.js 18+，可在 [nodejs.org](https://nodejs.org)
 排查建议：确认已安装 Git for Windows（`bash.exe` 可被找到，否则降级 `cmd /c`）；仍乱码时升级
 Git for Windows 到支持 Win7 的最新版（2.46 及以前的 2.x）。原生 Windows 程序（`cmd //c dir`、
 `ipconfig` 等）输出的 GBK 字节由输出编码探测自动兜底，无需干预。
+
+## Win7 正文特殊符号显示为方块（字体回退）
+
+如果 Win7 上正文/工具摘要里的 `→`、`•` 等显示为方块，复制到 Notepad++ 却正常，这是 JavaFX 8
+字体回退问题，不是编码错误：
+
+- JavaFX 8 的 `-fx-font-family` 不支持 CSS 逗号列表回退：第一个族不存在时直接落到 `System`，
+  后面的族不会尝试；
+- Win7 只有 `Microsoft YaHei`（中文环境 JavaFX 族名为“微软雅黑”），没有 Win8+ 的
+  `Microsoft YaHei UI`；
+- 旧版本首族写 UI，Win7 整体落到 System，而 JavaFX 8 的复合字体回退对部分符号覆盖不全。
+
+现版本启动时从已安装字体中自动选择（Win10+ 优先 `Microsoft YaHei UI`，Win7 回退“微软雅黑”），
+一般无需配置。若个别 emoji/罕见符号仍显示方块，是 JavaFX 8 复合字体的覆盖上限，正文内容与复制
+不受影响，可粘贴到 Notepad++ 查看。

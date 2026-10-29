@@ -1,6 +1,9 @@
 /* minion 深色科技感主题 */
 .root {
-    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    /* JavaFX 8 不按逗号列表回退：第一个族缺失会直接落到 System，后面的族不会尝试。
+       这里只写中文环境兜底族；启动时 UiFonts.apply 会按已安装字体覆盖
+       （Win10+ 优先 Microsoft YaHei UI，Win7 回退微软雅黑），见 gui/theme/UiFonts。 */
+    -fx-font-family: "微软雅黑";
     -fx-font-size: 16px;
     -fx-background-color: #0f1115;
 }

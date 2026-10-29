@@ -14,6 +14,7 @@ import com.minion.gui.session.SessionManager;
 import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import com.minion.gui.theme.Theme;
+import com.minion.gui.theme.UiFonts;
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
 import javafx.collections.ListChangeListener;
@@ -97,6 +98,8 @@ public class MainWindow {
         AnchorPane frame = new AnchorPane();
         BorderPane root = new BorderPane();
         root.getStyleClass().add("root");
+        // JavaFX 8 的 CSS 字体列表不会逐项回退：按已安装字体解析后写行内样式（Win7 无 YaHei UI）
+        UiFonts.apply(root);
         AnchorPane.setTopAnchor(root, 0.0);
         AnchorPane.setBottomAnchor(root, 0.0);
         AnchorPane.setLeftAnchor(root, 0.0);
