@@ -486,8 +486,15 @@ public class AgentLoop {
                     ui.onWarning("达到工具轮数上限(" + roundLimit + ")，已停止本轮");
                     break;
                 }
-                if (contextManager != null && contextManager.shouldCompress(session.messages)) {
-                    if (contextManager.worthCompressing(session.messages)) {
+                // P1-3：每轮只做一次单次扫描评估（旧实现 shouldCompress + worthCompressing +
+                // estimate ×2 共 4 次全量扫描，长会话每轮多花数十毫秒）
+                ContextManager.Evaluation eval = contextManager == null
+                        ? null : contextManager.evaluate(session.messages);
+                // 本轮请求发出时的估算量（压缩后更新）：作为 usage 校准的基准（P1-3）
+                int requestEstimate = eval == null ? 0 : eval.used;
+                boolean compressedThisCheckpoint = false;
+                if (eval != null && eval.shouldCompress) {
+                    if (eval.worthCompressing) {
                         ui.onCompressingChanged(true);
                         CompressOutcome outcome;
                         try {
@@ -496,14 +503,15 @@ public class AgentLoop {
                             ui.onCompressingChanged(false);
                         }
                         if (outcome == CompressOutcome.OK) {
-                            int pct = (int) (contextManager.estimate(session.messages) * 100
-                                    / contextManager.maxTokens());
-                            if (contextManager.shouldCompress(session.messages)) {
+                            compressedThisCheckpoint = true;
+                            ContextManager.Evaluation after = contextManager.evaluate(session.messages);
+                            requestEstimate = after.used;
+                            if (after.shouldCompress) {
                                 // 压后仍超阈值：保留区保底组自身超预算（如最新一轮大输出）或常驻内容过大
-                                warnCompressIneffectiveOnce("自动压缩后上下文仍占" + pct
+                                warnCompressIneffectiveOnce("自动压缩后上下文仍占" + after.percent()
                                         + "%（大输出占满保留区）；有新内容可压时自动重试");
                             } else {
-                                ui.onWarning("自动压缩已完成，上下文降低至" + pct + "%");
+                                ui.onWarning("自动压缩已完成，上下文降低至" + after.percent() + "%");
                             }
                             pushContextStats(); // 压缩完成：进度圈回落
                         } else if (outcome == CompressOutcome.FAILED) {
@@ -512,11 +520,16 @@ public class AgentLoop {
                         // NOTHING：极端竞态下无可压缩，继续本轮请求（超窗由服务端报错兜底）
                     } else {
                         // 事前收益门槛不足（可压量 < 5%×max）：本次跳过，不调 LLM；只提示一次，不阻塞后续
-                        int pct = (int) (contextManager.estimate(session.messages) * 100
-                                / contextManager.maxTokens());
                         warnCompressIneffectiveOnce("自动压缩暂缓：可压内容不足（最近内容与常驻提示词已占"
-                                + pct + "%）；有新内容可压时自动重试");
+                                + eval.percent() + "%）；有新内容可压时自动重试");
                     }
+                }
+                // P1-3 发送前硬闸：估算 ≥95%×窗口，且本轮无法靠压缩自救（无可压组/收益不足/压缩无效）
+                // 时拒绝发送——继续发必然 400，且该会话此后每次重发仍超窗，用户只能新建会话。
+                if (eval != null && eval.hardLimit && !compressedThisCheckpoint) {
+                    ui.onError("上下文已占窗口 " + eval.percent()
+                            + "%（≥95%），本轮未发送：请用 /compact 压缩或新建会话");
+                    break;
                 }
                 String system = promptBuilder.build(allSkills);
                 List<Message> request = new ArrayList<Message>();
@@ -632,7 +645,14 @@ public class AgentLoop {
                     }
                 }
 
-                if (usage[0] != null) session.usage.record(usage[0]);
+                if (usage[0] != null) {
+                    session.usage.record(usage[0]);
+                    // P1-3：真实 input_tokens 回灌估算校准（以本轮请求前的估算为基准；clamp 0.8~1.5，
+                    // 明显不可信/过小的 usage 自动忽略，见 ContextManager.calibrate）
+                    if (contextManager != null && requestEstimate > 0) {
+                        contextManager.calibrate(usage[0].inputTokens, requestEstimate);
+                    }
+                }
                 if ("error".equals(finish[0])) {
                     if (noOutputYet(content, thinking) && degradeImagesOnFailure()) continue; // 同上：onError 回调路径（如 API 400）——闸门在前，degrade 有清图+警告副作用
                     ui.onError(err[0] == null ? "请求失败" : err[0].getMessage());

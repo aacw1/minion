@@ -669,8 +669,7 @@ public class AgentLoopCompactTest {
 
     /** 手动 /compact 失败文案：中性「压缩失败」，不带「自动」字样（与自动压缩路径区分） */
     @Test
-    public void compactNow_failure_wordingIsNeutral() throws Exception {
-        Config config = Config.load(tmp.getRoot().toPath());
+    public void compactNow_failure_wordingIsNeutral() throws Exception {        Config config = Config.load(tmp.getRoot().toPath());
         FakeLlmClient llm = new FakeLlmClient();
         llm.throwOnCompleteChat = true; // 不可重试错误 → 立即失败
         ToolRegistry registry = new ToolRegistry();
@@ -693,5 +692,72 @@ public class AgentLoopCompactTest {
         assertEquals(1, ui.errors.size());
         assertTrue("手动压缩失败应报「压缩失败：…」", ui.errors.get(0).startsWith("压缩失败："));
         assertFalse("不应出现「自动」字样", ui.errors.get(0).contains("自动"));
+    }
+
+    // ---------------- P1-3：发送前硬闸 / usage 校准回灌 ----------------
+
+    /** P1-3 发送前硬闸：常驻 pinned 内容占满窗口（≥95%），且无原子组可压（压缩救不了）→
+     *  本轮不发送请求，直接报错提示压缩或新建会话（旧实现会发出必然 400 的请求） */
+    @Test
+    public void hardLimit_blocksRequestWhenNothingCanCompress() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(1000, llm, 0); // 硬闸 950、危险区 850
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 5;
+        Message pin = Message.user(ascii(3900)); // 975 + 4 开销 = 979 ≥ 950
+        pin.pinned = true;
+        loop.messages().add(pin);
+        ContextManager.Evaluation before = cm.evaluate(loop.messages());
+        assertTrue("场景前提：进硬闸（" + before.percent() + "%）", before.hardLimit);
+        assertEquals("场景前提：pinned 不入组 → 无组可压", 0, before.groups);
+        assertFalse("场景前提：无法靠压缩自救", before.canCompress());
+
+        loop.runUserTurn("hi");
+
+        assertTrue("硬闸必须拦下请求：不得调用 streamChat", llm.requests.isEmpty());
+        assertEquals("只报一条错误", 1, ui.errors.size());
+        assertTrue("错误应说明未发送: " + ui.errors,
+                ui.errors.get(0).contains("未发送") && ui.errors.get(0).contains("95"));
+    }
+
+    /** P1-3 usage 校准回灌：请求前估算 ~209，服务端上报 input_tokens=300 →
+     *  估算系数被抬高，后续 estimate 随真实用量放大（不再「只记账不校准」） */
+    @Test
+    public void usage_calibratesEstimateUpward() throws Exception {
+        Config config = Config.load(tmp.getRoot().toPath());
+        FakeLlmClient llm = new FakeLlmClient();
+        llm.inputTokens = 300; // 真实量级（默认 10 会被校准的可信度闸门忽略）
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new com.minion.core.tools.example.ExampleTool());
+        RecordingUi ui = new RecordingUi();
+        ConfirmGate confirm = new ConfirmGate(config, new FakeConfirmUi(ConfirmUi.Decision.APPROVE));
+        ContextManager cm = new ContextManager(100000, llm, 0); // 大窗口：不触发压缩，纯看校准
+        AgentLoop loop = new AgentLoop(llm, registry,
+                new SystemPromptBuilder(tmp.getRoot().getPath() + "/project.md"),
+                confirm, ui, cm,
+                new Workspace(tmp.getRoot().getPath()),
+                Session.create(tmp.getRoot().getPath(), "test-model"));
+        loop.retryPolicy = new RetryPolicy(10, 10, 60000);
+        loop.roundLimit = 5;
+        loop.messages().add(Message.user(ascii(800))); // 200 + 4 = 204
+        llm.addTurn("完成");
+
+        loop.runUserTurn("hi"); // 本轮 user 5 token → 请求前估算 209
+
+        assertEquals("一轮一次请求", 1, llm.requests.size());
+        double f = cm.calibration();
+        assertTrue("低估应抬高校准系数（实际 " + f + "）", f > 1.1);
+        assertEquals("EMA：0.5×1.0 + 0.5×clamp(300/209)", 0.5 + 0.5 * Math.min(1.5, 300.0 / 209.0), f, 1e-6);
+        assertTrue("估算随系数放大", cm.estimate(loop.messages()) > 209);
     }
 }

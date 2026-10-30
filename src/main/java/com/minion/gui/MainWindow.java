@@ -12,6 +12,7 @@ import com.minion.gui.input.InputView;
 import com.minion.gui.session.AutoScrollPolicy;
 import com.minion.gui.session.SessionHandle;
 import com.minion.gui.session.SessionManager;
+import com.minion.gui.session.ViewCache;
 import com.minion.gui.sidebar.SessionListView;
 import com.minion.gui.sidebar.WorkspaceListView;
 import com.minion.gui.theme.Theme;
@@ -42,15 +43,14 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Circle;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -64,8 +64,12 @@ public class MainWindow {
     private ChatView chatView;
     private ScrollPane chatScroll;
     private final AutoScrollPolicy policy = new AutoScrollPolicy();
-    /** 会话视图缓存（key = 会话 id）：切页签不重建消息区，只增量重放新事件；删除会话/切工作空间清理 */
-    private final Map<String, ChatView> viewCache = new HashMap<String, ChatView>();
+    /** 会话视图缓存（key = 会话 id，LRU 上限 4）：切页签不重建消息区，只增量重放新事件；
+     *  删除会话/切工作空间清理。淘汰/删除/清空时回调解绑（bind(false)），否则被淘汰视图仍持有事件监听器（P1-6） */
+    private final ViewCache<ChatView> viewCache = new ViewCache<ChatView>(
+            new java.util.function.Consumer<ChatView>() {
+                @Override public void accept(ChatView v) { v.bind(false); }
+            });
     /** 无活动会话时的空白占位（clearChatPane 后 setContent 用；视图内容保留在缓存中不销毁） */
     private final Region placeholder = new Region();
     private InputView inputView;
@@ -248,10 +252,12 @@ public class MainWindow {
                 });
             }
             @Override public void onSessionRunningChanged(SessionHandle h, boolean running) {
-                Platform.runLater(() -> updateTab(h));
-                if (inputView != null) inputView.onRunningChanged(h, running);
-                // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写，统一 runLater 访问）
+                // P1-5：同一次 running 变化只投递**一个** FX 任务（页签 + 输入区 + 指示器一起刷新）。
+                // 旧实现页签与指示器各投递一次 runLater，输入区内部再套一次——同一状态被放大 3 倍。
                 Platform.runLater(() -> {
+                    updateTab(h);
+                    if (inputView != null) inputView.onRunningChanged(h, running);
+                    // 仅当前激活会话反映到指示器（chatView 字段 FX 线程读写）
                     if (chatView != null && chatView.handle() == h) {
                         syncIndicator(h);
                         runningIndicator.setCompressing(false); // 运行结束复位压缩态
@@ -576,10 +582,7 @@ public class MainWindow {
     private void updateTab(SessionHandle h) {
         for (Tab t : tabs.getTabs()) {
             if (h.id.equals(t.getUserData())) {
-                String title = h.title == null ? "(新会话)" : h.title;
-                t.setText(tabTitle(title));
-                t.setTooltip(new Tooltip(title)); // 完整标题提示
-                t.setGraphic(runningIndicator(h));
+                applyTabHead(t, h);
                 return;
             }
         }
@@ -587,12 +590,10 @@ public class MainWindow {
     }
 
     private void addTab(SessionHandle h) {
-        String title = h.title == null ? "(新会话)" : h.title;
-        Tab t = new Tab(tabTitle(title));
+        Tab t = new Tab();
         t.setUserData(h.id);
-        t.setTooltip(new Tooltip(title)); // 完整标题提示
-        t.setGraphic(runningIndicator(h));
         t.setClosable(true);
+        applyTabHead(t, h); // 首次建头部：状态点/Tooltip 各建一次，之后只更新
         t.setOnCloseRequest(e -> {
             e.consume(); // 不触发 TabPane 默认移除，由本流程显式移除
             if (h.running) {
@@ -612,6 +613,7 @@ public class MainWindow {
             // 关闭流程：卸载视图缓存（再次从左侧打开时重新加载）+ 移除页签
             openedIds.remove(h.id);
             viewCache.remove(h.id);
+            stopTabPulse(t); // 动画引用节点：离开场景图前停止呼吸动画（P1-8）
             tabs.getTabs().remove(t);
             if (chatView != null && chatView.handle() == h) {
                 manager.deactivateSession(h); // 幂等守卫不再拦截再次激活
@@ -626,6 +628,7 @@ public class MainWindow {
     private void removeTabById(String id) {
         for (Tab t : tabs.getTabs()) {
             if (id.equals(t.getUserData())) {
+                stopTabPulse(t);
                 tabs.getTabs().remove(t);
                 return;
             }
@@ -641,8 +644,42 @@ public class MainWindow {
         }
     }
 
-    private Node runningIndicator(SessionHandle h) {
-        // 呼吸动画由 StatusDot Timeline 驱动（CSS keyframe JavaFX 8 不支持）
-        return StatusDot.create(h.running);
+    /** 页签头部节点缓存键（Tab.getProperties）：状态点与 Tooltip 每个页签只建一次（P1-8）。
+     *  旧实现每次 updateTab 都 new Circle + new Tooltip：旧 Circle 上的 INDEFINITE Timeline
+     *  从不 stopPulseIn（StatusDot 类注释已写明必须回收），每回合泄漏 1~2 个无限动画。 */
+    private static final String TAB_DOT_KEY = "minion.tabDot";
+    private static final String TAB_TIP_KEY = "minion.tabTip";
+
+    /** 刷新页签头部（标题/提示/状态点）：全部复用已建节点，running 变化只切换呼吸动画 */
+    private void applyTabHead(Tab t, SessionHandle h) {
+        String title = h.title == null ? "(新会话)" : h.title;
+        t.setText(tabTitle(title));
+        Object cachedTip = t.getProperties().get(TAB_TIP_KEY);
+        Tooltip tip;
+        if (cachedTip instanceof Tooltip) {
+            tip = (Tooltip) cachedTip;
+        } else {
+            tip = new Tooltip();
+            t.getProperties().put(TAB_TIP_KEY, tip);
+            t.setTooltip(tip);
+        }
+        tip.setText(title); // 完整标题提示
+        Object cachedDot = t.getProperties().get(TAB_DOT_KEY);
+        Circle dot;
+        if (cachedDot instanceof Circle) {
+            dot = (Circle) cachedDot;
+        } else {
+            dot = StatusDot.create(false);
+            t.getProperties().put(TAB_DOT_KEY, dot);
+            t.setGraphic(dot);
+        }
+        if (h.running) StatusDot.startPulse(dot);
+        else StatusDot.stopPulse(dot);
+    }
+
+    /** 页签回收：停止状态点呼吸动画（Timeline 强引用节点，节点离开场景图前必须停） */
+    private void stopTabPulse(Tab t) {
+        Object dot = t.getProperties().get(TAB_DOT_KEY);
+        if (dot instanceof Circle) StatusDot.stopPulse((Circle) dot);
     }
 }

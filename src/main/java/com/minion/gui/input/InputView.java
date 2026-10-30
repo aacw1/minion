@@ -597,13 +597,13 @@ public class InputView extends VBox {
         });
     }
 
+    /** 运行状态变化（MainWindow 转发，**调用方保证 FX 线程**）：P1-5 去掉内部 runLater——
+     *  与页签/指示器共用同一次 FX 投递，同一次状态变化不再重复排队 3 个任务 */
     public void onRunningChanged(SessionHandle h, boolean running) {
         if (current != h) return;
-        Platform.runLater(() -> {
-            this.running = running;
-            updateButton();
-            contextRing.setRunning(running);
-        });
+        this.running = running;
+        updateButton();
+        contextRing.setRunning(running);
     }
 
     /** AskUserQuestion 挂起状态变化（MainWindow 转发自 SessionManager 监听） */

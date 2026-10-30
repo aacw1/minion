@@ -15,6 +15,9 @@ public class FakeLlmClient implements LlmClient {
     public final List<Integer> failAtCompleteChat = new ArrayList<Integer>();
     /** 每次 completeChat 的 user 消息文本（最后一条），供断言批次内容 */
     public final List<String> completeChatRequests = new ArrayList<String>();
+    /** 流式回复上报的 usage.inputTokens（默认 10 = 小请求，P1-3 校准会忽略；
+     *  需要验证校准回灌时设为真实量级的数值） */
+    public int inputTokens = 10;
     private int completeChatCalls = 0;
     private final List<ScriptedTurn> turns = new ArrayList<ScriptedTurn>();
     private int cursor = 0;
@@ -117,7 +120,7 @@ public class FakeLlmClient implements LlmClient {
             return;
         }
         Usage u = new Usage();
-        u.inputTokens = 10;
+        u.inputTokens = inputTokens;
         u.outputTokens = 5;
         // thinking 先于 content/tool_calls 回调（与 DeepSeek SSE 顺序一致）
         if (turn.thinking != null) handler.onThinking(turn.thinking);

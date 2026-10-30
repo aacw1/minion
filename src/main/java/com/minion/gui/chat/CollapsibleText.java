@@ -26,6 +26,8 @@ public class CollapsibleText extends VBox {
     private final Node summaryNode;     // 摘要（String 构造时 = Label）
     private String text; // 流式思考段需更新，不可 final
     private boolean expanded;
+    /** 流式写入中（P1-4）：内容体走 setStreamText（跳过每帧精校），其余路径走 setDisplayText */
+    private boolean streaming;
 
     public CollapsibleText(String summary, String text, boolean defaultExpanded) {
         this(new Label(summary == null ? "" : summary), text, defaultExpanded);
@@ -74,10 +76,17 @@ public class CollapsibleText extends VBox {
     }
 
     /** 流式内容更新（思考段）：更新正文并强制展开——流式过程内容持续增长，
-     *  折叠会遮挡实时输出；定稿折叠由 finalizeLength 按最终长度决定 */
+     *  折叠会遮挡实时输出；定稿折叠由 finalizeLength 按最终长度决定。
+     *  P1-4：流式写入走 MessageTextArea.setStreamText（跳过每帧布局后精校），
+     *  定稿时 finalizeLength 走完整路径（完整测量 + 精校）。 */
     public void setStreamText(String t) {
         this.text = t == null ? "" : t;
-        setExpanded(true); // 先展开：update() 把最新全文写入内容体（折叠态不得持有文本）
+        streaming = true;
+        try {
+            setExpanded(true); // 先展开：update() 把最新全文写入内容体（折叠态不得持有文本）
+        } finally {
+            streaming = false;
+        }
     }
 
     /** 内容定稿：按最终长度决定折叠态（≥阈值折叠、短内容展开），流式结束后调用一次 */
@@ -90,7 +99,10 @@ public class CollapsibleText extends VBox {
         // 折叠态内容体不参与布局（managed=false）但会被 JavaFX 皮肤布局（宽度 0）；
         // 折叠期间绝不能持有文本，否则宽 0 换行会让 JavaFX 8 文本引擎越界（详见类说明与设计文档）
         String want = contentText(expanded, hasText, text);
-        if (!want.equals(content.getText())) content.setDisplayText(want);
+        if (!want.equals(content.getText())) {
+            if (streaming) content.setStreamText(want);
+            else content.setDisplayText(want);
+        }
         // 折叠懒挂载：不展开就不进场景图（不创建 skin，不参与布局/渲染）；展开时按需挂到摘要行之后
         boolean attach = shouldAttachContent(expanded, hasText);
         if (attach) {

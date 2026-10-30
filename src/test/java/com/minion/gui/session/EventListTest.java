@@ -141,4 +141,74 @@ public class EventListTest {
         assertEquals(0, new Ev(EventList.Kind.CONTENT, "a", null).subAgentId);
         assertEquals(3, new Ev(EventList.Kind.CONTENT, "a", null, 3).subAgentId);
     }
+
+    // ---------------- P1-6：容量上限 + 绝对游标 ----------------
+
+    /** 超过上限丢弃最旧事件（内存有界），绝对序号仍连续 */
+    @Test
+    public void cap_dropsOldestAndKeepsAbsoluteCursor() {
+        EventList l = newList();
+        int n = EventList.MAX_EVENTS + 2;
+        for (int i = 0; i < n; i++) l.add(new Ev(EventList.Kind.CONTENT, "d" + i, null));
+        assertEquals("绝对事件数不变（含已丢弃）", n, l.size());
+        assertEquals("丢弃最旧 2 条", 2, l.base());
+        assertEquals("保留事件数封顶", EventList.MAX_EVENTS, l.snapshot().size());
+        assertEquals("最早的保留事件是第 3 条", "d2", l.snapshot().get(0).text);
+    }
+
+    /** 丢弃后 rebind 按 base 钳制：from 落在已丢弃区间 → 从保留下限重放，不重复不丢 */
+    @Test
+    public void rebind_afterDrop_clampsToBase() {
+        EventList l = newList();
+        int n = EventList.MAX_EVENTS + 10;
+        for (int i = 0; i < n; i++) l.add(new Ev(EventList.Kind.CONTENT, "d" + i, null));
+        List<Ev> all = l.rebind(new EventList.Listener() {
+            @Override public void onEvent(Ev e) { }
+        }, 0);
+        assertEquals("游标 0 被钳到 base：返回全部保留事件", EventList.MAX_EVENTS, all.size());
+        assertEquals("d10", all.get(0).text);
+        List<Ev> tail = l.rebind(new EventList.Listener() {
+            @Override public void onEvent(Ev e) { }
+        }, n - 3);
+        assertEquals("游标在保留下限之后：只重放尾部", 3, tail.size());
+        assertEquals("d" + (n - 3), tail.get(0).text);
+    }
+
+    /** 丢弃后从「已渲染到的绝对位置」继续：不重复渲染已渲染部分 */
+    @Test
+    public void rebind_absoluteCursorDoesNotRepeat() {
+        EventList l = newList();
+        l.add(new Ev(EventList.Kind.CONTENT, "a", null));
+        List<Ev> first = l.rebind(new EventList.Listener() {
+            @Override public void onEvent(Ev e) { }
+        }, 0);
+        assertEquals(1, first.size());
+        l.setActive(false, null);
+        // 期间积压超过上限：最旧（含已渲染的 a）被丢弃
+        for (int i = 0; i < EventList.MAX_EVENTS + 5; i++) {
+            l.add(new Ev(EventList.Kind.CONTENT, "x" + i, null));
+        }
+        int rendered = 1; // 视图游标是绝对序号
+        List<Ev> second = l.rebind(new EventList.Listener() {
+            @Override public void onEvent(Ev e) { }
+        }, rendered);
+        assertEquals("从游标 1 起重放（base=6 已越过游标）→ 全部保留事件", EventList.MAX_EVENTS, second.size());
+        assertEquals("x5", second.get(0).text); // 绝对序号 6 = x5（a=0, x0=1 … x5=6）
+    }
+
+    /** clear 重置绝对序号基准 */
+    @Test
+    public void clear_resetsBase() {
+        EventList l = newList();
+        for (int i = 0; i < EventList.MAX_EVENTS + 1; i++) l.add(new Ev(EventList.Kind.CONTENT, "x", null));
+        assertEquals(1, l.base());
+        l.clear();
+        assertEquals(0, l.base());
+        assertEquals(0, l.size());
+        l.add(new Ev(EventList.Kind.CONTENT, "a", null));
+        assertEquals(1, l.size());
+        assertEquals(1, l.rebind(new EventList.Listener() {
+            @Override public void onEvent(Ev e) { }
+        }, 0).size());
+    }
 }

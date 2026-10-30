@@ -92,17 +92,19 @@ public class SuggestionPopup {
      *  hide + 插入，保证与键盘确认同一时序，规避事件派发期间改输入区的竞争） */
     public void setOnConfirm(Consumer<String> c) { this.onConfirm = c; }
 
-    /** 过滤+排序（纯静态，可单测）：大小写不敏感 contains；前缀匹配优先 → 标签短优先 → 字典序 */
+    /** 过滤+排序（纯静态，可单测）：大小写不敏感 contains；前缀匹配优先 → 标签短优先 → 字典序。
+     *  P0-6：小写形式用 Suggestion 构造期缓存（lower），十万级文件列表每次敲键不再逐条
+     *  toLowerCase() 分配新 String。 */
     public static List<Suggestion> filter(List<Suggestion> all, String query) {
         final String q = query == null ? "" : query.trim().toLowerCase();
         List<Suggestion> out = new ArrayList<Suggestion>();
         for (Suggestion s : all) {
-            if (q.isEmpty() || s.label.toLowerCase().contains(q)) out.add(s);
+            if (q.isEmpty() || s.lower.contains(q)) out.add(s);
         }
         Collections.sort(out, new Comparator<Suggestion>() {
             @Override public int compare(Suggestion a, Suggestion b) {
-                boolean ap = q.isEmpty() || a.label.toLowerCase().startsWith(q);
-                boolean bp = q.isEmpty() || b.label.toLowerCase().startsWith(q);
+                boolean ap = q.isEmpty() || a.lower.startsWith(q);
+                boolean bp = q.isEmpty() || b.lower.startsWith(q);
                 if (ap != bp) return ap ? -1 : 1;
                 int len = Integer.compare(a.label.length(), b.label.length());
                 if (len != 0) return len;

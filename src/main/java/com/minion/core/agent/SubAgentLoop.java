@@ -90,9 +90,12 @@ public class SubAgentLoop {
                     return "子 agent 已中断";
                 }
                 // 上下文压缩检查点（与主代理同策略）：超阈值且值得压 → 压缩（失败中止并返回失败文本）；
-                // 可压量不足门槛 → 暂缓（不调 LLM），提示一次后静默跳过（有新内容可压时自动重试）
-                if (contextManager != null && contextManager.shouldCompress(messages)) {
-                    if (contextManager.worthCompressing(messages)) {
+                // 可压量不足门槛 → 暂缓（不调 LLM），提示一次后静默跳过（有新内容可压时自动重试）。
+                // P1-3：单次扫描评估，替代 shouldCompress + worthCompressing + estimate 的多次全量扫描
+                ContextManager.Evaluation eval = contextManager == null
+                        ? null : contextManager.evaluate(messages);
+                if (eval != null && eval.shouldCompress) {
+                    if (eval.worthCompressing) {
                         String fail = compressSubContext();
                         if (fail != null) {
                             if (Thread.currentThread().isInterrupted()) {
@@ -105,10 +108,8 @@ public class SubAgentLoop {
                         }
                     } else if (!ineffectiveWarned) {
                         ineffectiveWarned = true;
-                        int pct = (int) (contextManager.estimate(messages) * 100
-                                / contextManager.maxTokens());
                         ui.onSubAgentNotice(no, "自动压缩暂缓：可压内容不足（最近内容与常驻提示词已占 "
-                                + pct + "%）；有新内容可压时自动重试");
+                                + eval.percent() + "%）；有新内容可压时自动重试");
                     }
                 }
                 final List<ToolCall>[] toolCalls = new List[1];
@@ -304,18 +305,19 @@ public class SubAgentLoop {
         if (r.outcome == ContextCompressor.Outcome.OK) {
             messages.clear();
             messages.addAll(r.messages); // 摘要置前 + pinned 任务提示词常驻（压缩结果由 ContextManager 保证）
-            int pct = (int) (contextManager.estimate(messages) * 100 / contextManager.maxTokens());
-            if (contextManager.shouldCompress(messages)) {
+            // P1-3：压后再评估一次（单次扫描）取百分比与是否仍超阈值
+            ContextManager.Evaluation after = contextManager.evaluate(messages);
+            if (after.shouldCompress) {
                 // 压后仍超阈值：保留区保底组自身超预算（如最新一轮大输出）或常驻内容过大——
                 // 只提示一次，不阻塞后续（可压量增长后自动重试）
                 if (!ineffectiveWarned) {
                     ineffectiveWarned = true;
-                    ui.onSubAgentNotice(no, "压缩后上下文仍占 " + pct
+                    ui.onSubAgentNotice(no, "压缩后上下文仍占 " + after.percent()
                             + "%（大输出占满保留区）；有新内容可压时自动重试");
                 }
             } else {
                 // spec 4.2：成功提示带压缩后百分比（算法与主代理自动压缩一致）
-                ui.onSubAgentNotice(no, "已压缩上下文（降低至 " + pct + "%）");
+                ui.onSubAgentNotice(no, "已压缩上下文（降低至 " + after.percent() + "%）");
             }
             return null;
         }

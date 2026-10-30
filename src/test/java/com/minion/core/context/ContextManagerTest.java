@@ -455,4 +455,131 @@ public class ContextManagerTest {
         assertTrue("指令应强调已落盘路径（后续汇报要引用）",
                 ContextManager.SUB_AGENT_COMPRESS_SYSTEM.contains("落盘"));
     }
+
+    // ---------------- P1-3：单次扫描评估 / usage 校准 / 硬闸 ----------------
+
+    /** evaluate 与各兼容入口结果完全一致（一次扫描替代多次全量扫描，语义不变） */
+    @Test
+    public void evaluate_matchesCompatMethods() {
+        ContextManager cm = new ContextManager(100, new FakeLlmClient(), 0);
+        List<Message> input = chains(12, "问题"); // 24 组 216 token
+        ContextManager.Evaluation e = cm.evaluate(input);
+        assertEquals(cm.estimate(input), e.used);
+        assertEquals(ContextManager.chunkGroups(input).size(), e.groups);
+        assertEquals("take = 组数 − 保留组数", e.groups - e.keep, e.take);
+        assertEquals(cm.compressibleTokens(input), e.compressible);
+        assertEquals(cm.shouldCompress(input), e.shouldCompress);
+        assertEquals(cm.worthCompressing(input), e.worthCompressing);
+        assertEquals(cm.maxTokens(), e.max);
+        assertEquals((int) Math.round(e.used * 100.0 / e.max), e.percent());
+        assertTrue(e.canCompress());
+    }
+
+    /** 全部组都在保留预算内：take=0、可压量 0、canCompress=false */
+    @Test
+    public void evaluate_noCompressibleWhenAllWithinBudget() {
+        ContextManager cm = new ContextManager(10000, new FakeLlmClient(), 0);
+        ContextManager.Evaluation e = cm.evaluate(chains(12, "问题"));
+        assertEquals(0, e.take);
+        assertEquals(0L, e.compressible);
+        assertFalse(e.canCompress());
+    }
+
+    /** 单次扫描的分组必须与 chunkGroups 完全一致（含 system/pinned/summary 穿插、多工具组、孤立 tool） */
+    @Test
+    public void evaluate_groupingMatchesChunkGroupsOnMixedHistory() {
+        List<Message> msgs = new ArrayList<Message>();
+        msgs.add(Message.system("sys"));
+        msgs.add(Message.user("u1"));
+        msgs.add(assistantWithTools("Read", "Grep")); // 一条 assistant 两个 tool call
+        msgs.add(Message.toolResult("c_Read", "Read", "内容1"));
+        msgs.add(Message.toolResult("c_Grep", "Grep", "内容2"));
+        msgs.add(Message.toolResult("orphan", "Read", "孤立 tool"));
+        Message pin = Message.user("技能正文");
+        pin.pinned = true;
+        msgs.add(pin);
+        Message sum = Message.user("【旧摘要】");
+        sum.summary = true;
+        msgs.add(sum);
+        msgs.add(Message.assistant("一二三四五六七八九十"));
+        msgs.add(Message.user("u2"));
+        ContextManager cm = new ContextManager(30, new FakeLlmClient(), 0);
+        List<List<Message>> groups = ContextManager.chunkGroups(msgs);
+        ContextManager.Evaluation e = cm.evaluate(msgs);
+        assertEquals("组数必须与 chunkGroups 一致", groups.size(), e.groups);
+        assertTrue("场景前提：有可压组（take=" + e.take + "）", e.take > 0);
+        long expected = 0;
+        for (int i = 0; i < e.take; i++) expected += TokenCounter.estimateMessages(groups.get(i));
+        assertEquals("可压量必须是前 take 组的合计（组边界对齐）", expected, e.compressible);
+    }
+
+    /** 硬闸口径：估算 ≥95%×max 且无组可压（常驻 pinned 占满）→ hardLimit */
+    @Test
+    public void evaluate_hardLimitOnPinnedOnlyContent() {
+        ContextManager cm = new ContextManager(100, new FakeLlmClient(), 0); // 硬闸 95
+        List<Message> input = new ArrayList<Message>();
+        input.add(pinned(400)); // 400 ASCII = 100 token（+4 开销）→ 104 ≥ 95
+        ContextManager.Evaluation e = cm.evaluate(input);
+        assertTrue("104/100 应进硬闸", e.hardLimit);
+        assertTrue("同时处于危险区", e.forceZone);
+        assertEquals(104, e.used);
+        assertEquals(104, e.percent());
+        assertEquals("pinned 不入组：无组可压", 0, e.groups);
+        assertFalse("无组可压 → 无法靠压缩自救", e.canCompress());
+    }
+
+    /** 校准：真实用量是估算的 1.75 倍 → 系数 EMA 抬到 1.25，估算按系数放大 */
+    @Test
+    public void calibrate_raisesEstimateWhenUnderestimated() {
+        ContextManager cm = new ContextManager(1000, new FakeLlmClient(), 0);
+        List<Message> input = new ArrayList<Message>();
+        input.add(Message.user(ascii(2400))); // 2400 × 0.25 = 600 → +4 = 604
+        int raw = cm.estimate(input);
+        assertEquals(604, raw);
+        assertTrue("1.75 倍观测应被采纳", cm.calibrate((int) (raw * 1.75), raw));
+        assertEquals("EMA 0.5：0.5×1.0 + 0.5×1.5", 1.25, cm.calibration(), 1e-9);
+        assertEquals((int) Math.ceil(raw * 1.25), cm.estimate(input));
+    }
+
+    /** 校准：真实用量低于估算 → 系数下压（0.5 观测 → 目标 0.8，EMA 后 0.9） */
+    @Test
+    public void calibrate_lowersEstimateWhenOverestimated() {
+        ContextManager cm = new ContextManager(1000, new FakeLlmClient(), 0);
+        assertTrue(cm.calibrate(300, 600)); // ratio 0.5 → target 0.8
+        assertEquals(0.9, cm.calibration(), 1e-9);
+        // 持续观测后逼近下限 0.8（EMA 逐步收敛；估算取整会让比值略高于 0.5，收敛在 0.8 附近）
+        for (int i = 0; i < 20; i++) cm.calibrate(300, (int) Math.ceil(600 * cm.calibration()));
+        assertTrue("应压到下限附近（实际 " + cm.calibration() + "）",
+                cm.calibration() <= 0.9 && cm.calibration() >= ContextManager.CALIBRATION_MIN - 1e-9);
+    }
+
+    /** 不可信观测不采纳：真实值过小（噪声/测试桩）、比值越界（usage 缺失或被改写）、非法参数 */
+    @Test
+    public void calibrate_ignoresTinyAndBogusObservations() {
+        ContextManager cm = new ContextManager(1000, new FakeLlmClient(), 0);
+        assertFalse("过小真实值", cm.calibrate(10, 600));
+        assertFalse("比值过大", cm.calibrate(100000, 600));
+        assertFalse("比值过小", cm.calibrate(200, 100000));
+        assertFalse("估算为 0", cm.calibrate(5000, 0));
+        assertEquals("全部忽略后系数仍为 1.0", 1.0, cm.calibration(), 1e-9);
+    }
+
+    /** 校准系数始终夹在 0.8~1.5（单次异常不会让估算失控） */
+    @Test
+    public void calibrate_clampedToRange() {
+        ContextManager cm = new ContextManager(1000, new FakeLlmClient(), 0);
+        for (int i = 0; i < 20; i++) cm.calibrate(1500, (int) Math.ceil(600 * cm.calibration()));
+        assertTrue("上限 1.5", cm.calibration() <= ContextManager.CALIBRATION_MAX + 1e-9);
+        cm.resetCalibration();
+        assertEquals(1.0, cm.calibration(), 1e-9);
+        for (int i = 0; i < 20; i++) cm.calibrate(300, (int) Math.ceil(600 * cm.calibration()));
+        assertTrue("下限 0.8", cm.calibration() >= ContextManager.CALIBRATION_MIN - 1e-9);
+    }
+
+    /** 测试辅助：ASCII 串（0.25 token/字符） */
+    private static String ascii(int n) {
+        StringBuilder sb = new StringBuilder(n);
+        for (int i = 0; i < n; i++) sb.append('x');
+        return sb.toString();
+    }
 }

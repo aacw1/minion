@@ -56,4 +56,55 @@ public class TokenCounterTest {
         // 每张图粗估 500 token
         assertEquals(2 * ImagePart.IMAGE_TOKENS, withImages - withoutImages);
     }
+
+    // ---- P1-3：日文/韩文/emoji/代理对不再按 ASCII 低估 ----
+
+    /** 平假名/片假名按 CJK 权重（0.7/字）：5 个假名 ≈ 3.5 → 4（旧实现按 ASCII 只给 2） */
+    @Test
+    public void estimate_japaneseHiragana_countedAsCjk() {
+        assertEquals(4, TokenCounter.estimate("こんにちは"));
+        assertEquals(3, TokenCounter.estimate("テスト")); // 3 × 0.7 = 2.1 → 3
+    }
+
+    /** 韩文谚文按 CJK 权重：5 个音节 ≈ 3.5 → 4（旧实现 1.25 → 2） */
+    @Test
+    public void estimate_hangul_countedAsCjk() {
+        assertEquals(4, TokenCounter.estimate("안녕하세요"));
+    }
+
+    /** 补充平面 CJK（扩展 B，代理对）：按 code point 计 0.7（旧实现按 2 个字符 × 0.25 = 0.5） */
+    @Test
+    public void estimate_supplementaryCjk_singleCodepoint() {
+        assertEquals(3, TokenCounter.estimate("\uD840\uDC00\uD840\uDC00\uD840\uDC00")); // 3 × U+20000
+    }
+
+    /** emoji：每个 1.5 token（旧实现 2 个 char × 0.25 = 0.5，低估 4 倍） */
+    @Test
+    public void estimate_emoji_notUnderestimated() {
+        assertEquals(2, TokenCounter.estimate("\uD83D\uDE00"));               // 单个 😀 = 1.5 → 2
+        assertEquals(6, TokenCounter.estimate("\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00"));
+        String emojis = "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00";
+        assertTrue("emoji 不应按 ASCII 低估：估算应 ≥ 每个 1 token",
+                TokenCounter.estimate(emojis) >= 4);
+    }
+
+    /** 验收口径：日文/emoji 估算误差 < 30%（以「每个字符 ≈ 0.7~1.5 token」为参照） */
+    @Test
+    public void estimate_japaneseAndEmoji_within30Percent() {
+        String ja = "これはテストです"; // 8 个假名/汉字
+        int jaTokens = TokenCounter.estimate(ja);
+        assertTrue("日文估算应 ≥ 0.6×字符数（实际 " + jaTokens + "）", jaTokens >= (int) (ja.length() * 0.6));
+        assertTrue("日文估算应 ≤ 1.3×字符数（实际 " + jaTokens + "）", jaTokens <= (int) Math.ceil(ja.length() * 1.3));
+        String emoji = "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00"; // 3 个 emoji
+        int emojiTokens = TokenCounter.estimate(emoji);
+        assertTrue("emoji 估算应 ≥ 每个 1 token（实际 " + emojiTokens + "）", emojiTokens >= 3);
+    }
+
+    /** estimateMessage 与 estimateMessages 单条口径一致（P1-3 单次扫描复用同一函数） */
+    @Test
+    public void estimateMessage_matchesSingleListEstimate() {
+        Message u = Message.user("读取文件");
+        u.reasoningContent = "先看结构";
+        assertEquals(TokenCounter.estimateMessage(u), TokenCounter.estimateMessages(Collections.singletonList(u)));
+    }
 }

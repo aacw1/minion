@@ -59,6 +59,10 @@ public class MessageTextArea extends TextArea {
     /** 连续校正次数（relayout 重置）：超限停止自续校正，防自续死循环 */
     private int correctAttempts = 0;
 
+    /** 流式路径标记：流式写入时跳过「布局后精校」（P1-4：每帧双 runLater + lookupAll(".text")
+     *  在长回复上是可观的 FX 线程开销；保守测量已保证高度 ≥ 内容，精校留给定稿一次性消除空隙） */
+    private boolean streaming;
+
     public MessageTextArea(String text) {
         super(ChatText.sanitize(text));
         setEditable(false);
@@ -74,16 +78,24 @@ public class MessageTextArea extends TextArea {
     }
 
     /** 流式增量更新：就地 setText，不重建节点（不打断用户操作/选中态）。
-     *  合并窗口内文本未变时直接跳过——避免同一窗口的重复 flush 触发无谓的全量重排。 */
+     *  合并窗口内文本未变时直接跳过——避免同一窗口的重复 flush 触发无谓的全量重排。
+     *  P1-4：流式更新不做布局后精校（见 {@link #streaming}），只走保守测量。 */
     public void setStreamText(String text) {
         String s = ChatText.sanitize(text);
         if (s.equals(getText())) return;
-        setText(s);
+        streaming = true;
+        try {
+            setText(s);
+        } finally {
+            streaming = false;
+        }
     }
 
     /** 所有写文本路径统一入口（setText 为 final 无法覆盖）：清洗不可解码替换字符，
-     *  详见 {@link ChatText}（U+FFFD 在 JavaFX 8 会触发文本布局越界并中断整场景布局） */
+     *  详见 {@link ChatText}（U+FFFD 在 JavaFX 8 会触发文本布局越界并中断整场景布局）。
+     *  非流式路径（历史渲染/定稿）：完整测量 + 布局后精校。 */
     public void setDisplayText(String text) {
+        streaming = false;
         setText(ChatText.sanitize(text));
     }
 
@@ -100,7 +112,7 @@ public class MessageTextArea extends TextArea {
         lastMeasuredTextHeight = textH;
         // 行高比补偿：skin 内部 Text 行高 ≈ 普通 Text × 1.07（否则流式期间恒低估 → 滚动条死锁）
         setPrefHeight(textH * lineScale + pad.getTop() + pad.getBottom() + HEIGHT_FUDGE);
-        scheduleCorrect(); // 布局后按 skin 实际渲染精校（消除保守测量的空隙/临界 wrap 行差）
+        if (!streaming) scheduleCorrect(); // 布局后按 skin 实际渲染精校（流式每帧跳过，定稿一次）
     }
 
     /** 布局后精校：读内部 Text 节点（skin 渲染的真实内容高度）。双 runLater 保证在布局 pass 之后执行 */

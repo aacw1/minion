@@ -2,6 +2,7 @@ package com.minion.gui.chat;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.minion.gui.CoalescingQueue;
 import com.minion.gui.icon.IconFactory;
 import com.minion.gui.session.EventList;
 import com.minion.gui.session.EventList.Ev;
@@ -69,8 +70,9 @@ public class ChatView extends VBox {
     /** 上次展示结束时的滚动位置（MainWindow 切走时记、切回恢复；缓存视图内容连续，vvalue 语义保留） */
     private double savedVvalue = 1.0;
 
-    /** 视图清理代数：clear() 递增，使清空前排队的 runLater 事件失效（事件仍在 EventList，重建时重放） */
-    private int clearGen = 0;
+    /** 视图清理代数：clear() 递增，使清空前排队的 runLater 事件失效（事件仍在 EventList，重建时重放）。
+     *  P1-5 起后台线程在入队时读取它（事件携带代数），故为 volatile */
+    private volatile int clearGen = 0;
 
     /** 重放分批闸门：首次绑定/切回时历史按批渲染，期间直通事件入队，重放完再按序处理（见 ReplayGate） */
     private final ReplayGate replayGate = new ReplayGate();
@@ -316,18 +318,39 @@ public class ChatView extends VBox {
     public SessionHandle handle() { return handle; }
 
     /** 直通监听器：渲染完成才推进游标（下次 bind 不重复渲染直通过的事件）。
-     *  重放分批期间新到的直通事件先入队（不能插到未重放的历史之前），由最后一批统一处理。 */
+     *  重放分批期间新到的直通事件先入队（不能插到未重放的历史之前），由最后一批统一处理。
+     *  P1-5：事件只入合并队列，由一次 FX 排空任务批量渲染（不再逐 chunk 一个 runLater）；
+     *  入队时记录视图代数（clear 后旧事件丢弃，EventList 仍保存，切回按游标重放）。 */
+    private final CoalescingQueue<PendingFx> fxQueue = new CoalescingQueue<PendingFx>();
+
+    /** 待渲染事件 + 入队时的视图代数（代数变化 = 视图已清空，该事件交给重放） */
+    private static final class PendingFx {
+        final int gen;
+        final Ev ev;
+
+        PendingFx(int gen, Ev ev) {
+            this.gen = gen;
+            this.ev = ev;
+        }
+    }
+
     private final EventList.Listener fxListener = new EventList.Listener() {
         @Override public void onEvent(Ev e) {
-            final int gen = clearGen;
-            Platform.runLater(() -> {
-                if (gen != clearGen) return; // 视图已清空：事件仍在 EventList，切回时按游标重放
-                if (replayGate.enqueueIfReplaying(e)) return; // 重放中：按序入队
-                replayed++;
-                onEventFx(e);
-            });
+            if (fxQueue.offer(new PendingFx(clearGen, e))) {
+                Platform.runLater(ChatView.this::drainFxEvents);
+            }
         }
     };
+
+    /** FX 线程排空合并队列：一次任务处理整批事件（顺序 = 入队顺序） */
+    private void drainFxEvents() {
+        for (PendingFx p : fxQueue.drain()) {
+            if (p.gen != clearGen) continue; // 视图已清空：事件仍在 EventList，切回时按游标重放
+            if (replayGate.enqueueIfReplaying(p.ev)) continue; // 重放中：按序入队
+            replayed++;
+            onEventFx(p.ev);
+        }
+    }
 
     /**
      * 绑定/解绑事件流：active=true 增量重放自上次游标起的新事件 + 后续直通（视图缓存场景不 clear，
@@ -372,7 +395,8 @@ public class ChatView extends VBox {
     }
 
     public void clear() {
-        clearGen++;              // 作废清空前排队的 runLater 事件（防止 replayed 游标错位）
+        clearGen++;              // 作废清空前排队的事件（防止 replayed 游标错位）
+        fxQueue.clear();         // 丢弃未排空事件（EventList 保留，切回重放）
         replayGate.abort();      // 作废未完成的重放批次
         if (flushTimer != null) flushTimer.stop();
         flushScheduled = false;
@@ -403,6 +427,7 @@ public class ChatView extends VBox {
         // 每轮内容越滚越长，表现为"一直在回复同一段内容"（线上实证，用户误判上下文错乱）；
         // 按 id 只清对应主人：子代理工具调用不得清掉主代理/其他子代理正在累积的段
         if (StreamBuffer.isRoundBoundary(e.kind)) {
+            finalizeReplies(id); // 正文定稿（缓冲此刻尚未清零）：流式近似 → 精确展平
             streams.onRoundBoundary(id);
             // 缓冲清零 = 该主人本轮流结束：断开流段引用，下一次增量另起新段（不合并进边界前的旧段）
             activeStreams.clearOwner(id);
@@ -475,6 +500,8 @@ public class ChatView extends VBox {
                         statusSummary(IconFactory.timer(), stats), null, StreamKind.NONE, id);
                 // 轮次结束（AgentLoop 末尾发统计行）：强制回到底部，让回复末尾与统计行可见
                 if (scrollBottomRequest != null) scrollBottomRequest.run();
+                // 轮末正文定稿（P1-4）：主代理与仍在活跃的子代理正文各用一次精确展平覆盖
+                for (Integer owner : activeStreams.owners(StreamKind.REPLY)) finalizeReplies(owner);
                 // 轮末兜底回收子代理流式资源（终审 P3）：失败/中断的子代理不发 SUB_AGENT_DONE
                 // （只有成功路径发），若仅靠 DONE 回收，其缓冲/段引用会随失败派发数无界增长；
                 // 轮末所有工具（含子代理）必已结束，统一清非主代理条目——成功态已被 DONE 提前回收，此处幂等
@@ -498,6 +525,7 @@ public class ChatView extends VBox {
                         withSubAgentBadge(statusSummary(IconFactory.check(), "完成"), id),
                         e.text, StreamKind.NONE, false, id);
                 // 完成后回收缓冲与流段引用（子代理不再发事件；防会话内条目随派发数增长，Fix Round 1 P3）
+                finalizeReplies(id); // 子代理正文定稿（回收前缓冲仍在）
                 streams.remove(id);
                 activeStreams.clearOwner(id);
                 break;
@@ -678,9 +706,9 @@ public class ChatView extends VBox {
      *  否则长思考段错过定稿折叠；回复增量不在此落地，继续在合并窗口内累积。 */
     private void flushThinking() {
         if (dirtyThinkOwners.isEmpty()) return;
-        flushPolicy.markFlushed(System.nanoTime());
         List<Integer> think = new ArrayList<Integer>(dirtyThinkOwners);
         dirtyThinkOwners.clear();
+        flushPolicy.markFlushed(System.nanoTime(), maxChars(think, null));
         for (Integer id : think) {
             String text = streams.of(id).thinking();
             if (text.isEmpty()) continue;
@@ -689,31 +717,55 @@ public class ChatView extends VBox {
     }
 
     /** 落地窗口内累积的流式增量：每个脏主人每流只渲染一次（思考先于正文，保持段出现顺序）。
-     *  非流式事件到达/重放结束/思考定稿/轮次边界前调用，保证事件顺序与段顺序一致。 */
+     *  非流式事件到达/重放结束/思考定稿/轮次边界前调用，保证事件顺序与段顺序一致。
+     *  P1-4：回复正文走 StreamBuffer 的增量展平（每帧只处理新增行），不再每帧 flexmark 全文解析；
+     *  段定稿（轮次边界/STATS/子代理完成）时再用一次精确转换覆盖，最终显示与旧实现逐字一致。 */
     private void flushStreams() {
         if (flushScheduled && flushTimer != null) {
             flushTimer.stop();
             flushScheduled = false;
         }
         if (dirtyThinkOwners.isEmpty() && dirtyReplyOwners.isEmpty()) return;
-        flushPolicy.markFlushed(System.nanoTime());
         List<Integer> think = new ArrayList<Integer>(dirtyThinkOwners);
         List<Integer> reply = new ArrayList<Integer>(dirtyReplyOwners);
         dirtyThinkOwners.clear();
         dirtyReplyOwners.clear();
+        // 合并窗口按累计长度自适应放大（>20k 字符时 150~250ms），末段全文重排不再每 80ms 一次
+        flushPolicy.markFlushed(System.nanoTime(), maxChars(think, reply));
         for (Integer id : think) {
             String text = streams.of(id).thinking();
             if (text.isEmpty()) continue;
             stream(tagOf(id, "【思考】"), "log-think", text, StreamKind.THINK, id);
         }
         for (Integer id : reply) {
-            // 纯文本展示（Label 不可选问题之解）：markdown 展平去语法记号，段内原生拖选复制
-            String plain = MarkdownRenderer.toPlainText(streams.of(id).content());
+            // 纯文本展示（Label 不可选问题之解）：增量展平去语法记号，段内原生拖选复制
+            String plain = streams.of(id).plainText();
             // 回复内容仍为空（思考后直接调工具等场景，LLM 空 content chunk 增量）：
             // 不打印【回复】标签——空标签+空白正文的"幽灵段"
             if (plain.trim().isEmpty()) continue;
             stream(tagOf(id, "【回复】"), "log-reply", plain, StreamKind.REPLY, id);
         }
+    }
+
+    /** 本批待渲染主人的最大累计字符数（自适应合并窗口输入；think/reply 可为 null） */
+    private int maxChars(List<Integer> think, List<Integer> reply) {
+        int max = 0;
+        if (think != null) for (Integer id : think) max = Math.max(max, streams.of(id).length());
+        if (reply != null) for (Integer id : reply) max = Math.max(max, streams.of(id).length());
+        return max;
+    }
+
+    /** 正文段定稿（P1-4）：流式期用行级近似展平，定稿时用一次精确 MarkdownRenderer.toPlainText
+     *  覆盖（此时缓冲尚未清零），保证最终显示与逐帧全量解析的旧实现逐字一致。
+     *  仅在段仍活跃（有流式引用）时生效；已定稿/无正文不做事。 */
+    private void finalizeReplies(int subAgentId) {
+        Seg seg = activeStreams.get(StreamKind.REPLY, subAgentId);
+        if (seg == null) return;
+        String md = streams.of(subAgentId).content();
+        if (md == null || md.trim().isEmpty()) return;
+        String exact = MarkdownRenderer.toPlainText(md);
+        if (exact.isEmpty() || exact.equals(seg.body.getText())) return;
+        seg.body.setDisplayText(exact); // 定稿：完整测量 + 布局后精校（每轮一次，非每帧）
     }
 
     /** 工具调用参数 → 展示正文：Edit/Write 生成行级 diff（仅变更行），其余完整参数 JSON；
@@ -816,6 +868,8 @@ public class ChatView extends VBox {
     static class StreamBuffer {
         private final StringBuilder content = new StringBuilder();
         private final StringBuilder thinking = new StringBuilder();
+        /** 回复正文的增量展平器（P1-4）：缓存已完成行的展平结果，每帧只处理新增行 */
+        private final StreamingPlainText plain = new StreamingPlainText();
 
         /** 事件种类是否标志新一轮开始（上轮流式缓冲作废） */
         static boolean isRoundBoundary(EventList.Kind kind) {
@@ -832,11 +886,18 @@ public class ChatView extends VBox {
         void onRoundBoundary() {
             content.setLength(0);
             thinking.setLength(0);
+            plain.reset();
         }
 
         String content() { return content.toString(); }
 
         String thinking() { return thinking.toString(); }
+
+        /** 增量展平的回复正文（渲染用；每帧只处理新增行，不再全文 flexmark 解析） */
+        String plainText() { return plain.render(content); }
+
+        /** 累计字符数（自适应合并窗口输入） */
+        int length() { return content.length() + thinking.length(); }
     }
 
     /** 按主人（subAgentId）分组的流式缓冲：并发子代理各自的思考/正文增量独立累积，
@@ -920,6 +981,15 @@ public class ChatView extends VBox {
             }
         }
 
+        /** 该流身份下当前仍有活跃段的主人编号快照（正文定稿/资源回收遍历用） */
+        java.util.Set<Integer> owners(StreamKind kind) {
+            java.util.Set<Integer> out = new java.util.HashSet<Integer>();
+            for (java.util.Map.Entry<Integer, java.util.Map<StreamKind, T>> e : map.entrySet()) {
+                if (e.getValue().containsKey(kind)) out.add(e.getKey());
+            }
+            return out;
+        }
+
         /** 断开某主人的全部流引用（轮次边界/子代理完成：该主人缓冲已清零，下一次增量另起新段） */
         void clearOwner(int subAgentId) { map.remove(subAgentId); }
 
@@ -970,39 +1040,66 @@ public class ChatView extends VBox {
 
     /** 流式渲染合并时间窗（纯逻辑、无 JavaFX 依赖，可单测）：leading + trailing——
      *  距上次刷新超过窗口（或从未刷新）立即渲染（首段/稀疏流不延迟），窗口内的增量只累积，
-     *  由 ChatView 的定时器到点统一渲染一次（高频 SSE 不再逐 chunk 全量重排）。 */
+     *  由 ChatView 的定时器到点统一渲染一次（高频 SSE 不再逐 chunk 全量重排）。
+     *  P1-4：窗口按累计字符自适应放大——长回复末段每次全文 setText + 文本测量都是 O(n)，
+     *  80ms 一帧在 10 万字符时等于每秒做 12 次全文重排；放大窗口把同样内容摊到更少帧。 */
     static class StreamFlushPolicy {
         /** 合并窗口（ms）：低端机软件渲染下 80ms 约 2~3 帧，肉眼无感 */
         static final long INTERVAL_MILLIS = 80;
+        /** 长文本窗口（≥ 2 万字符） */
+        static final long INTERVAL_LONG_MILLIS = 150;
+        /** 超长文本窗口（≥ 5 万字符） */
+        static final long INTERVAL_HUGE_MILLIS = 250;
+        static final int LONG_TEXT_CHARS = 20_000;
+        static final int HUGE_TEXT_CHARS = 50_000;
         static final long INTERVAL_NANOS = INTERVAL_MILLIS * 1000000L;
 
         private boolean flushed;
         private long lastFlushNanos;
+        /** 当前生效窗口（ms）：由最近一次刷新时的累计长度决定 */
+        private long windowMillis = INTERVAL_MILLIS;
+
+        /** 按累计字符数选择窗口（纯函数，可单测） */
+        static long windowFor(int chars) {
+            if (chars >= HUGE_TEXT_CHARS) return INTERVAL_HUGE_MILLIS;
+            if (chars >= LONG_TEXT_CHARS) return INTERVAL_LONG_MILLIS;
+            return INTERVAL_MILLIS;
+        }
 
         /** 现在是否可以立即刷新 */
         boolean shouldFlushNow(long nowNanos) {
-            return !flushed || nowNanos - lastFlushNanos >= INTERVAL_NANOS;
+            return !flushed || nowNanos - lastFlushNanos >= windowMillis * 1000000L;
         }
 
-        /** 记录一次刷新（窗口从这里重新计时） */
+        /** 记录一次刷新（窗口从这里重新计时；沿用最近一次长度对应的窗口） */
         void markFlushed(long nowNanos) {
+            markFlushed(nowNanos, 0);
+        }
+
+        /** 记录一次刷新并按本次累计字符数更新窗口（0 = 短文本默认窗口） */
+        void markFlushed(long nowNanos, int chars) {
             flushed = true;
             lastFlushNanos = nowNanos;
+            windowMillis = windowFor(chars);
         }
 
         /** 距下次可刷新的剩余毫秒（向上取整至少 1ms，防 0ms 定时器忙转；可刷新时返回 0） */
         long remainingMillis(long nowNanos) {
             if (!flushed) return 0;
-            long remain = INTERVAL_NANOS - (nowNanos - lastFlushNanos);
+            long remain = windowMillis * 1000000L - (nowNanos - lastFlushNanos);
             if (remain <= 0) return 0;
             long ms = (remain + 999999L) / 1000000L;
             return Math.max(1, ms);
         }
 
+        /** 当前生效窗口（ms，诊断/测试断言用） */
+        long windowMillis() { return windowMillis; }
+
         /** 重置（clear 后新会话首段立即渲染，不继承上个会话的窗口状态） */
         void reset() {
             flushed = false;
             lastFlushNanos = 0;
+            windowMillis = INTERVAL_MILLIS;
         }
     }
 

@@ -218,4 +218,73 @@ public class FileSuggesterTest {
         assertEquals("b/x.txt", out.get(2).label);
         assertEquals("c.txt", out.get(3).label);
     }
+
+    // ---- P0-6：遍历不在锁内、缓存条目不可变、条目上限 ----
+
+    /** 上限截断：最多收集 MAX_ENTRIES 条（提前收敛，不继续深入剩余目录） */
+    @Test public void walk_capsAtMaxEntries() throws Exception {
+        Path root = tmp.getRoot().toPath();
+        Files.createDirectories(root.resolve("d"));
+        for (int i = 0; i < 20; i++) {
+            Files.write(root.resolve("d/f" + i + ".txt"), "x".getBytes(StandardCharsets.UTF_8));
+        }
+        int old = FileSuggester.MAX_ENTRIES;
+        try {
+            FileSuggester.MAX_ENTRIES = 5;
+            assertEquals("超过上限应截断到上限", 5, FileSuggester.walk(root.toString()).size());
+        } finally {
+            FileSuggester.MAX_ENTRIES = old;
+        }
+        assertEquals("上限恢复后应全部收集", 20, FileSuggester.walk(root.toString()).size());
+    }
+
+    /** 缓存条目是不可变列表：读接口共享同一实例，调用方无法修改（避免每次敲键全量拷贝） */
+    @Test public void load_cacheIsImmutableAndShared() throws Exception {
+        Path root = tmp.getRoot().toPath();
+        Files.write(root.resolve("a.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        FileSuggester fs = new FileSuggester();
+        List<Suggestion> loaded = fs.load(root.toString());
+        List<Suggestion> stale = fs.listStaleOk(root.toString());
+        List<Suggestion> cached = fs.listCached(root.toString());
+        assertSame("load 返回的即缓存实例（无拷贝）", loaded, stale);
+        assertSame("listCached 同样共享缓存实例", loaded, cached);
+        try {
+            loaded.add(new Suggestion("b.txt", "b.txt", null, Suggestion.Type.FILE));
+            fail("缓存列表必须不可变");
+        } catch (UnsupportedOperationException expected) {
+            // 预期：不可变视图
+        }
+    }
+
+    /** 结构约束（P0-6）：任何实例方法都不得持有监视器——walk 在锁外执行，
+     *  FX 线程读缓存不被后台扫描阻塞（旧实现全类 synchronized 是卡顿根因） */
+    @Test public void noMethodIsSynchronized() {
+        for (java.lang.reflect.Method m : FileSuggester.class.getDeclaredMethods()) {
+            assertFalse("不得在监视器内做 IO：" + m.getName(),
+                    java.lang.reflect.Modifier.isSynchronized(m.getModifiers()));
+        }
+    }
+
+    /** 后台 load 与 FX 线程读缓存并发：读调用不阻塞（读线程在遍历结束前即可返回） */
+    @Test public void concurrentReads_notBlockedByLoad() throws Exception {
+        Path root = tmp.getRoot().toPath();
+        for (int i = 0; i < 400; i++) {
+            Files.write(root.resolve("f" + i + ".txt"), "x".getBytes(StandardCharsets.UTF_8));
+        }
+        Path other = tmp.newFolder("other").toPath();
+        Files.write(other.resolve("o.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        final FileSuggester fs = new FileSuggester();
+        fs.load(other.toString()); // 先有新鲜缓存
+        Thread loader = new Thread(() -> fs.load(root.toString()));
+        loader.start();
+        long t0 = System.nanoTime();
+        // 高频读（FX 线程每敲一个字符的路径）：只要不被遍历锁住就能立即返回
+        for (int i = 0; i < 1000; i++) {
+            assertNotNull(fs.listStaleOk(other.toString()));
+            assertTrue(fs.isFresh(other.toString()));
+        }
+        long elapsedMs = (System.nanoTime() - t0) / 1000000L;
+        loader.join(10000);
+        assertTrue("1000 次缓存读不应被后台遍历阻塞（耗时 " + elapsedMs + "ms）", elapsedMs < 1000);
+    }
 }
