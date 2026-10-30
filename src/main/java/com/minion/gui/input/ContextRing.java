@@ -1,6 +1,7 @@
 package com.minion.gui.input;
 
 import com.minion.core.agent.StatsLine;
+import com.minion.gui.Motion;
 import javafx.animation.AnimationTimer;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -80,12 +81,15 @@ public class ContextRing extends Canvas {
         repaint(-1);
     }
 
-    /** 压缩中状态：true 启动旋转动画，false 停止并重绘静态进度 */
+    /** 压缩中状态：true 启动旋转动画，false 停止并重绘静态进度。
+     *  软件渲染下不启 60fps Canvas 重绘（每帧 24×38 Canvas 也要走完整 Prism 提交），
+     *  改为静态 300° 弧 + Tooltip「正在压缩中」，语义不变（见 Motion）。 */
     public void setCompressing(boolean compressing) {
         this.compressing = compressing;
         refreshTooltip(); // 压缩中文案切换（"正在压缩中" ↔ 原文案）
-        if (compressing) spinner.start();
-        else {
+        if (compressing && !Motion.reduced()) {
+            spinner.start();
+        } else {
             spinner.stop();
             repaint(-1);
         }

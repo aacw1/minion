@@ -281,11 +281,15 @@ public class RunningIndicator extends HBox {
 
     private void startAnimations() {
         if (spin == null || spin.getStatus() != Animation.Status.RUNNING) {
-            spin = new Timeline(
-                    new KeyFrame(Duration.ZERO, new KeyValue(gear.rotateProperty(), 0)),
-                    new KeyFrame(Duration.millis(SPIN_MS), new KeyValue(gear.rotateProperty(), 360)));
-            spin.setCycleCount(Animation.INDEFINITE);
-            spin.play();
+            // 软件渲染下不转齿轮：60fps 旋转 SVG 每帧都要重新光栅化（2x 渲染倍率实测掉到约 45fps），
+            // 运行态由文案 + 绿色状态点表达（见 Motion）
+            if (!Motion.reduced()) {
+                spin = new Timeline(
+                        new KeyFrame(Duration.ZERO, new KeyValue(gear.rotateProperty(), 0)),
+                        new KeyFrame(Duration.millis(SPIN_MS), new KeyValue(gear.rotateProperty(), 360)));
+                spin.setCycleCount(Animation.INDEFINITE);
+                spin.play();
+            }
         }
         startRotateText();
     }

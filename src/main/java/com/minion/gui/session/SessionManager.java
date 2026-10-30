@@ -46,7 +46,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -78,6 +77,9 @@ public class SessionManager {
         default void onContextStatsChanged(SessionHandle h, int used, int max) { }
         /** 会话被删除（deleteSession / deleteWorkspace 均通知，含非当前空间）：UI 清理页签与缓存 */
         default void onSessionDeleted(SessionHandle h) { }
+        /** 后台恢复历史会话完成（可能来自后台线程，UI 实现须自行 Platform.runLater）。
+         *  延迟恢复（{@link #restoreAllSessionsAsync()}）完成后触发一次；同步构造路径不触发。 */
+        default void onSessionsRestored() { }
     }
 
     /** 删除工作空间时等待会话退出的总超时（秒）：AgentLoop 中断后走退出落盘路径，正常远快于此 */
@@ -94,13 +96,20 @@ public class SessionManager {
     private final CommandDispatcher dispatcher; // 斜杠命令本地分发（GUI 输入路径）
     private final List<Listener> listeners = new ArrayList<Listener>();
 
-    private final Map<String, WorkspaceCtx> ctxByName = new HashMap<String, WorkspaceCtx>();
-    /** 技能快照按空间缓存。仅 FX 线程访问：读于 createSession / currentSkills（及构造期
-     *  restoreSessions），失效于 updateWorkspace / renameWorkspace / deleteWorkspace 的同步段
-     *  （finishDeleteWorkspace 的后台 daemon 段不触碰）——与 ctxByName 同一线程模型 */
-    private final Map<String, SkillSet.Result> skillCache = new HashMap<String, SkillSet.Result>();
+    private final Map<String, WorkspaceCtx> ctxByName =
+            new java.util.concurrent.ConcurrentHashMap<String, WorkspaceCtx>();
+    /** 技能快照按空间缓存。读于 createSession / currentSkills（FX 线程）与后台恢复线程
+     *  （restoreSessions）；失效于 updateWorkspace / renameWorkspace / deleteWorkspace 的同步段。
+     *  延迟恢复会在后台线程写缓存，故用并发 Map（原 HashMap + 单线程模型在异步恢复下会竞争）。 */
+    private final Map<String, SkillSet.Result> skillCache =
+            new java.util.concurrent.ConcurrentHashMap<String, SkillSet.Result>();
     private String currentWorkspaceName;
     private SessionHandle currentSession;
+    /** 历史会话恢复是否已启动（同步构造路径已恢复时置位；异步恢复幂等） */
+    private final java.util.concurrent.atomic.AtomicBoolean restoreStarted =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    /** 已关闭：后台恢复线程据此在关窗后停止继续建会话 */
+    private volatile boolean closed;
 
     /** 每工作空间上下文（空间级共享对象；工具注册与工作线程下沉到每会话）。
      *  name/store 可变：工作空间重命名时同步（store 目录已迁移，须重建指向新目录，防旧路径复活）。 */
@@ -110,7 +119,8 @@ public class SessionManager {
         SessionStore store;
         final ConfirmGate confirmGate;
         final String skillsDir;
-        final List<SessionHandle> sessions = new ArrayList<SessionHandle>();
+        /** 延迟恢复时由后台线程追加、FX 线程遍历/删除：用写时复制列表保证并发安全 */
+        final List<SessionHandle> sessions = new java.util.concurrent.CopyOnWriteArrayList<SessionHandle>();
 
         WorkspaceCtx(String name, Workspace workspace, SessionStore store,
                      ConfirmGate confirmGate, String skillsDir) {
@@ -126,6 +136,19 @@ public class SessionManager {
                           WorkspaceManager workspaces, ModelManager models,
                           List<Skill> allSkills, ToolPluginManager plugins,
                           McpManager mcp) {
+        this(confirmUi, config, jarDir, workspaces, models, allSkills, plugins, mcp, false);
+    }
+
+    /**
+     * @param deferRestore true = 只装配工作空间上下文（毫秒级），历史会话不恢复；
+     *                      GUI 启动用，窗口显示后由 {@link #restoreAllSessionsAsync()} 后台恢复，
+     *                      避免把按会话数线性增长的恢复成本压在首屏之前。
+     *                      false = 同步恢复（单测/基准默认，行为与旧版一致）
+     */
+    public SessionManager(ConfirmUi confirmUi, Config config, Path jarDir,
+                          WorkspaceManager workspaces, ModelManager models,
+                          List<Skill> allSkills, ToolPluginManager plugins,
+                          McpManager mcp, boolean deferRestore) {
         this.confirmUi = confirmUi;
         this.config = config;
         this.jarDir = jarDir;
@@ -143,8 +166,61 @@ public class SessionManager {
                 }
             });
         }
-        loadWorkspaceContexts();
+        buildWorkspaceContexts();
         this.currentWorkspaceName = workspaces.currentName();
+        if (!deferRestore) {
+            restoreStarted.set(true);
+            restoreAllSessionsNow();
+        }
+    }
+
+    /** 只装工作空间上下文（Workspace/SessionStore/ConfirmGate），不恢复历史会话（毫秒级） */
+    private void buildWorkspaceContexts() {
+        for (WorkspaceConfig w : workspaces.list()) {
+            ctxByName.put(w.workSpaceName, buildCtx(w));
+        }
+    }
+
+    private void restoreAllSessionsNow() {
+        for (WorkspaceCtx ctx : ctxByName.values()) {
+            restoreSessions(ctx, projectMdOf(ctx.name), projectSkillsDirOf(ctx.name));
+        }
+    }
+
+    /**
+     * 后台恢复全部历史会话（GUI 启动路径）：窗口先显示，侧栏随后填充。
+     * 幂等；同步构造路径已恢复过时直接返回。完成后通知 {@link Listener#onSessionsRestored()}
+     * （可能来自后台线程，UI 自行投递 FX）。
+     */
+    public void restoreAllSessionsAsync() {
+        if (closed || !restoreStarted.compareAndSet(false, true)) return;
+        // 在调用线程（GUI = FX）先快照空间列表并解析项目路径：后台线程不再访问 WorkspaceManager，
+        // 避免恢复的 ~1s 窗口内用户打开设置改工作空间时与 ArrayList 迭代并发（CME）
+        final List<WorkspaceCtx> ctxs = new ArrayList<WorkspaceCtx>(ctxByName.values());
+        final Map<WorkspaceCtx, String[]> inputs = new java.util.IdentityHashMap<WorkspaceCtx, String[]>();
+        for (WorkspaceCtx ctx : ctxs) {
+            inputs.put(ctx, new String[]{projectMdOf(ctx.name), projectSkillsDirOf(ctx.name)});
+        }
+        Thread t = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    for (WorkspaceCtx ctx : ctxs) {
+                        if (closed) break;
+                        String[] in = inputs.get(ctx);
+                        restoreSessions(ctx, in[0], in[1]);
+                    }
+                } finally {
+                    if (closed) {
+                        shutdown(); // 关窗发生在恢复中途：把本次新建的会话一并收尾（幂等）
+                    } else {
+                        notifySessionsRestored();
+                    }
+                }
+            }
+        }, "minion-restore");
+        t.setDaemon(true);
+        t.setPriority(Thread.NORM_PRIORITY - 1); // 让出 CPU 给刚出现的窗口
+        t.start();
     }
 
     public WorkspaceManager workspaces() { return workspaces; }
@@ -189,21 +265,16 @@ public class SessionManager {
     private void notifySessionDeleted(SessionHandle h) {
         for (Listener l : listeners) l.onSessionDeleted(h);
     }
-
-    /** 装配所有工作空间上下文（对照 Main 现有注册代码），并恢复历史会话 */
-    private void loadWorkspaceContexts() {
-        for (WorkspaceConfig w : workspaces.list()) {
-            WorkspaceCtx ctx = buildCtx(w);
-            ctxByName.put(w.workSpaceName, ctx);
-            restoreSessions(ctx);
-        }
+    private void notifySessionsRestored() {
+        for (Listener l : listeners) l.onSessionsRestored();
     }
 
     /**
      * 恢复历史会话：store.list() 跳过损坏项（SessionStore 现有行为），逐 id 装载；
      * 标题取落盘 session.title，titlePending=false（恢复会话已有标题或旧格式无标题→显示占位）。
      */
-    private void restoreSessions(WorkspaceCtx ctx) {
+    private void restoreSessions(WorkspaceCtx ctx, String mdAbs, String projSkills) {
+        if (ctxByName.get(ctx.name) != ctx) return; // 空间已被删除/改名：放弃本次恢复
         List<SessionStore.SessionMeta> restored;
         try {
             restored = ctx.store.list();
@@ -213,10 +284,9 @@ public class SessionManager {
         }
         // 快照每空间只算一次（扫描一次盘），全部恢复会话共享同一不可变快照：
         // 恢复会话保持当前配置下的技能上下文（技能清单不落盘，无逐会话差异可言）
-        SkillSet.Result sk = skillsOf(ctx.name);
-        String mdAbs = projectMdOf(ctx.name);
-        String projSkills = projectSkillsDirOf(ctx.name);
+        SkillSet.Result sk = skillsOfResolved(ctx.name, projSkills);
         for (SessionStore.SessionMeta meta : restored) {
+            if (closed || ctxByName.get(ctx.name) != ctx) return; // 关窗/空间已删：不再继续建会话
             try {
                 Session s = ctx.store.load(meta.id);
                 ModelConfig mc = models.current();
@@ -264,6 +334,14 @@ public class SessionManager {
                     }
                 });
                 ctx.sessions.add(h);
+                if (closed) {
+                    // 恢复期间关窗：shutdown 可能已遍历过（COW 快照），这里回收本会话防线程/客户端残留
+                    ctx.sessions.remove(h);
+                    h.loop.shutdown();
+                    h.pool.shutdownNow();
+                    h.closeAll();
+                    return;
+                }
                 registerConnectedMcpTools(h); // 兜底：恢复会话也带 MCP 工具（连接已完成场景）
             } catch (Exception e) {
                 notifyError("会话恢复失败（跳过）: " + e.getMessage());
@@ -459,6 +537,15 @@ public class SessionManager {
         SkillSet.Result hit = skillCache.get(workspaceName);
         if (hit != null) return hit;
         SkillSet.Result r = skillSet.resolve(projectSkillsDirOf(workspaceName));
+        skillCache.put(workspaceName, r);
+        return r;
+    }
+
+    /** 恢复路径使用：项目技能目录已由调用线程预先解析，后台恢复线程不再访问 WorkspaceManager */
+    private SkillSet.Result skillsOfResolved(String workspaceName, String projectSkillsDir) {
+        SkillSet.Result hit = skillCache.get(workspaceName);
+        if (hit != null) return hit;
+        SkillSet.Result r = skillSet.resolve(projectSkillsDir);
         skillCache.put(workspaceName, r);
         return r;
     }
@@ -817,6 +904,7 @@ public class SessionManager {
      *  不等就退出会让 killTree 没跑完，bash 子进程变孤儿继续占 CPU（关窗残留实测根因）。
      *  工具任务中断后最多 killTree(5s)+join(5s) 结束，等 8s 足够；杀不掉的极端情况限时返回。 */
     public void shutdown() {
+        closed = true; // 后台恢复线程据此停止继续建会话（延迟恢复路径）
         for (WorkspaceCtx ctx : ctxByName.values()) {
             for (SessionHandle h : ctx.sessions) {
                 if (h.running) h.loop.interrupt();

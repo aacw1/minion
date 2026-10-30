@@ -45,8 +45,10 @@ public class Main {
         final ToolPluginManager plugins = new ToolPluginManager(ToolStore.load(jarDir));
 
         ConfirmUi confirmUi = new GuiConfirmUi();
+        // 延迟恢复（deferRestore=true）：这里只建工作空间上下文，历史会话在窗口显示后由
+        // SessionManager.restoreAllSessionsAsync 后台恢复——启动耗时不再随历史会话数线性增长。
         SessionManager manager = new SessionManager(confirmUi, config, jarDir,
-                workspaces, models, skills, plugins, mcpManager);
+                workspaces, models, skills, plugins, mcpManager, true);
 
         // 退出钩子统一收口：先关会话（AgentLoop + LLM okhttp 资源 + 线程池 + MCP 子进程）
         // （manager.shutdown 幂等——关窗已 shutdown 时此处空转）

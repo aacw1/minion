@@ -25,7 +25,6 @@
     -fx-border-color: #202A36;
     -fx-border-radius: 8;
     -fx-padding: 10 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 10, 0, 0, 2);
 }
 
 /* ===== 标题栏 ===== */
@@ -45,7 +44,6 @@
     -fx-min-height: 24; -fx-pref-height: 24; -fx-max-height: 24;
     -fx-background-color: linear-gradient(to bottom, #FFA47F, #FF7A59);
     -fx-background-radius: 7;
-    -fx-effect: dropshadow(gaussian, rgba(255,122,89,0.22), 8, 0, 0, 3);
 }
 .brand-mark .icon-spark { -fx-fill: #1D0E09; }
 .brand-name { -fx-text-fill: #F1F5FA; -fx-font-size: 17px; -fx-font-weight: bold; }
@@ -214,8 +212,11 @@
 }
 .input-frame-focused {
     -fx-border-color: #FF8A65;
-    -fx-effect: dropshadow(gaussian, rgba(255,138,101,0.16), 9, 0, 0, 0);
 }
+/* 低端机性能红线（2026-10-31）：输入大框是 TextArea 的父节点，每次按键的文本脏区都会让
+   父节点整块重新渲染。不要在这里加 -fx-effect（高斯模糊/阴影）：软件渲染 + 高分屏下实测
+   每键重新模糊 740×120 区域，2x 渲染倍率时打字帧率从 60fps 掉到约 25fps。
+   聚焦反馈只用边框颜色表达。 */
 .input-divider {
     -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1;
     -fx-background-color: #202A36;
@@ -410,7 +411,6 @@
     -fx-min-height: 24; -fx-pref-height: 24; -fx-max-height: 24;
     -fx-background-color: linear-gradient(to bottom, #FFA47F, #FF7A59);
     -fx-background-radius: 7;
-    -fx-effect: dropshadow(gaussian, rgba(255,122,89,0.20), 8, 0, 0, 3);
 }
 .ai-avatar .icon-spark { -fx-fill: #1D0E09; }
 .ai-body { -fx-padding: 0; }
@@ -696,7 +696,6 @@
     -fx-background-radius: 12;
     -fx-border-color: #2A3543;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 26, 0, 0, 8);
     -fx-font-size: 15px;
 }
 .sheet-accent {

@@ -42,7 +42,10 @@ public class DeepSeekClient implements LlmClient {
     private final boolean thinking;
     private final String reasoningEffort;
     private final String provider;
-    private final OkHttpClient http;
+    /** HTTP 客户端：懒初始化（见 {@link #http()}）。构造即创建会触发 JDK 的 SSLContext/SecureRandom
+     *  一次性初始化（Windows 上要枚举网卡 + 校验 JCE 策略，实测约 0.5~0.8s）——历史会话恢复时
+     *  每个会话 new 一个客户端会把这段成本全部压到窗口出现之前。 */
+    private volatile OkHttpClient http;
     /** 看门狗调度池（实例级，随 close 释放）：单线程 daemon，取消即出队、空闲可回收 */
     private final ScheduledExecutorService watchdogScheduler = newWatchdogScheduler();
     private volatile boolean closed;
@@ -67,10 +70,30 @@ public class DeepSeekClient implements LlmClient {
         this.thinking = thinking;
         this.reasoningEffort = reasoningEffort;
         this.provider = provider;
-        this.http = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
-                .build();
+        // 不在此创建 OkHttpClient：见 http() 的懒初始化说明
+    }
+
+    /** 惰性创建 HTTP 客户端（双重检查；首次请求在会话工作线程上支付 SSL 初始化成本） */
+    private OkHttpClient http() {
+        OkHttpClient h = http;
+        if (h == null) {
+            synchronized (this) {
+                h = http;
+                if (h == null) {
+                    h = new OkHttpClient.Builder()
+                            .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
+                            .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
+                            .build();
+                    http = h;
+                }
+            }
+        }
+        return h;
+    }
+
+    /** 是否已创建 HTTP 客户端（package-private 供单测断言懒初始化，不参与业务） */
+    boolean httpInitialized() {
+        return http != null;
     }
 
     private Request buildRequest(List<Message> messages, List<JsonObject> tools) {
@@ -144,8 +167,10 @@ public class DeepSeekClient implements LlmClient {
         if (closed) return;
         closed = true;
         cancel();
-        http.dispatcher().executorService().shutdown();
-        http.connectionPool().evictAll();
+        OkHttpClient h = http;
+        if (h == null) return; // 从未发起请求：没有需要释放的连接池/线程
+        h.dispatcher().executorService().shutdown();
+        h.connectionPool().evictAll();
     }
 
     @Override
@@ -156,7 +181,7 @@ public class DeepSeekClient implements LlmClient {
         StringBuilder thinkingSb = new StringBuilder();
         Usage usage = null;
         String finish = "stop";
-        final okhttp3.Call call = http.newCall(buildRequest(messages, tools));
+        final okhttp3.Call call = http().newCall(buildRequest(messages, tools));
         inFlightCalls.add(call);
         // 首增量看门狗：READ_TIMEOUT 管的是"两个 SSE chunk 之间的间隔"（300s），
         // 治不了"连上了但模型迟迟不产出"。此处独立计时，到点 cancel 解除阻塞并归为 TIMEOUT。

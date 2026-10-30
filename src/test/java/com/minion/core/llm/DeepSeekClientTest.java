@@ -592,4 +592,14 @@ public class DeepSeekClientTest {
                 });
         assertEquals("tool_calls", out.get(0));
     }
+
+    /** 懒初始化：构造/关闭不创建 OkHttpClient（启动恢复历史会话时不触发 JDK SSL/JCE 初始化） */
+    @Test
+    public void constructor_doesNotCreateHttpClientUntilFirstUse() {
+        DeepSeekClient c = new DeepSeekClient("http://127.0.0.1:1/v1/chat/completions",
+                "sk-test", "deepseek-v4-flash", true, "max", "deepseek");
+        assertFalse(c.httpInitialized());
+        c.close();
+        assertFalse(c.httpInitialized());
+    }
 }

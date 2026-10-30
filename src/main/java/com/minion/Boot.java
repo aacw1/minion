@@ -21,6 +21,7 @@ public class Boot {
 
     public static void main(String[] args) throws Exception {
         setPrismOrder();
+        setRenderScale();
         if (!isRunningFromJar() || hasFlag(args, RELAUNCH_FLAG)) {
             Main.main(args);   // IDE 开发流或已自举：直接进入正常启动
             return;
@@ -63,7 +64,68 @@ public class Boot {
     private static void setPrismOrder() {
         if (System.getProperty("prism.order") != null) return;   // 尊重用户显式 -Dprism.order
         String p = System.getenv("MINION_PRISM");
-        System.setProperty("prism.order", (p == null || p.isEmpty()) ? "es2,sw" : p);
+        if (p == null || p.isEmpty()) {
+            // 远程桌面（无显卡）：默认 es2 会先尝试 GDI 通用 OpenGL（1.1，JavaFX ES2 不支持），
+            // 失败后才回退 sw，白付一次管线初始化；直接 sw 更快且行为确定。
+            p = isRemoteSession() ? "sw" : "es2,sw";
+        }
+        System.setProperty("prism.order", p);
+    }
+
+    /**
+     * 渲染倍率上限（Windows HiDPI）：JavaFX 8 在系统缩放 ≥150% 时把 renderScale 按整数向上取，
+     * 150% → 2x，即 1280×760 的窗口按 2560×1520 光栅化（4 倍像素）。软件渲染 + 无显卡时这是
+     * 「分辨率越高越卡」的直接来源。远程桌面/显式 sw 管线下降为 1x：UI 尺寸仍按系统 DPI
+     * （uiScale 不变），只是不再超采样，文字略糊但滚动/输入跟手。
+     *
+     * <p>优先级：显式 -Dglass.win.renderScale > 环境变量 MINION_RENDER_SCALE > 自动策略。
+     * 自动策略只影响 Windows（其它平台不认识 glass.win.*，属性无害）。</p>
+     */
+    private static void setRenderScale() {
+        if (System.getProperty("glass.win.renderScale") != null) return; // 尊重显式设置
+        String override = System.getenv("MINION_RENDER_SCALE");
+        if (override != null && !override.trim().isEmpty()) {
+            System.setProperty("glass.win.renderScale", override.trim());
+            return;
+        }
+        String reason = renderScaleCapReason(System.getenv("SESSIONNAME"),
+                System.getProperty("prism.order"), System.getenv("MINION_PRISM"));
+        if (reason != null) {
+            System.setProperty("glass.win.renderScale", "1");
+        }
+        // 远程桌面即使 es2 可用也降级装饰动画：画面要经 RDP 编码传输，60fps 小动画会持续产生抓屏帧
+        if (isRemoteSession() && System.getProperty("minion.animations") == null) {
+            System.setProperty("minion.animations", "reduced");
+        }
+    }
+
+    /** 远程桌面会话判定（Windows 的 SESSIONNAME 形如 RDP-Tcp#0；纯函数可单测） */
+    static boolean isRemoteSessionName(String sessionName) {
+        if (sessionName == null) return false;
+        String s = sessionName.trim();
+        return s.regionMatches(true, 0, "RDP-", 0, 4);
+    }
+
+    /** 当前进程是否远程桌面会话 */
+    static boolean isRemoteSession() {
+        return isRemoteSessionName(System.getenv("SESSIONNAME"));
+    }
+
+    /**
+     * 自动渲染倍率上限的判定（纯函数可单测）：返回非 null 表示应把 renderScale 降为 1。
+     * RDP 会话恒降；显式软件管线（MINION_PRISM/glass.win 均以 sw 开头）也降。
+     */
+    static String renderScaleCapReason(String sessionName, String prismOrder, String minionPrism) {
+        if (isRemoteSessionName(sessionName)) return "remote-desktop";
+        String order = minionPrism != null && !minionPrism.trim().isEmpty() ? minionPrism : prismOrder;
+        if (order != null) {
+            for (String part : order.split(",")) {
+                String p = part.trim();
+                if (p.isEmpty()) continue;
+                return "sw".equalsIgnoreCase(p) ? "software-pipeline" : null;
+            }
+        }
+        return null;
     }
 
     /** 以目标 java.exe 派生子进程（--relaunched + 原 args 透传），父进程退出 */

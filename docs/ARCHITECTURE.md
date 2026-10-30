@@ -25,17 +25,19 @@ com.minion
 
 ### com.minion（根）
 
-- `Boot`：shade 打包入口（自举启动器：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环），直启或子进程调用 `Main` 进入正常装配
-- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ McpManager（MCP，惰性连接）/ ToolPluginManager（可插拔工具）/ GuiConfirmUi，构造 `SessionManager` 后 `MinionApp.start` 启动 JavaFX。退出钩子统一收口：manager.shutdown（会话+LLM+MCP 子进程）。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
+- `Boot`：shade 打包入口（自举启动器：PRISM/控制台/JDK8 探测与重启，--relaunched 防循环），直启或子进程调用 `Main` 进入正常装配；远程桌面/显式 sw 时在 JavaFX 初始化前把 `glass.win.renderScale` 降为 1（HiDPI 不再 2x 超采样，见 2026-10-31 低端机优化设计）
+- `Main`：程序入口。装配 Config / WorkspaceManager / ModelManager / SkillManager（技能扫描）/ McpManager（MCP，惰性连接）/ ToolPluginManager（可插拔工具）/ GuiConfirmUi，构造 `SessionManager`（deferRestore=true，只建空间上下文）后 `MinionApp.start` 启动 JavaFX；窗口显示后历史会话在后台恢复。退出钩子统一收口：manager.shutdown（会话+LLM+MCP 子进程）。`Config.jarDir()` 为 jar 所在目录（配置文件与会话目录基准）。
 
 ### gui/
 
 | 类 | 职责 |
 |---|---|
 | MinionApp | JavaFX 启动（Application），静态注入 Config/WorkspaceManager/ModelManager/SessionManager |
-| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ 固定 292px 侧栏（会话列表弹性 + 工作空间按内容高度收口，右侧页签栏+消息区+输入区（外包 StackPane 承载 ConfirmSheet））；关闭确认 confirmClose 由关闭按钮与系统关闭共用；右侧顶部页签栏（tabs-bar，空页签整行隐藏）selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy；会话视图缓存为 `ViewCache`（LRU 上限 4，淘汰/删除/切空间回调 `bind(false)` 解绑事件流，防 20 个会话 = 4000 个 TextArea 常驻）；页签状态点/Tooltip 每页签复用同一节点（running 变化只 start/stopPulse，关闭时 stopPulse——旧实现每次 updateTab 新建 Circle 且不停旧 Timeline，每回合约泄漏一个无限动画） |
+| MainWindow | 主窗口：无边框自绘标题栏（TitleBar）+ 固定 292px 侧栏（会话列表弹性 + 工作空间按内容高度收口，右侧页签栏+消息区+输入区（外包 StackPane 承载 ConfirmSheet））；关闭确认 confirmClose 由关闭按钮与系统关闭共用；右侧顶部页签栏（tabs-bar，空页签整行隐藏）selectedItem 监听激活会话（启动/切空间用 suppressingTabSelect 补齐页签防误激活，关页签自动激活邻接会话）；消息区贴底自动滚动经 AutoScrollPolicy；会话视图缓存为 `ViewCache`（LRU 上限 4，淘汰/删除/切空间回调 `bind(false)` 解绑事件流，防 20 个会话 = 4000 个 TextArea 常驻）；页签状态点/Tooltip 每页签复用同一节点（running 变化只 start/stopPulse，关闭时 stopPulse——旧实现每次 updateTab 新建 Circle 且不停旧 Timeline，每回合约泄漏一个无限动画）；消息区视口缓存按实际管线分流（sw 开 CacheHint.SPEED、es2 关，见 RenderPipeline） |
 | TitleBar | 自绘标题栏：珊瑚品牌标 + 应用名 + 静态模型 pill（绿点 + 模型名）+ 设置/最小化/最大化/关闭图标按钮（拖动移动/双击最大化；模型切换仍走设置窗） |
 | ResizeHelper | 无边框窗口边缘/四角拖拽缩放（8 个透明区域） |
+| RenderPipeline | 运行时管线探测（反射 `GraphicsPipeline.getPipeline()`，回退 `prism.order` 首项）：`isSoftware()` 决定消息区视口缓存开关（sw 开、es2 关）及渲染侧降级策略 |
+| Motion | 装饰性动画开关：软件管线默认降级（状态点不呼吸、齿轮不转、压缩不转圈、确认卡片不滑入）；`-Dminion.animations=auto\|full\|reduced` 覆盖 |
 | sidebar/SessionListView、WorkspaceListView | 会话/工作空间列表（新建、切换；会话项悬停重命名/删除、工作空间项悬停修改/删除（重命名并入修改弹窗）；当前工作空间名称右侧主色圆点标记（SVG）；名称用 cell-text 样式类显式上色；会话时间 60 秒周期刷新，isHoverButton 防按钮点击误切换；工作空间可拖拽排序；会话项非悬停显示最近消息时间；会话项长标题/摘要省略号截断（无横向滚动条）） |
 | sidebar/TimeFormatter | 消息时间格式化：ts 与 now 的相对距离（<1min→"1m"、<1h→"Nm"、<24h→"Nh"、≥24h→"Nd"），ts<=0（旧数据）返回 null 不显示 |
 | chat/ChatView（消息流：用户右侧气泡 / AI 头像+正文 / 思考卡 / 工具卡 / 错误横幅 / 系统脚注；正文列 740px 上限居中，行内为只读 MessageTextArea；正文高度自适应无内部滚动条）、MarkdownRenderer、BlockNodeFactory、StreamingPlainText | 每会话一个 ChatView 绑定其 EventList（重建 + bind 重放存量）；Markdown 渲染（BlockNodeFactory 对段落/列表/表格内 Text 显式 setFill，保证深色主题下可读）；AskUserQuestion 提问渲染委托 core `AskUserQuestionTool.normalize`（键名写错/数组退化成字符串/整份参数被再包一层 arguments/参数标记吞正文皆可救回，永不产出空白），摘要行带 header，提问段无视 500 字折叠阈值恒展开（超 4000 才折叠），`toolResultBody(name,data)` 对 AskUserQuestion 成功态抑制正文（回答已由【输入】段渲染，失败态仍显示）；子代理事件按 `subAgentId` 渲染（回复名前显示【子代理N】；工具/子任务卡头部带「子代理N」徽标），视觉由 `log-*` 语义色与中性卡片表面表达，不再使用整段彩色控制台行；流式缓冲/思考定稿/轮次边界均按 id 分组隔离（并发子代理不串台），重新加载会话不重演子代理过程；折叠段（`CollapsibleText`）折叠时不把文本交给内容体 TextArea（宽 0 的 TextArea 仍会被 JavaFX 皮肤布局，含 U+FFFD 等特定文本会让 PrismTextLayout 越界并中断整个 Scene 布局 pass，表现为整页错乱），正文写入统一经 `ChatText.sanitize`（U+FFFD→`?`）；**流式渲染（P1-4/P1-5）**：回复正文走 `StreamingPlainText` 按行增量展平（已完成行只处理一次，每帧只处理新增行），合并窗口按累计字符自适应（<2 万 80ms / 2~5 万 150ms / ≥5 万 250ms），段定稿（轮次边界/STATS/子代理完成）用一次精确 `toPlainText` 覆盖保证最终逐字一致；事件经 `CoalescingQueue` 合并投递（后台线程只入队，FX 线程一次排空整批，不再逐 chunk runLater），流式写入跳过「布局后双 runLater 精校」只保留定稿精校 |
@@ -48,7 +50,7 @@ com.minion
 | theme/UiFonts | JavaFX 8 字体回退兜底：CSS 的 -fx-font-family 只取首个族、缺失即落到 System（后面的族不尝试），故从 Font.getFamilies() 按序选 Microsoft YaHei UI → 微软雅黑 → Microsoft YaHei → SimHei/SimSun/宋体 → Segoe UI → System，并以行内样式写到主根节点/弹窗 DialogPane；修 Win7 无 YaHei UI 时正文箭头/符号变方块（内容与剪贴板不受影响） |
 | icon/IconFactory | SVG 图标工厂：24 个 Material Symbols Outlined 24×24 path 常量 + 工厂方法（每图标带 .icon-* 样式类）+ size() 等比缩放；全部界面图标集中于此，颜色/尺寸由 theme.css 控制，不依赖系统字体（Win7 缺字形环境不再显示方块）；RunningIndicator 齿轮亦经此迁移（IconFactory.gear + .running-indicator-gear） |
 | confirm/GuiConfirmUi | 确认交互实现：工具线程 ask → Platform.runLater 投递 ConfirmSheet → take() 无限阻塞等待点击（不阻塞 FX 线程；无 GUI 环境防御性 REJECT） |
-| session/SessionManager | 会话外壳与装配中枢（见 §3） |
+| session/SessionManager | 会话外壳与装配中枢（见 §3）；构造默认同步恢复（单测/基准），GUI 路径传 deferRestore=true 只建空间上下文，窗口显示后 `restoreAllSessionsAsync()` 后台恢复并通知 `Listener.onSessionsRestored()`（上下文 sessions 用 CopyOnWriteArrayList、技能缓存用 ConcurrentHashMap 保证并发安全） |
 | session/SessionHandle | 会话句柄（状态/id/title/running + 专属线程池 + loop/controller） |
 | session/SessionController | 会话侧事件源，输出到该会话 EventList；onAskUserDone 把 AskUserQuestion 回答投递为 USER_SUPPLEMENT 事件（【输入】段，与提问成对显示）；子代理事件带编号路由（思考→THINKING、正文→CONTENT、工具→TOOL_CALL/TOOL_RESULT、提示→WARNING、起止→SUB_AGENT_START/DONE，均置 `Ev.subAgentId`）；replayHistory(List\<Message\>) 把历史消息转 Ev 灌入事件流（USER→USER_MESSAGE、ASSISTANT 非空 content→CONTENT、AskUserQuestion 的 TOOL 消息先重演回答再成功标记（内容以 `AskUserQuestionTool.INVALID_PREFIX` 开头的失败输出不重演为回答，避免伪装成用户发言）、跳过 SYSTEM/空消息），restoreSessions 恢复后调用 |
 | session/EventList | 事件缓冲：工作线程写、FX 线程读（`bind(true)` 全量重放）；`Ev.subAgentId`（0=主代理）区分事件主人，供渲染层加【子代理N】前缀与按 id 隔离流式缓冲；容量上限 `MAX_EVENTS=5000`（超限从头部丢弃最旧事件并把数量记入 `base`，视图游标是**绝对序号**、rebind 时钳制到 `base`：丢弃后不重放已丢历史、也不丢新事件；锁内快照因此封顶 5000 个引用） |
@@ -132,6 +134,7 @@ com.minion
 ```
 
 - **每会话一个 AgentLoop + 独占工作线程**（真并行，切换工作空间/会话不打断后台运行）
+- **启动两段式**（2026-10-31）：`Main` 只装配配置/技能/空间上下文并立即显示窗口；历史会话由 `restoreAllSessionsAsync` 在后台恢复（JSON → AgentLoop → replayHistory），完成后侧栏刷新。`DeepSeekClient` 的 OkHttpClient 懒到首个请求才创建，避免在启动路径上触发 JDK SSL/JCE 的一次性初始化（Windows 网卡枚举 + 策略校验，实测约 0.5~0.8s）
 - **每工作空间一套上下文**（WorkspaceCtx：Workspace/SessionStore/ConfirmGate 空间级共享），恢复/新建会话时经 `SessionManager.newRegistry` 注册工具——**每会话独立 ToolRegistry**（TaskTool 绑定本会话 loop，防 task 事件串流）
 - **会话级技能快照**：`Main` 启动扫内置技能 → `SessionManager` 建/恢复会话时 `SkillSet.resolve(项目级技能目录)`（项目覆盖同名内置，`WorkspacePaths` 按各空间 workDir 解析相对路径；结果按空间缓存，配置变更时失效）→ **不可变快照**塞进 `AgentLoop.setAllSkills` → `SystemPromptBuilder` 每轮渲染快照（`[项目]/[内置]` 标注 + 目录行）。快照随会话固化，切换工作空间/改配置互不串台、只对新会话生效；`/skills` 与 `@`/`/` 补全读 `SessionManager.currentSkills()`（激活会话快照；无会话时按当前空间缓存结果实算）
 - **MCP 接线**：newRegistry 对每个启用服务器触发 `ensureConnectedAsync`（首次建会话即后台预连接，不阻塞界面）；连接完成（McpManager.Listener）补注册该服务器工具进所有存活会话的 registry（AgentLoop 每轮动态 `registry.schemas()`，下一轮即可被模型调用）；与内置工具/其它服务器重名跳过并计数 skippedTools——重连/兜底重复注册时本服务器已注册工具幂等跳过不计跳过数（否则设置页「N 工具」误显示 0）；新建/恢复会话另有兜底补注册（覆盖连接完成于会话注册前毫秒级竞态）

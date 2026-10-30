@@ -1,6 +1,7 @@
 package com.minion.gui.dialog;
 
 import com.minion.core.tools.confirm.ConfirmUi;
+import com.minion.gui.Motion;
 import com.minion.gui.icon.IconFactory;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
@@ -127,10 +128,17 @@ public class ConfirmSheet {
 
         final Region scrim = new Region();
         scrim.getStyleClass().add("sheet-scrim");
-        FadeTransition scrimIn = new FadeTransition(Duration.millis(150), scrim);
-        scrimIn.setFromValue(0);
-        scrimIn.setToValue(1);
-        scrimIn.play();
+        // 软件渲染下直接落终态：遮罩淡入是整块右侧面板的逐帧重绘（约 9 帧），
+        // 卡片滑入同样是 60fps 位移，低端机/远程桌面上省掉这段没有信息量的动画（见 Motion）
+        final boolean instant = Motion.reduced();
+        if (instant) {
+            scrim.setOpacity(1);
+        } else {
+            FadeTransition scrimIn = new FadeTransition(Duration.millis(150), scrim);
+            scrimIn.setFromValue(0);
+            scrimIn.setToValue(1);
+            scrimIn.play();
+        }
 
         final VBox card = buildCard(message);
         StackPane.setAlignment(card, Pos.BOTTOM_CENTER);
@@ -146,15 +154,17 @@ public class ConfirmSheet {
         scene.addEventFilter(KeyEvent.ANY, keyFilter);
         host.getChildren().addAll(scrim, card);
 
-        // 滑入动画需布局完成后的卡片高度，runLater 等一个布局周期
+        // 滑入动画需布局完成后的卡片高度，runLater 等一个布局周期；降级时只保留聚焦
         Platform.runLater(new Runnable() {
             @Override public void run() {
-                double h = card.getBoundsInParent().getHeight();
-                TranslateTransition slide = new TranslateTransition(Duration.millis(180), card);
-                slide.setFromY(h);
-                slide.setToY(0);
-                slide.setInterpolator(Interpolator.EASE_OUT);
-                slide.play();
+                if (!instant) {
+                    double h = card.getBoundsInParent().getHeight();
+                    TranslateTransition slide = new TranslateTransition(Duration.millis(180), card);
+                    slide.setFromY(h);
+                    slide.setToY(0);
+                    slide.setInterpolator(Interpolator.EASE_OUT);
+                    slide.play();
+                }
                 card.requestFocus();
             }
         });
@@ -232,11 +242,8 @@ public class ConfirmSheet {
         currentCard = null;
         currentScrim = null;
         currentCallback = null;
-        ParallelTransition out = new ParallelTransition(
-                new FadeTransition(Duration.millis(120), scrim),
-                new FadeTransition(Duration.millis(120), card));
-        out.setOnFinished(new EventHandler<ActionEvent>() {
-            @Override public void handle(ActionEvent e) {
+        final Runnable complete = new Runnable() {
+            @Override public void run() {
                 host.getChildren().removeAll(scrim, card);
                 showing = false;
                 if (visibilityListener != null) visibilityListener.accept(false);
@@ -250,6 +257,18 @@ public class ConfirmSheet {
                         break;
                     }
                 }
+            }
+        };
+        if (Motion.reduced()) {
+            complete.run(); // 软件渲染：不播 120ms 淡出（整块遮罩+卡片逐帧重绘）
+            return;
+        }
+        ParallelTransition out = new ParallelTransition(
+                new FadeTransition(Duration.millis(120), scrim),
+                new FadeTransition(Duration.millis(120), card));
+        out.setOnFinished(new EventHandler<ActionEvent>() {
+            @Override public void handle(ActionEvent e) {
+                complete.run();
             }
         });
         out.play();

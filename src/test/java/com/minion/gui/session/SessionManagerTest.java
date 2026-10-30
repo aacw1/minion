@@ -163,6 +163,42 @@ public class SessionManagerTest {
         assertFalse(m.sessions().get(0).titlePending);
     }
 
+    /** 延迟恢复：构造期不加载历史（首屏不等待），后台恢复完成后会话出现并通知 UI */
+    @Test
+    public void deferredRestore_loadsSessionsInBackground() throws Exception {
+        Path jar = tmp.newFolder("jar").toPath();
+        Config config = Config.load(jar);
+        WorkspaceManager ws = WorkspaceManager.load(jar);
+        ModelManager models = ModelManager.load(jar);
+        Path dir = WorkspaceManager.sessionDirFor(jar, ws.currentName());
+        Files.createDirectories(dir);
+        Session s = Session.create(tmp.newFolder("w").getPath(), "deepseek-v4-flash");
+        s.title = "后台恢复的会话";
+        s.messages.add(Message.user("你好"));
+        new SessionStore(dir).save(s);
+
+        SessionManager m = new SessionManager(FAKE_UI, config, jar, ws, models,
+                new ArrayList<Skill>(), null, null, true);
+        assertTrue("构造期不得恢复历史会话", m.sessions().isEmpty());
+
+        final CountDownLatch restored = new CountDownLatch(1);
+        m.addListener(new SessionManager.Listener() {
+            @Override public void onSessionTitleChanged(SessionHandle h) { }
+            @Override public void onSessionRunningChanged(SessionHandle h, boolean running) { }
+            @Override public void onSessionActivated(SessionHandle h) { }
+            @Override public void onWorkspaceChanged() { }
+            @Override public void onError(String message) { }
+            @Override public void onSessionsRestored() { restored.countDown(); }
+        });
+        m.restoreAllSessionsAsync();
+        assertTrue("后台恢复未在 10s 内完成", restored.await(10, TimeUnit.SECONDS));
+        assertEquals(1, m.sessions().size());
+        assertEquals("后台恢复的会话", m.sessions().get(0).title);
+
+        m.restoreAllSessionsAsync(); // 幂等：不重复恢复
+        assertEquals(1, m.sessions().size());
+    }
+
     /** 恢复会话：历史消息灌入 EventList（点击即可重放显示；TOOL 结果→TOOL_RESULT） */
     @Test
     public void restore_replaysHistoryIntoEventList() throws Exception {

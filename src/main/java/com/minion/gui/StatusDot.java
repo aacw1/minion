@@ -33,8 +33,11 @@ public final class StatusDot {
         return dot;
     }
 
-    /** 启动呼吸动画（幂等：已有动画不重复起） */
+    /** 启动呼吸动画（幂等：已有动画不重复起）。
+     *  软件渲染降级为静态点：呼吸动画是 60fps 持续重绘，对"是否运行"的状态表达没有增量
+     *  （运行色 #5AD1A0 已足够），见 Motion。 */
     public static void startPulse(Circle dot) {
+        if (Motion.reduced()) return;
         if (dot.getProperties().containsKey(PULSE_KEY)) return;
         Timeline t = new Timeline(
                 new KeyFrame(Duration.ZERO, new KeyValue(dot.opacityProperty(), LOW)),

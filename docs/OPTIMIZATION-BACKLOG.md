@@ -684,3 +684,24 @@ fat jar：17,718,382 B（解压 39MB）
 ---
 
 > 本文只做记录，不含状态跟踪。建议按 §8 分批建 issue；第 4 批先出设计文档再动手（符合 `docs/CONVENTIONS.md` 第 6 条"设计先行"）。
+
+---
+
+## 10. 2026-10-31 补轮：低端机 / 远程桌面（已实施）
+
+设计文档：`docs/superpowers/specs/2026-10-31-低端机渲染与启动优化-design.md`
+
+| 项 | 修复 | 实测（本机 sw 管线） |
+|---|---|---|
+| 输入框聚焦高斯阴影 | 删除 `.input-frame-focused` 的 `dropshadow`（输入框是 TextArea 父节点，每键重模糊 740×120）；`sheet-card`/`card`/头像/品牌标阴影一并移除 | 2x 渲染倍率打字 97 帧/39ms → **245 帧/15ms** |
+| HiDPI 渲染倍率 | `Boot`：RDP 或显式 sw 时 `glass.win.renderScale=1`（UI 尺寸仍按 DPI，像素量 1/4） | 150% 缩放 2x→1x，填充量降 75% |
+| 消息区视口缓存 | `RenderPipeline` 探测实际管线：sw 开 `CacheHint.SPEED`，es2 保持关闭 | 2x 滚动 75 帧/39ms → **229 帧/16ms**；流式 69→145 帧 |
+| 装饰动画 | `Motion`：sw 下状态点不呼吸、齿轮不转、压缩不转圈、确认卡不滑入（`-Dminion.animations=full` 可恢复） | 2x 单个小动画 45fps → **60fps** |
+| 启动 | ① `DeepSeekClient` 的 OkHttpClient 懒初始化；② `SessionManager` 延迟恢复，窗口显示后后台加载历史 | 窗口可见 2.6~3.8s → **1.26s**（最小 JavaFX 基线 1.05s） |
+
+后续仍建议做（本次未动）：
+
+- **P1-7 完整懒恢复**：当前延迟恢复仍是"后台全量建 AgentLoop"，历史很多时会占用后台 CPU/内存；理想状态是侧栏只读 `SessionMeta`，激活会话才 `store.load + AgentLoop`。
+- **P3-11 会话列表 cell 两次全量拷贝**：延迟恢复完成后第一次 `refresh` 仍会为每个 cell 复制消息列表；可改为 `SessionHandle` 维护 `volatile lastSummary/lastMessageTs`。
+- **4K@100% 且全屏**的软件渲染没有"降倍率"可用（renderScale 已是 1），流式输出仍是纯填充率瓶颈；可考虑消息区限宽/限高或建议窗口化使用（设计取舍，需产品确认）。
+- **双击 jar 的启动器自重启**：`boot.console=false`（默认）且 javaw 启动时，`JdkResolver.decide` 仍会 `RELAUNCH` 一个子 JVM（历史设计是为了补开控制台/固定 cwd），本机实测多约 0.1~0.15s，低端机按 JVM 冷启动成本放大。可行修法：`skills.dir` 等相对配置统一按 `Config.jarDir()` 解析后，控制台隐藏且当前 JDK8 时直接 `Main.main`，不再重启；需同步验证双击 cwd 不再影响任何相对路径。

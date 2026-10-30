@@ -25,6 +25,7 @@ import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.CacheHint;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
@@ -374,6 +375,12 @@ public class MainWindow {
                     if (chatView != null && chatView.handle() == h) clearChatPane();
                 });
             }
+            @Override public void onSessionsRestored() {
+                // 后台恢复完成（可能来自后台线程）：侧栏列表从空填充为历史会话
+                Platform.runLater(() -> {
+                    if (sessionList != null) sessionList.refresh();
+                });
+            }
             @Override public void onError(String message) {
                 Platform.runLater(() -> {
                     if (chatView != null) chatView.appendSystemLine(message);
@@ -396,6 +403,11 @@ public class MainWindow {
         ResizeHelper.attach(stage, frame); // 无边框窗口边缘/四角缩放
 
         stage.show();
+
+        // 历史会话后台恢复（P1，2026-10-31）：恢复成本随会话数线性增长（JSON + AgentLoop + 事件重放），
+        // 不再压在首屏之前——窗口先可用，侧栏随后经 onSessionsRestored 填充。
+        // 同步构造路径（单测/基准）已恢复过，这里幂等空转。
+        manager.restoreAllSessionsAsync();
     }
 
     /** 顶部模型标签文本：显示当前模型的模型名（modelName），缺失时回退标识名（displayName） */
@@ -493,14 +505,16 @@ public class MainWindow {
      *  vmax 恒 1.0 不可用（vvalue 为归一化比例），内容增长改监听内容节点高度变化；
      *  会话切换时内容节点被替换，须随 contentProperty 重挂监听 */
     private void setupAutoScroll() {
-        // 关闭视口缓存：ScrollPaneSkin 构造硬编码 viewport setCache(true)（离屏缓存），
-        // 聊天内容大时每次滚动/更新都全量重绘+上传大纹理到 GPU——es2 管线长会话下会堵死渲染队列（假死根因）。
-        // skin 就绪后 lookup .viewport 取消缓存，改为视口内直接重绘（仅视口大小的绘制，无离屏拷贝上传）。
+        // 视口缓存按管线分流（P0，2026-10-31）：
+        // - es2/d3d：保持关闭。ScrollPaneSkin 默认 viewport.setCache(true) 是离屏纹理，
+        //   长会话内容高时每次滚动/更新都全量重绘并上传大纹理，es2 管线会堵死渲染队列（历史假死根因）。
+        // - sw 软件管线：开启。软件渲染没有纹理上传成本，关闭缓存反而让每次滚动/流式刷新都重绘
+        //   整个视口；实测 2x 渲染倍率下滚动 75→229 帧、流式 69→145 帧（见 2026-10-31 设计文档）。
         chatScroll.skinProperty().addListener((obs, ov, nv) -> {
-            if (nv != null) {
-                Node viewport = chatScroll.lookup(".viewport");
-                if (viewport != null) viewport.setCache(false);
-            }
+            if (nv == null) return;
+            // 延到下一 FX 任务：此时 Prism 管线已完成初始化（首次渲染前 getPipeline() 可能为 null，
+            // 只靠 prism.order 回退会把默认 "es2,sw" 误判成硬件管线，从而漏开软件管线的缓存）
+            Platform.runLater(this::applyViewportCache);
         });
         javafx.beans.value.ChangeListener<javafx.geometry.Bounds> contentGrew = (obs, o, n) -> {
             if (n != null && n.getHeight() > 0) {
@@ -517,6 +531,18 @@ public class MainWindow {
             if (ov != null) ov.layoutBoundsProperty().removeListener(contentGrew);
             if (nv != null) nv.layoutBoundsProperty().addListener(contentGrew);
         });
+    }
+
+    /** 按实际渲染管线设置消息区视口缓存（见 setupAutoScroll 注释）；须在 skin/管线就绪后调用 */
+    private void applyViewportCache() {
+        Node viewport = chatScroll.lookup(".viewport");
+        if (viewport == null) return;
+        if (RenderPipeline.isSoftware()) {
+            viewport.setCache(true);
+            viewport.setCacheHint(CacheHint.SPEED);
+        } else {
+            viewport.setCache(false);
+        }
     }
 
     /** 动态容差（归一化）：FOLLOW_SCREENS×视口高/可滚动行程；未超一屏返回 1.0（恒贴底） */
