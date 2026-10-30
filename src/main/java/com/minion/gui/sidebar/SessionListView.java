@@ -139,7 +139,7 @@ public class SessionListView extends ListView<SessionHandle> {
             String summary = lastSummary(h);
             if (summary != null) {
                 Label sum = new Label(summary);
-                sum.getStyleClass().add("section-title");
+                sum.getStyleClass().add("cell-summary");
                 sum.setTextOverrun(OverrunStyle.ELLIPSIS);
                 sum.setMinWidth(0);
                 cellBox.getChildren().add(sum);

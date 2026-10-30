@@ -1,430 +1,741 @@
-/* minion 深色科技感主题 */
+/* minion 深色工作台 v1（2026-10-30 视觉优化）
+   设计基线：app #0B0E13 / sidebar #0D1117 / chat #0B0F15；珊瑚橙 #FF8A65 只做当前项、主操作与焦点；
+   正文 14px、辅助 11px、元信息 9.5~10px；正文/输入框 740px 上限居中。
+   JavaFX 8 不支持 CSS 变量/keyframe/backdrop-filter：色值硬编码，动画由 Java Timeline 承担。 */
+
 .root {
     /* JavaFX 8 不按逗号列表回退：第一个族缺失会直接落到 System，后面的族不会尝试。
-       这里只写中文环境兜底族；启动时 UiFonts.apply 会按已安装字体覆盖
-       （Win10+ 优先 Microsoft YaHei UI，Win7 回退微软雅黑），见 gui/theme/UiFonts。 */
+       这里只写中文环境兜底族；启动时 UiFonts.apply 会按已安装字体覆盖（见 gui/theme/UiFonts）。 */
     -fx-font-family: "微软雅黑";
-    -fx-font-size: 16px;
-    -fx-background-color: #0f1115;
+    -fx-font-size: 18px;
+    -fx-background-color: #0B0E13;
 }
 
-/* 面板（左侧侧栏 rgb(25,26,27)、右侧正文 rgb(18,19,20)） */
-.panel { -fx-background-color: #191a1b; -fx-border-color: #232733; -fx-border-width: 0 1 0 0; }
-.panel-dark { -fx-background-color: #121314; }
+/* ===== 面板 ===== */
+.panel {
+    -fx-background-color: #0D1117;
+    -fx-border-color: #1B2430;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 13 12 10 12;
+}
+.panel-dark { -fx-background-color: #0B0F15; }
 .card {
-    -fx-background-color: #1a1d24;
+    -fx-background-color: #151A22;
     -fx-background-radius: 8;
-    -fx-border-color: #232733;
+    -fx-border-color: #202A36;
     -fx-border-radius: 8;
     -fx-padding: 10 12;
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 10, 0, 0, 2);
 }
 
-/* 顶部栏 */
+/* ===== 标题栏 ===== */
 .topbar {
-    -fx-background-color: #12141a;
-    -fx-border-color: transparent transparent #232733 transparent;
+    -fx-background-color: #0A0D12;
+    -fx-border-color: transparent transparent #1B2430 transparent;
     -fx-border-width: 0 0 1 0;
-    -fx-padding: 8 12 8 12;
+    -fx-padding: 0 10 0 14;
+    -fx-min-height: 50;
+    -fx-pref-height: 50;
+    -fx-max-height: 50;
+    -fx-alignment: center-left;
 }
-.topbar-title { -fx-text-fill: #f0f2f6; -fx-font-size: 16px; -fx-font-weight: bold; }
-.topbar-model { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; }
-
-/* 按钮 */
-.btn { -fx-background-radius: 6; -fx-padding: 6 14 6 14; -fx-cursor: hand; }
-.btn-primary {
-    -fx-background-color: linear-gradient(to bottom, #4f8cff, #3b6fe0);
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
+.tb-brand { -fx-spacing: 8; -fx-alignment: center-left; }
+.brand-mark {
+    -fx-min-width: 24; -fx-pref-width: 24; -fx-max-width: 24;
+    -fx-min-height: 24; -fx-pref-height: 24; -fx-max-height: 24;
+    -fx-background-color: linear-gradient(to bottom, #FFA47F, #FF7A59);
+    -fx-background-radius: 7;
+    -fx-effect: dropshadow(gaussian, rgba(255,122,89,0.22), 8, 0, 0, 3);
 }
-.btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
-/* 发送/确认按钮三态色：空内容与运行中 #f48771，有内容非运行 #ff947c（hover 向浅微调） */
-.btn-send-empty {
-    -fx-background-color: #f48771;
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-background-radius: 8;
-}
-.btn-send-empty:hover { -fx-background-color: #f69b85; }
-.btn-send-full {
-    -fx-background-color: #ff947c;
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-background-radius: 8;
-}
-.btn-send-full:hover { -fx-background-color: #ffa894; }
-.btn-ghost {
-    -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
-    -fx-border-color: #232733;
-    -fx-border-radius: 6;
-}
-.btn-ghost:hover { -fx-text-fill: #f0f2f6; -fx-border-color: #4f8cff; }
-
-/* ===== SVG 图标（IconFactory 统一 24×24 Material 线性图标；SVGPath 填充不继承 -fx-text-fill，须显式指定） =====
-   通用色 #a8b0bb（同按钮文字色）；hover 由所在按钮容器联动变白/变色 */
-.icon-send { -fx-fill: white; }
-.icon-stop { -fx-fill: white; }
-.icon-settings, .icon-min, .icon-max, .icon-restore, .icon-close { -fx-fill: #a8b0bb; }
-.btn-ghost:hover .icon-settings, .btn-ghost:hover .icon-min,
-.btn-ghost:hover .icon-max, .btn-ghost:hover .icon-restore { -fx-fill: #f0f2f6; }
-.btn-close:hover .icon-close { -fx-fill: #ffffff; }
-
-/* 侧栏行内操作图标：hover 语义色（修改→蓝、删除→红） */
-.icon-edit { -fx-fill: #a8b0bb; }
-.btn-cell:hover .icon-edit { -fx-fill: #4f8cff; }
-.icon-delete { -fx-fill: #a8b0bb; }
-.btn-cell:hover .icon-delete { -fx-fill: #e05b5b; }
-
-/* 当前标记圆点（工作空间列表/设置窗模型列表） */
-.icon-dot { -fx-fill: #4f8cff; }
-
-/* 正文工具区状态图标（ChatView 摘要行） */
-.icon-help { -fx-fill: #e6a23c; }    /* 提问问号 */
-.icon-success { -fx-fill: #4caf50; } /* 工具成功 */
-.icon-error { -fx-fill: #e05b5b; }   /* 工具失败 */
-.icon-play { -fx-fill: #4f8cff; }    /* 子任务开始 */
-.icon-check { -fx-fill: #4caf50; }   /* 子任务完成 */
-.icon-build { -fx-fill: #8a8f98; }   /* 工具调用（扳手） */
-.icon-timer { -fx-fill: #8a8f98; }   /* 统计行 */
-.icon-chevron { -fx-fill: #8a8f98; } /* 折叠箭头 */
-.log-collapse-toggle:hover .icon-chevron { -fx-fill: #f0f2f6; }
-
-/* 正文摘要行文本（图标+文字组合） */
-.log-summary-text { -fx-text-fill: #d3d7de; -fx-font-size: 13px; }
-
-/* 窗口关闭按钮（无边框窗口） */
-.btn-close {
-    -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
+.brand-mark .icon-spark { -fx-fill: #1D0E09; }
+.brand-name { -fx-text-fill: #F1F5FA; -fx-font-size: 17px; -fx-font-weight: bold; }
+.model-pill {
+    -fx-background-color: #0E141B;
+    -fx-border-color: #1F2935;
+    -fx-border-width: 1;
     -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 4 8 4 8;
+    -fx-spacing: 6;
+    -fx-alignment: center-left;
+}
+.model-dot {
+    -fx-min-width: 5; -fx-pref-width: 5; -fx-max-width: 5;
+    -fx-min-height: 5; -fx-pref-height: 5; -fx-max-height: 5;
+    -fx-background-color: #5AD1A0;
+    -fx-background-radius: 5;
+}
+.model-name { -fx-text-fill: #AEBACC; -fx-font-size: 13.5px; }
+.icon-btn {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-padding: 4 8 4 8;
+    -fx-min-width: 34; -fx-pref-width: 34;
+    -fx-min-height: 31; -fx-pref-height: 31;
     -fx-cursor: hand;
 }
-.btn-close:hover { -fx-background-color: #c93a39; -fx-text-fill: white; }
+.icon-btn:hover { -fx-background-color: #161E28; }
+.icon-btn.close:hover { -fx-background-color: #E5484D; }
+.icon-settings, .icon-min, .icon-max, .icon-restore { -fx-fill: #8B98AA; }
+.icon-btn:hover .icon-settings, .icon-btn:hover .icon-min,
+.icon-btn:hover .icon-max, .icon-btn:hover .icon-restore { -fx-fill: #F1F5FA; }
+.icon-close { -fx-fill: #8B98AA; }
+.icon-btn.close:hover .icon-close { -fx-fill: #FFFFFF; }
 
-/* ===== 输入区大框（左输入右按钮+竖分割线，4/9 宽居中）；显式 LCD：JavaFX 8 默认灰阶 AA 发虚（同聊天正文修法） ===== */
+/* 兼容旧标题栏类（设置/探针） */
+.topbar-title { -fx-text-fill: #F1F5FA; -fx-font-size: 17px; -fx-font-weight: bold; }
+.topbar-model { -fx-text-fill: #AEBACC; -fx-font-size: 13.5px; }
+
+/* ===== 按钮 ===== */
+.btn { -fx-background-radius: 6; -fx-padding: 5 12 5 12; -fx-cursor: hand; -fx-font-size: 14px; }
+.btn-primary {
+    -fx-background-color: linear-gradient(to bottom, #FFA07D, #FF7A59);
+    -fx-text-fill: #23100A;
+    -fx-font-weight: bold;
+}
+.btn-primary:hover { -fx-background-color: linear-gradient(to bottom, #FFB08F, #FF8A65); }
+
+/* 发送/确认按钮：内容态与空态共用珊瑚底；空态由 InputView 的 opacity 0.35 表达 */
+.btn-send-empty, .btn-send-full {
+    -fx-background-color: linear-gradient(to bottom, #FF9A78, #FF7A59);
+    -fx-text-fill: #23100A;
+    -fx-font-weight: bold;
+    -fx-background-radius: 9;
+}
+.btn-send-empty:hover, .btn-send-full:hover {
+    -fx-background-color: linear-gradient(to bottom, #FFAC8B, #FF8A65);
+}
+.btn-send-dim {
+    -fx-background-color: #19222E;
+    -fx-background-radius: 9;
+    -fx-border-color: #26313F;
+    -fx-border-width: 1;
+    -fx-border-radius: 9;
+}
+.btn-send-dim .icon-send { -fx-fill: #6F7D90; }
+.btn-stop {
+    -fx-background-color: linear-gradient(to bottom, #FF9A78, #FF7A59);
+    -fx-background-radius: 9;
+}
+.btn-stop .icon-stop { -fx-fill: #23100A; }
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: #A6B2C3;
+    -fx-border-color: #26313F;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 5 12 5 12;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+}
+.btn-ghost:hover { -fx-text-fill: #E9EEF6; -fx-border-color: #FF8A65; }
+.btn-close {
+    -fx-background-color: transparent;
+    -fx-text-fill: #A6B2C3;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+}
+.btn-close:hover { -fx-background-color: #E5484D; -fx-text-fill: #FFFFFF; }
+
+/* 侧栏「新建」：低饱和珊瑚底的小按钮 */
+.btn-new {
+    -fx-background-color: rgba(255,138,101,0.10);
+    -fx-border-color: rgba(255,138,101,0.22);
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: #FFB49D;
+    -fx-font-size: 13.5px;
+    -fx-padding: 4 9 4 9;
+    -fx-graphic-text-gap: 3;
+    -fx-cursor: hand;
+}
+.btn-new:hover { -fx-background-color: rgba(255,138,101,0.16); }
+.btn-new .icon-plus { -fx-fill: #FFB49D; }
+.btn-icon-mini {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-padding: 3 5 3 5;
+    -fx-min-width: 24; -fx-pref-width: 24;
+    -fx-min-height: 24; -fx-pref-height: 24;
+    -fx-cursor: hand;
+}
+.btn-icon-mini:hover { -fx-background-color: #1A2330; }
+.btn-icon-mini .icon-plus { -fx-fill: #8B98AC; }
+.btn-icon-mini:hover .icon-plus { -fx-fill: #F1F5FA; }
+
+/* ===== 图标 ===== */
+.icon-send, .icon-stop { -fx-fill: #23100A; }
+.icon-upload { -fx-fill: #A6B2C3; }
+.btn-upload:hover .icon-upload { -fx-fill: #F1F5FA; }
+.icon-edit, .icon-delete { -fx-fill: #8B98AC; }
+.btn-cell:hover .icon-edit { -fx-fill: #FFA184; }
+.btn-cell:hover .icon-delete { -fx-fill: #FF7B7B; }
+.icon-dot { -fx-fill: #FF8A65; }
+.icon-help { -fx-fill: #F2C46D; }
+.icon-success { -fx-fill: #5AD1A0; }
+.icon-error { -fx-fill: #FF7B7B; }
+.icon-play { -fx-fill: #FF8A65; }
+.icon-check { -fx-fill: #5AD1A0; }
+.icon-build { -fx-fill: #8FA1B6; }
+.icon-timer { -fx-fill: #6F7D90; }
+.icon-chevron { -fx-fill: #6F7D90; }
+.icon-spark { -fx-fill: #FF8A65; }
+.icon-plus { -fx-fill: #8B98AC; }
+.icon-alert { -fx-fill: #F2C46D; }
+.log-collapse-toggle:hover .icon-chevron { -fx-fill: #F1F5FA; }
+
+/* ===== 输入区 ===== */
+.input-dock { -fx-background-color: #0B0F15; }
 .input-frame {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 8;
-    -fx-border-color: #232733;
-    -fx-border-radius: 8;
-    -fx-padding: 8 10 8 14;
+    -fx-background-color: #10161E;
+    -fx-background-radius: 13;
+    -fx-border-color: #26313F;
+    -fx-border-width: 1;
+    -fx-border-radius: 13;
+    -fx-padding: 10 12 8 12;
     -fx-font-smoothing-type: lcd;
 }
 .input-frame .input-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
-    -fx-text-fill: #f0f2f6;
-    -fx-prompt-text-fill: #7a828e;
-    -fx-highlight-fill: #3b6fe0;
+    -fx-text-fill: #E4EBF4;
+    -fx-prompt-text-fill: #6F7D90;
+    -fx-highlight-fill: #3B4A5E;
+    -fx-highlight-text-fill: #FFFFFF;
+    -fx-font-size: 16px;
 }
 .input-frame .input-textarea .content { -fx-background-color: transparent; }
 .input-frame .input-textarea .scroll-pane { -fx-background-color: transparent; }
-/* 输入框聚焦：大框边框 #f48771（InputView focus 监听切换样式类，失焦还原 #232733） */
-.input-frame-focused { -fx-border-color: #f48771; }
-.input-divider { -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1; -fx-background-color: #232733; }
-
-/* 键盘空输入提示（InputView toast）：悬浮输入框上方居中，3 秒自动淡出，不占布局不挡鼠标 */
+.input-frame .input-textarea:focused {
+    -fx-background-color: transparent;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+.input-frame-focused {
+    -fx-border-color: #FF8A65;
+    -fx-effect: dropshadow(gaussian, rgba(255,138,101,0.16), 9, 0, 0, 0);
+}
+.input-divider {
+    -fx-pref-width: 1; -fx-min-width: 1; -fx-max-width: 1;
+    -fx-background-color: #202A36;
+}
 .input-toast {
-    -fx-background-color: #232733;
-    -fx-border-color: #3a4050;
+    -fx-background-color: #1A2330;
+    -fx-border-color: #2A3644;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
     -fx-padding: 5 12 5 12;
-    -fx-font-size: 12px;
-    -fx-text-fill: #a8b0bb;
+    -fx-font-size: 13px;
+    -fx-text-fill: #A6B2C3;
+}
+.btn-upload {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+    -fx-padding: 3;
+}
+.composer-hint {
+    -fx-text-fill: #6F7D90;
+    -fx-font-size: 11px;
+    -fx-padding: 0 3 0 3;
 }
 
-/* 上传按钮（输入框底部操作行左）：回形针图标（Material 线性填充，同 icon-settings 色系） */
-.btn-upload { -fx-background-color: transparent; -fx-background-radius: 6; -fx-cursor: hand; }
-.icon-upload { -fx-fill: #a8b0bb; }
-.btn-upload:hover .icon-upload { -fx-fill: #f0f2f6; }
-
-/* ===== 输入块（chip）：弹层确认的 /命令、@文件与粘贴长文本；不可编辑只可删除 ===== */
-.chip-row { -fx-hgap: 8; -fx-vgap: 8; }
+/* 输入块（chip） */
+.chip-row { -fx-hgap: 6; -fx-vgap: 6; }
 .input-chip {
-    -fx-background-radius: 6;
-    -fx-border-radius: 6;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
     -fx-border-width: 1;
-    -fx-padding: 2 4 2 8;
+    -fx-padding: 2 3 2 7;
 }
-.chip-label { -fx-text-fill: #d3d7de; -fx-font-size: 14px; }
+.chip-label { -fx-text-fill: #C3CFDE; -fx-font-size: 12.5px; }
 .chip-close {
     -fx-background-color: transparent;
-    -fx-padding: 0 4 0 4;
-    -fx-background-radius: 4;
+    -fx-padding: 0 3 0 3;
+    -fx-background-radius: 3;
     -fx-cursor: hand;
 }
-.chip-close .icon-close { -fx-fill: #98a0ab; }
-.chip-close:hover { -fx-background-color: rgba(248, 81, 73, 0.15); }
-.chip-close:hover .icon-close { -fx-fill: #f85149; }
-.input-chip-command, .input-chip-skill { -fx-background-color: #1f2f55; -fx-border-color: #3b6fe0; }
-.input-chip-file { -fx-background-color: #14301f; -fx-border-color: #2ea043; }
-.input-chip-paste { -fx-background-color: #2a2f3a; -fx-border-color: #3a4150; }
-.input-chip-image { -fx-background-color: #241f38; -fx-border-color: #7c5cd6; }
+.chip-close .icon-close { -fx-fill: #8B98AC; }
+.chip-close:hover { -fx-background-color: rgba(255,107,107,0.14); }
+.chip-close:hover .icon-close { -fx-fill: #FF7B7B; }
+.input-chip-command, .input-chip-skill {
+    -fx-background-color: rgba(255,138,101,0.10);
+    -fx-border-color: rgba(255,138,101,0.28);
+}
+.input-chip-file {
+    -fx-background-color: #17212C;
+    -fx-border-color: #2A3745;
+}
+.input-chip-paste {
+    -fx-background-color: #141B24;
+    -fx-border-color: #26313F;
+}
+.input-chip-image {
+    -fx-background-color: #1B2430;
+    -fx-border-color: #2E3B4C;
+}
 
-/* ===== 补全弹层（/命令、@文件；锚定输入大框上方同宽） ===== */
+/* 补全弹层 */
 .suggest-list {
-    -fx-background-color: #1a1d24;
+    -fx-background-color: #111821;
     -fx-background-radius: 8;
-    -fx-border-color: #2a2f3a;
+    -fx-border-color: #2A3543;
     -fx-border-radius: 8;
     -fx-font-smoothing-type: lcd;
-    /* padding 归零：ListView 默认 padding 4 会把 VirtualFlow 视口再吃 8px，
-       末行恰好占满时仍判溢出、残留垂直滚动条（computeBarVisiblity 比较
-       lastCell 超出视口）。高度校准已含 +3（border 2px + 保险 1px） */
     -fx-padding: 0;
 }
 .suggest-list .list-cell { -fx-background-color: transparent; -fx-padding: 6 10 6 10; }
-.suggest-list .list-cell:hover { -fx-background-color: #20242e; }
-.suggest-list .list-cell:selected { -fx-background-color: #2a3344; }
-.suggest-label { -fx-text-fill: #d3d7de; }
-.suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #f0f2f6; }
-.suggest-desc { -fx-text-fill: #7a828e; -fx-font-size: 14px; }
+.suggest-list .list-cell:hover { -fx-background-color: #17202B; }
+.suggest-list .list-cell:selected { -fx-background-color: #1E2937; }
+.suggest-label { -fx-text-fill: #C6D2E1; -fx-font-size: 14px; }
+.suggest-list .list-cell:selected .suggest-label { -fx-text-fill: #F1F5FA; }
+.suggest-desc { -fx-text-fill: #6F7D90; -fx-font-size: 12.5px; }
 
-/* 列表 */
-.list-view { -fx-background-color: transparent; -fx-background-radius: 6; }
-/* 抄 Claude VSCode 插件侧栏页签：背景内缩成胶囊（上下 1px、左右 2px）+ 圆角；
-   hover/selected 只对 filled cell 生效——列表底部空白区域由空 cell 填充，保持透明不变色 */
+/* ===== 列表 / 侧栏 ===== */
+.list-view {
+    -fx-background-color: transparent;
+    -fx-background-radius: 6;
+    -fx-padding: 0;
+}
 .list-view .list-cell {
     -fx-background-color: transparent;
-    -fx-background-insets: 1 4 1 4;
+    -fx-background-insets: 1 2 1 2;
     -fx-background-radius: 8;
-    -fx-text-fill: #d3d7de;
-    -fx-padding: 9 12 9 12;
+    -fx-text-fill: #D4DEEA;
+    -fx-padding: 6 9 6 10;
 }
-.list-view .list-cell:filled { -fx-background-color: #1a1d24; }
-.list-view .list-cell:filled:hover { -fx-background-color: #20242e; }
-.list-view .list-cell:filled:selected { -fx-background-color: #232a38; -fx-text-fill: #f0f2f6; }
+.list-view .list-cell:filled { -fx-background-color: transparent; }
+.list-view .list-cell:filled:hover { -fx-background-color: #121923; }
+.list-view .list-cell:filled:selected {
+    -fx-background-color: #17202B;
+    -fx-border-color: transparent transparent transparent #FF8A65;
+    -fx-border-width: 0 0 0 2;
+    -fx-text-fill: #F3F7FC;
+}
+.sb-header { -fx-spacing: 7; -fx-alignment: center-left; -fx-min-height: 30; -fx-pref-height: 30; }
+.section-title { -fx-text-fill: #93A1B3; -fx-font-size: 15px; -fx-font-weight: bold; }
+.cell-text { -fx-text-fill: #D4DEEA; -fx-font-size: 15.5px; }
+.list-view .list-cell:selected .cell-text { -fx-text-fill: #F3F7FC; }
+.cell-summary { -fx-text-fill: #7E8B9E; -fx-font-size: 13.5px; }
+.list-view .list-cell:selected .cell-summary { -fx-text-fill: #8E9BAE; }
+.cell-time { -fx-text-fill: #6F7D90; -fx-font-size: 11.5px; }
+.btn-cell {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 4 2 4;
+    -fx-cursor: hand;
+}
+.btn-cell:hover { -fx-background-color: #232D3A; }
 
-/* 页签 */
+/* ===== 页签 ===== */
+.tabs-bar {
+    -fx-padding: 8 12 8 12;
+    -fx-min-height: 48;
+    -fx-pref-height: 48;
+    -fx-max-height: 48;
+    -fx-border-color: transparent transparent #1B2430 transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-background-color: #0B0F15;
+}
+.tab-pane { -fx-background-color: transparent; -fx-tab-min-height: 32; -fx-tab-max-height: 32; }
+.tab-pane .tab-header-area { -fx-padding: 0; }
 .tab-pane .tab-header-area .tab-header-background { -fx-background-color: transparent; }
 .tab-pane > .tab-content-area { -fx-min-height: 0; -fx-pref-height: 0; -fx-max-height: 0; }
-/* 抄 Claude VSCode 插件页签：椭圆圆角 左右 2px / 上下 1px（须显式 8 值：JavaFX 8 对 `2 / 1` 简写丢垂直半径） */
-.tab-pane .tab { -fx-background-color: #1a1d24; -fx-background-radius: 2 2 2 2 / 1 1 1 1; -fx-padding: 4 12; }
-.tab-pane .tab:hover { -fx-background-color: #1a1d24; } /* 去掉未选中页签 hover 变色（固定底色） */
-.tab-pane .tab:selected { -fx-background-color: #232a38; }
-.tab-pane .tab:selected:hover { -fx-background-color: #232a38; } /* 选中页签 hover 同样固定 */
-.tab-pane .tab-label { -fx-text-fill: #a8b0bb; }
-.tab-pane .tab:selected .tab-label { -fx-text-fill: #f0f2f6; }
-
-/* 页签溢出：隐藏控制按钮（下拉箭头/滚动），超出宽度由 header 裁剪，不显示滚动条 */
-.tab-pane > .tab-header-area > .control-buttons-tab { visibility: hidden; }
+.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 7;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-border-radius: 7;
+    -fx-padding: 6 11 6 11;
+    -fx-min-height: 32;
+    -fx-pref-height: 32;
+    -fx-max-height: 32;
+    -fx-cursor: hand;
+}
+.tab-pane .tab:hover { -fx-background-color: #121A23; }
+.tab-pane .tab:selected { -fx-background-color: #161E29; -fx-border-color: #25313F; }
+.tab-pane .tab-label { -fx-text-fill: #8592A5; -fx-font-size: 14.5px; }
+.tab-pane .tab:selected .tab-label { -fx-text-fill: #EDF2F9; }
+.tab-pane > .tab-header-area > .control-buttons-tab {
+    visibility: hidden;
+    -fx-opacity: 0;
+    -fx-min-width: 0;
+    -fx-pref-width: 0;
+    -fx-max-width: 0;
+    -fx-padding: 0;
+}
+.tab-pane > .tab-header-area > .control-buttons-tab > .container { -fx-padding: 0; }
 .tab-pane .tab { -fx-min-width: 0; }
-
-/* 消息 */
-.msg-user {
-    -fx-background-color: #23408f;
-    -fx-background-radius: 10 10 2 10;
-    -fx-padding: 10 14 10 14;
-    -fx-text-fill: #eaf0ff;
+/* 关闭按钮：modena 的 X 形状，改为细灰；选中页签更亮 */
+.tab-pane > .tab-header-area > .headers-region > .tab > .tab-container > .tab-close-button {
+    -fx-background-color: #6F7D90;
+    -fx-shape: "M 0,0 H1 L 4,3 7,0 H8 V1 L 5,4 8,7 V8 H7 L 4,5 1,8 H0 V7 L 3,4 0,1 Z";
+    -fx-scale-shape: false;
+    -fx-effect: null;
+    -fx-opacity: 0.65;
 }
-.msg-assistant {
-    -fx-background-color: #1a1d24;
-    -fx-background-radius: 10 10 10 2;
-    -fx-padding: 10 14 10 14;
-    -fx-text-fill: #f0f2f6;
+.tab-pane > .tab-header-area > .headers-region > .tab:selected > .tab-container > .tab-close-button {
+    -fx-background-color: #A6B2C3;
+    -fx-opacity: 0.9;
 }
-.msg-thinking { -fx-background-color: #13161c; -fx-background-radius: 6; -fx-text-fill: #98a0ab; -fx-font-size: 14px; }
-.code-block {
-    -fx-background-color: #0d1117;
-    -fx-background-radius: 6;
-    -fx-border-color: #232733;
-    -fx-border-radius: 6;
-    -fx-padding: 10 14 10 14;
-    -fx-font-family: "Consolas", monospace;
-    -fx-font-size: 15px;
-    -fx-text-fill: #c9d1d9;
+.tab-pane > .tab-header-area > .headers-region > .tab > .tab-container > .tab-close-button:hover {
+    -fx-background-color: #FFFFFF;
+    -fx-opacity: 1;
 }
-.msg-error { -fx-background-color: #3d1d1d; -fx-background-radius: 6; -fx-text-fill: #f85149; }
-.msg-warning { -fx-background-color: #3d2f14; -fx-background-radius: 6; -fx-text-fill: #e3b341; }
 
-/* 运行中补充气泡的小徽标 */
-.supplement-tag { -fx-text-fill: #8ab4ff; -fx-font-size: 13px; -fx-font-weight: bold; }
+/* ===== 聊天内容列 ===== */
+.chat-content { -fx-font-smoothing-type: lcd; }
+.card-row { -fx-padding: 2 0 10 34; }
+.msg-user-row { -fx-padding: 8 0 14 0; -fx-alignment: top-right; }
+.msg-ai-row { -fx-padding: 2 0 12 0; }
+.msg-default-row { -fx-padding: 2 0 10 0; }
 
-/* ===== 消息只读 TextArea（消息本体：原生拖选/Ctrl+C/双击选词/右键菜单） =====
-   背景策略（探针 2026-08-15 实证，纠正 8-13「显式 LCD」假阳性）：
-   - JavaFX 8 Prism 对透明表面只做灰阶抗锯齿（-fx-font-smoothing-type: lcd 属性
-     在透明层上被压制），Windows 125% 缩放把灰阶柔边放大 → 正文发虚根因；
-   - .content 用不透明 #121314（与 .panel-dark 同色无缝）→ Prism 恢复 LCD 子像素
-     渲染（实测边缘彩色条纹 0% → 53%）；.scroll-pane/.viewport 保持透明即可；
-   - 自身 background transparent + control-inner-background transparent 仍保留：
-     防 modena 默认白底（-fx-text-box-border/-fx-control-inner-background）在
-     非 content 区域（边框带/内边距）透出「白色块」。 */
+/* 用户气泡：只读 TextArea 保持选择复制；宽度按最长行估算 */
+.user-bubble {
+    -fx-background-color: #1A2431;
+    -fx-border-color: #263241;
+    -fx-border-width: 1;
+    -fx-background-radius: 14 14 4 14;
+    -fx-border-radius: 14 14 4 14;
+    -fx-padding: 12 16 12 16;
+}
+.user-bubble .msg-textarea { -fx-text-fill: #E9EEF6; -fx-font-size: 15.5px; }
+.user-bubble .msg-textarea .content { -fx-background-color: #1A2431; }
+
+/* AI 回复：头像 + 名称 + 正文 */
+.ai-avatar {
+    -fx-min-width: 24; -fx-pref-width: 24; -fx-max-width: 24;
+    -fx-min-height: 24; -fx-pref-height: 24; -fx-max-height: 24;
+    -fx-background-color: linear-gradient(to bottom, #FFA47F, #FF7A59);
+    -fx-background-radius: 7;
+    -fx-effect: dropshadow(gaussian, rgba(255,122,89,0.20), 8, 0, 0, 3);
+}
+.ai-avatar .icon-spark { -fx-fill: #1D0E09; }
+.ai-body { -fx-padding: 0; }
+.ai-meta { -fx-alignment: center-left; -fx-padding: 0 0 2 0; }
+.ai-name { -fx-text-fill: #C6D2E0; -fx-font-size: 13.5px; -fx-font-weight: bold; }
+.ai-body .msg-textarea { -fx-text-fill: #C6D2E1; -fx-font-size: 16px; }
+.ai-body .msg-textarea .content { -fx-background-color: #0B0F15; }
+
+/* 思考卡 */
+.think-card {
+    -fx-background-color: #0D131A;
+    -fx-border-color: #1E2834;
+    -fx-border-width: 1;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+.think-card .collapse-header { -fx-padding: 6 12 6 12; -fx-min-height: 35; }
+.think-card .log-summary-text { -fx-text-fill: #8B98AC; -fx-font-size: 13px; }
+.think-card .icon-spark { -fx-fill: #8FA1B6; }
+.think-card .msg-textarea { -fx-text-fill: #9AA7B9; -fx-font-size: 14px; -fx-padding: 0 14 18 14; }
+.think-card .msg-textarea .content { -fx-background-color: #0D131A; }
+
+/* 工具卡 */
+.tool-card {
+    -fx-background-color: #0E151D;
+    -fx-border-color: #1F2A36;
+    -fx-border-width: 1;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+.tool-card .collapse-header { -fx-padding: 6 12 6 12; -fx-min-height: 42; }
+.tool-card .collapse-header:hover { -fx-background-color: #111923; -fx-background-radius: 8; }
+.tool-card .log-summary-text {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 13px;
+    -fx-text-fill: #D5DFEB;
+}
+.tool-card .msg-textarea {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 13.5px;
+    -fx-text-fill: #C7D2E1;
+    -fx-padding: 0 14 34 14;
+}
+.tool-card .msg-textarea .content { -fx-background-color: #0E151D; }
+.tool-card .log-collapse-toggle { -fx-font-size: 11px; }
+.subagent-badge {
+    -fx-text-fill: #A6B2C3;
+    -fx-font-size: 10.5px;
+    -fx-background-color: #1B2532;
+    -fx-border-color: #2C3A4B;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 1 5 1 5;
+}
+.tool-card-error {
+    -fx-background-color: #171013;
+    -fx-border-color: #4A252A;
+}
+.tool-card-error .log-summary-text { -fx-text-fill: #FFB4B4; }
+.tool-card-error .msg-textarea { -fx-text-fill: #FFB4B4; }
+.tool-card-error .msg-textarea .content { -fx-background-color: #171013; }
+
+/* 子任务卡 */
+.subagent-card {
+    -fx-background-color: #0E151D;
+    -fx-border-color: #25313F;
+    -fx-border-width: 1;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+.subagent-card .collapse-header { -fx-padding: 5 12 5 12; -fx-min-height: 35; }
+.subagent-card .log-summary-text { -fx-text-fill: #A6B2C3; -fx-font-size: 12.5px; }
+.subagent-card .msg-textarea { -fx-text-fill: #B3C3D6; -fx-font-size: 14px; -fx-padding: 0 14 22 14; }
+.subagent-card .msg-textarea .content { -fx-background-color: #0E151D; }
+
+/* 错误 / 警告横幅 */
+.alert-banner {
+    -fx-background-color: #211416;
+    -fx-border-color: #4A252A;
+    -fx-border-width: 1;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-padding: 11 13 11 13;
+    -fx-spacing: 8;
+    -fx-alignment: top-left;
+}
+.alert-banner.warn { -fx-background-color: #201B10; -fx-border-color: #4A3A1A; }
+.alert-banner .msg-textarea { -fx-text-fill: #FFB4B4; -fx-font-size: 14px; }
+.alert-banner .msg-textarea .content { -fx-background-color: #211416; }
+.alert-banner.warn .msg-textarea { -fx-text-fill: #F4D79B; }
+.alert-banner.warn .msg-textarea .content { -fx-background-color: #201B10; }
+.alert-banner .icon-error { -fx-fill: #FF7B7B; }
+.alert-banner.warn .icon-alert { -fx-fill: #F2C46D; }
+
+/* 系统 / 统计 */
+.sys-row { -fx-padding: 2 0 10 34; }
+.sys-row .msg-textarea { -fx-text-fill: #8B98AC; -fx-font-size: 13.5px; }
+.sys-row .msg-textarea .content { -fx-background-color: #0B0F15; }
+.stats-row { -fx-padding: 2 0 12 34; }
+.stats-row .log-summary-text { -fx-text-fill: #6F7D90; -fx-font-size: 11px; }
+.stats-row .icon-timer { -fx-fill: #5F6C7E; }
+
+/* 折叠头部 / 状态文字 */
+.log-collapsible { -fx-padding: 0; }
+.log-collapse-toggle { -fx-text-fill: #6F7D90; -fx-font-size: 11px; -fx-cursor: hand; }
+.log-collapse-toggle:hover { -fx-text-fill: #F1F5FA; }
+.collapse-header { -fx-alignment: center-left; }
+
+/* ===== 消息 TextArea（只读，保留原生选择/复制） ===== */
+/* JavaFX 8 Prism 对透明表面只做灰阶抗锯齿；.content 必须是不透明背景且与所在表面一致，
+   否则 125% 缩放下正文发虚。各卡片/气泡在下方覆盖为对应表面色。 */
 .msg-textarea {
     -fx-background-color: transparent;
     -fx-control-inner-background: transparent;
-    -fx-highlight-fill: #232a38; /* 非聚焦选区淡灰：失焦块的残留选区不再亮蓝，消除"多块同时选中"误导 */
-    -fx-highlight-text-fill: #ffffff;
+    -fx-highlight-fill: #2A3644;
+    -fx-highlight-text-fill: #FFFFFF;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
     -fx-font-smoothing-type: lcd;
 }
-.msg-textarea:focused { -fx-highlight-fill: #3b6fe0; } /* 聚焦选区亮蓝（现状色） */
+.msg-textarea:focused { -fx-highlight-fill: #3B4A5E; }
 .msg-textarea .content {
-    -fx-background-color: #121314;
+    -fx-background-color: #0B0F15;
     -fx-padding: 0;
 }
 .msg-textarea .scroll-pane { -fx-background-color: transparent; }
 .msg-textarea .scroll-pane > .viewport { -fx-background-color: transparent; }
 
-/* ===== 消息区场景文字色（控制台输出流：白字为主，场景色区分；背景 #121314 由 .panel-dark 提供） ===== */
-.log-input { -fx-text-fill: #75aaff; } /* 输入 柔和蓝 */
-.log-think { -fx-text-fill: #8c8c8c; } /* 思考 灰白 */
-.log-tool { -fx-text-fill: #9C27B0; }  /* 工具 紫 */
-.log-reply { -fx-text-fill: #bfbfbf; } /* 回复 白 */
-.log-subagent { -fx-text-fill: #4dd0e1; } /* 子代理边界 青（仅「子任务开始/完成」行；子代理消息配色与主代理同类型一致） */
-.log-error { -fx-text-fill: #f85149; } /* 错误 红 */
-.log-warn { -fx-text-fill: #e3b341; }  /* 警告 黄 */
-.log-sys { -fx-text-fill: #16C60C; }   /* 系统/占位 绿 */
-
-/* ===== 消息区控制台样式：彩色加粗标签 + 浅色调正文 =====
-   标签：.log-tag 叠加 log-* 场景色类（深色）；正文 .log-body 默认白 + log-body-* 浅色调类
-   （与标签同色系提亮，长文本可读；系统行 log-body-error/warn/sys 无定义 → 自动回退白） */
+/* ===== 消息类别文字色（标签在卡片形态中大多隐藏；默认行仍可用） ===== */
+.log-input { -fx-text-fill: #73A7FF; }
+.log-think { -fx-text-fill: #8B98AC; }
+.log-tool { -fx-text-fill: #8FA1B6; }
+.log-reply { -fx-text-fill: #C6D2E1; }
+.log-subagent { -fx-text-fill: #8FA1B6; }
+.log-error { -fx-text-fill: #FF6B6B; }
+.log-warn { -fx-text-fill: #F2C46D; }
+.log-sys { -fx-text-fill: #6F7D90; }
 .log-tag { -fx-font-weight: bold; }
-.log-body { -fx-text-fill: #f0f2f6; }
-.log-body-input { -fx-text-fill: #8cbcff; } /* 输入正文 浅蓝 */
-.log-body-tool  { -fx-text-fill: #ce93d8; } /* 工具正文 浅紫 */
-.log-body-reply { -fx-text-fill: #c9c9c9; } /* 回复正文 白（AI 主输出保持白色，突出可读） */
-.log-body-subagent { -fx-text-fill: #b3e5fc; } /* 子代理边界正文 浅青（仅子任务完成报告） */
-.log-body-think { -fx-text-fill: #9c9c9c; } /* 思考正文 灰白 */
+.log-summary-text { -fx-text-fill: #B3BFCE; -fx-font-size: 13px; }
+.log-body { -fx-text-fill: #C6D2E1; }
+.log-body-input { -fx-text-fill: #E9EEF6; }
+.log-body-think { -fx-text-fill: #9AA7B9; }
+.log-body-tool { -fx-text-fill: #C7D2E1; }
+.log-body-reply { -fx-text-fill: #C6D2E1; }
+.log-body-subagent { -fx-text-fill: #B3C3D6; }
 
-/* 状态点（呼吸动画由 StatusDot 的 Timeline 实现——JavaFX 8 不支持 CSS keyframe） */
-.status-dot { -fx-background-radius: 5; -fx-min-width: 8; -fx-min-height: 8; }
-.status-dot-running { -fx-background-color: #3fb950; }
-
-/* ===== 运行状态指示器（正文区左下角齿轮+文案） ===== */
-.running-indicator { -fx-spacing: 8; }
-.running-indicator-gear { -fx-fill: #8a8f98; }
-.running-indicator-text { -fx-text-fill: #8a8f98; -fx-font-size: 12px; }
-
-/* 滚动条 */
-.scroll-pane { -fx-background-color: transparent; }
-.scroll-pane > .viewport { -fx-background-color: transparent; }
-.scroll-bar:vertical { -fx-background-color: transparent; -fx-pref-width: 10px; }
-.scroll-bar:vertical .thumb { -fx-background-color: #2a2f3a; -fx-background-radius: 5; }
-
-.tooltip { -fx-background-color: #232a38; -fx-text-fill: #c9cdd6; -fx-background-radius: 4; }
-
-/* 侧栏分区标题 */
-.section-title { -fx-text-fill: #a8b0bb; -fx-font-size: 14px; -fx-font-weight: bold; }
-
-/* 侧栏行内悬停小按钮（会话 重命名/删除；工作空间 修改/删除；SVG 图标，无文本） */
-.btn-cell {
-    -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
-    -fx-background-radius: 4;
-    -fx-padding: 2 6 2 6;
-    -fx-cursor: hand;
+/* 旧消息气泡类（保留给探针/兼容） */
+.msg-user {
+    -fx-background-color: #1A2431;
+    -fx-background-radius: 14 14 4 14;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #E9EEF6;
 }
-.btn-cell:hover { -fx-background-color: #2a2f3a; }
+.msg-assistant {
+    -fx-background-color: #151A22;
+    -fx-background-radius: 10;
+    -fx-padding: 10 14 10 14;
+    -fx-text-fill: #C6D2E1;
+}
+.msg-thinking { -fx-background-color: #0D131A; -fx-background-radius: 6; -fx-text-fill: #8B98AC; -fx-font-size: 13px; }
+.code-block {
+    -fx-background-color: #0A0F16;
+    -fx-background-radius: 6;
+    -fx-border-color: #1F2A36;
+    -fx-border-radius: 6;
+    -fx-padding: 10 12 10 12;
+    -fx-font-family: "Consolas";
+    -fx-font-size: 14px;
+    -fx-text-fill: #C7D2E1;
+}
+.msg-error { -fx-background-color: #211416; -fx-background-radius: 6; -fx-text-fill: #FFB4B4; }
+.msg-warning { -fx-background-color: #201B10; -fx-background-radius: 6; -fx-text-fill: #F4D79B; }
+.supplement-tag { -fx-text-fill: #FFA184; -fx-font-size: 12px; -fx-font-weight: bold; }
 
-/* 侧栏消息时间（5m/3h/2d） */
-.cell-time { -fx-text-fill: #98a0ab; -fx-font-size: 13px; } /* 原 #7a828e 过暗看不清 */
-
-/* 侧栏列表项名称文字：graphic 内 Label 不响应 .list-cell 的 -fx-text-fill（继承默认黑色），须显式上色 */
-.cell-text { -fx-text-fill: #d3d7de; }
-.list-view .list-cell:selected .cell-text { -fx-text-fill: #f0f2f6; }
-
-/* 无边框窗口边缘（Task 9 拖拽用） */
-.resize-edge { -fx-background-color: transparent; }
-
-/* ===== 弹窗深色（Dialog 不继承 Scene 样式表，经 Theme.style 挂载） ===== */
-.dialog-pane {
-    -fx-background-color: #15181f;
-    -fx-border-color: #2a2f3a;
+/* ===== 状态 / 运行指示器 ===== */
+.status-dot { -fx-fill: transparent; }
+.status-dot-running { -fx-fill: #5AD1A0; }
+.running-indicator {
+    -fx-spacing: 7;
+    -fx-padding: 5 9 5 9;
+    -fx-background-color: #0F151D;
+    -fx-background-radius: 8;
+    -fx-border-color: #202A36;
+    -fx-border-radius: 8;
     -fx-border-width: 1;
 }
-.dialog-pane .header-panel { -fx-background-color: #15181f; }
-.dialog-pane .label { -fx-text-fill: #e6e8ee; }
-.dialog-pane .content.label { -fx-text-fill: #f0f2f6; }
-.dialog-pane .text-field, .dialog-pane .text-area {
-    -fx-background-color: #1a1d24;
-    -fx-text-fill: #e6e8ee;
-    -fx-prompt-text-fill: #7a828e;
-    -fx-border-color: #232733;
-    -fx-control-inner-background: #1a1d24;
+.running-indicator-gear { -fx-fill: #8B98AC; }
+.running-indicator-text { -fx-text-fill: #8B98AC; -fx-font-size: 12px; }
+
+/* ===== 滚动条 ===== */
+.scroll-pane { -fx-background-color: transparent; }
+.scroll-pane > .viewport { -fx-background-color: transparent; }
+.scroll-bar:vertical { -fx-background-color: transparent; -fx-pref-width: 9px; }
+.scroll-bar:vertical .thumb { -fx-background-color: #2A3644; -fx-background-radius: 4; }
+.scroll-bar:vertical .thumb:hover { -fx-background-color: #3A4757; }
+.scroll-bar:horizontal { -fx-background-color: transparent; -fx-pref-height: 9px; }
+.scroll-bar:horizontal .thumb { -fx-background-color: #2A3644; -fx-background-radius: 4; }
+.scroll-bar .increment-button, .scroll-bar .decrement-button { -fx-padding: 0; }
+.scroll-bar .increment-arrow, .scroll-bar .decrement-arrow { -fx-shape: " "; -fx-padding: 0; }
+
+.tooltip {
+    -fx-background-color: #1A2330;
+    -fx-text-fill: #C6D2E1;
+    -fx-background-radius: 5;
+    -fx-border-color: #2A3644;
+    -fx-border-radius: 5;
+    -fx-font-size: 13px;
 }
-.dialog-pane .check-box { -fx-text-fill: #e6e8ee; }
-.dialog-pane .check-box .box { -fx-background-color: #1a1d24; -fx-border-color: #232733; }
-.dialog-pane .check-box:selected .mark { -fx-background-color: #4f8cff; }
-/* 单选按钮（MCP 表单「传输」三选项）：modena 默认 -fx-text-fill: -fx-text-background-color
-   由浅灰底派生出黑字，且 RadioButton 无 .label 类不被上面规则命中 → 深底上看不清，显式改白；
-   圆圈与选中点按 check-box 同口径上色（深底 + 蓝点） */
-.dialog-pane .radio-button { -fx-text-fill: #ffffff; }
+
+/* ===== 无边框窗口边缘 ===== */
+.resize-edge { -fx-background-color: transparent; }
+
+/* ===== 弹窗深色 ===== */
+.dialog-pane {
+    -fx-background-color: #111821;
+    -fx-border-color: #2A3543;
+    -fx-border-width: 1;
+    -fx-font-size: 15px;
+}
+.dialog-pane .header-panel { -fx-background-color: #111821; }
+.dialog-pane .label { -fx-text-fill: #E9EEF6; }
+.dialog-pane .content.label { -fx-text-fill: #F1F5FA; }
+.dialog-pane .text-field, .dialog-pane .text-area {
+    -fx-background-color: #0E141C;
+    -fx-text-fill: #E9EEF6;
+    -fx-prompt-text-fill: #6F7D90;
+    -fx-border-color: #26313F;
+    -fx-control-inner-background: #0E141C;
+    -fx-highlight-fill: #3B4A5E;
+}
+.dialog-pane .check-box { -fx-text-fill: #E9EEF6; }
+.dialog-pane .check-box .box { -fx-background-color: #0E141C; -fx-border-color: #26313F; }
+.dialog-pane .check-box:selected .mark { -fx-background-color: #FF8A65; }
+.dialog-pane .radio-button { -fx-text-fill: #E9EEF6; }
 .dialog-pane .radio-button .radio {
-    -fx-background-color: #1a1d24;
-    -fx-border-color: #232733;
+    -fx-background-color: #0E141C;
+    -fx-border-color: #26313F;
     -fx-background-radius: 1.0em;
     -fx-border-radius: 1.0em;
 }
-.dialog-pane .radio-button:focused .radio { -fx-border-color: #4f8cff; }
-.dialog-pane .radio-button:selected .radio .dot { -fx-background-color: #4f8cff; -fx-background-insets: 0; }
-.dialog-pane .combo-box { -fx-background-color: #1a1d24; }
-.dialog-pane .combo-box .list-cell { -fx-text-fill: #e6e8ee; }
+.dialog-pane .radio-button:focused .radio { -fx-border-color: #FF8A65; }
+.dialog-pane .radio-button:selected .radio .dot { -fx-background-color: #FF8A65; -fx-background-insets: 0; }
+.dialog-pane .combo-box { -fx-background-color: #0E141C; }
+.dialog-pane .combo-box .list-cell { -fx-text-fill: #E9EEF6; }
 .dialog-pane .button {
     -fx-background-color: transparent;
-    -fx-text-fill: #a8b0bb;
-    -fx-border-color: #232733;
+    -fx-text-fill: #A6B2C3;
+    -fx-border-color: #26313F;
     -fx-border-radius: 6;
     -fx-background-radius: 6;
-    -fx-padding: 6 14 6 14;
+    -fx-padding: 5 12 5 12;
     -fx-cursor: hand;
 }
-.dialog-pane .button:hover { -fx-text-fill: #e6e8ee; -fx-border-color: #4f8cff; }
+.dialog-pane .button:hover { -fx-text-fill: #E9EEF6; -fx-border-color: #FF8A65; }
 .dialog-pane .button:default {
-    -fx-background-color: linear-gradient(to bottom, #4f8cff, #3b6fe0);
-    -fx-text-fill: white;
+    -fx-background-color: linear-gradient(to bottom, #FFA07D, #FF7A59);
+    -fx-text-fill: #23100A;
     -fx-font-weight: bold;
     -fx-border-color: transparent;
 }
-.dialog-pane .button:default:hover { -fx-background-color: linear-gradient(to bottom, #5d98ff, #4f8cff); }
-
-/* 退出确认弹窗（MainWindow.confirmClose）：无图标无 header，正文居中 */
+.dialog-pane .button:default:hover {
+    -fx-background-color: linear-gradient(to bottom, #FFB08F, #FF8A65);
+}
+.dialog-pane .list-view { -fx-background-color: transparent; }
+.dialog-pane .list-view .list-cell { -fx-text-fill: #D4DEEA; }
+.dialog-pane .list-view .list-cell:filled:selected { -fx-text-fill: #F3F7FC; }
 .dialog-exit .content { -fx-text-alignment: center; }
 
-/* ===== 危险操作确认底部卡片（ConfirmSheet，右侧面板内） ===== */
+/* ===== 高危确认底部卡片 ===== */
 .sheet-scrim { -fx-background-color: rgba(0,0,0,0.55); }
 .sheet-card {
-    -fx-background-color: #1a1d24;
+    -fx-background-color: #111821;
     -fx-background-radius: 12;
-    -fx-border-color: #2a2f3a;
+    -fx-border-color: #2A3543;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 24, 0, 0, 8);
-    -fx-font-size: 14px; /* 弹窗卡片：钉住字号，不随主界面 .root 放大 */
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 26, 0, 0, 8);
+    -fx-font-size: 15px;
 }
-.sheet-accent { -fx-background-color: #e3b341; -fx-pref-height: 3; -fx-background-radius: 12 12 0 0; }
-.sheet-warn { -fx-text-fill: #e3b341; -fx-font-size: 16px; }
-.sheet-title { -fx-text-fill: #f0f2f6; -fx-font-size: 14px; -fx-font-weight: bold; }
+.sheet-accent {
+    -fx-background-color: #F2C46D;
+    -fx-pref-height: 2;
+    -fx-min-height: 2;
+    -fx-background-radius: 12 12 0 0;
+}
+.sheet-header { -fx-alignment: center-left; }
+.sheet-icon {
+    -fx-min-width: 26; -fx-pref-width: 26; -fx-max-width: 26;
+    -fx-min-height: 26; -fx-pref-height: 26; -fx-max-height: 26;
+    -fx-background-color: rgba(242,196,109,0.10);
+    -fx-border-color: rgba(242,196,109,0.22);
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+}
+.sheet-icon .icon-alert { -fx-fill: #F2C46D; }
+.sheet-title { -fx-text-fill: #F1F5FA; -fx-font-size: 15.5px; -fx-font-weight: bold; }
+.sheet-risk {
+    -fx-text-fill: #F2C46D;
+    -fx-font-size: 11.5px;
+    -fx-background-color: rgba(242,196,109,0.08);
+    -fx-border-color: rgba(242,196,109,0.20);
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 1 6 1 6;
+}
+.sheet-warn { -fx-text-fill: #F2C46D; -fx-font-size: 14.5px; }
 .sheet-message {
-    -fx-background-color: #13161c;
-    -fx-background-radius: 8;
-    -fx-padding: 10 12 10 12;
-    -fx-text-fill: #d3d7de;
-    -fx-font-size: 13px;
+    -fx-background-color: #0A0F15;
+    -fx-border-color: #1E2935;
+    -fx-border-width: 1;
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+    -fx-padding: 9 11 9 11;
+    -fx-text-fill: #C7D2E1;
+    -fx-font-size: 14px;
 }
-.sheet-hint { -fx-text-fill: #7a828e; -fx-font-size: 11px; }
+.sheet-hint { -fx-text-fill: #6F7D90; -fx-font-size: 11.5px; }
 .btn-approve {
-    -fx-background-color: linear-gradient(to bottom, #3fb950, #2ea043);
-    -fx-text-fill: white;
+    -fx-background-color: linear-gradient(to bottom, #FFA07D, #FF7A59);
+    -fx-text-fill: #23100A;
     -fx-font-weight: bold;
     -fx-background-radius: 6;
-    -fx-padding: 6 14 6 14;
+    -fx-padding: 5 12 5 12;
+    -fx-font-size: 13.5px;
     -fx-cursor: hand;
 }
-.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #4cc95e, #3fb950); }
-
-/* ===== 右侧顶部页签栏（tabs-bar，正文上方分隔线） ===== */
-.tabs-bar {
-    -fx-padding: 4 8 0 8;
-    -fx-border-color: transparent transparent #232733 transparent;
-    -fx-border-width: 0 0 1 0;
-}
-
-/* ===== 聊天正文显式 LCD：ScrollPane 裁剪下 JavaFX 8 默认回退灰阶 AA（正文发虚根因），显式指定优先 ===== */
-.chat-content { -fx-font-smoothing-type: lcd; }
-
-/* ===== 折叠文本（CollapsibleText）：摘要行可点击切换，hover 提亮 ===== */
-.log-collapsible { -fx-padding: 0; }
-.log-collapse-toggle { -fx-text-fill: #8a8f98; -fx-cursor: hand; }
-.log-collapse-toggle:hover { -fx-text-fill: #f0f2f6; }
+.btn-approve:hover { -fx-background-color: linear-gradient(to bottom, #FFB08F, #FF8A65); }

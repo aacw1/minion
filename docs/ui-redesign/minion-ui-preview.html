@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>minion · 界面优化方案</title>
+<style>
+/* ============================================================
+   Presentation shell
+   ============================================================ */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  color:#E9EEF6;
+  background:
+    radial-gradient(1000px 420px at 50% -110px, rgba(255,138,101,.075), transparent 68%),
+    #06080B;
+  font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+svg{display:block}
+.i{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i-fill{fill:currentColor;stroke:none}
+.deck{width:100%;max-width:1440px;margin:0 auto;padding:26px 40px 70px}
+.deck-head{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:20px}
+.impl-banner{
+  display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:10px 13px;
+  border:1px solid rgba(255,138,101,.22);background:rgba(255,138,101,.06);border-radius:9px;
+  font-size:11.5px;line-height:1.6;color:#A6B2C3;
+}
+.impl-banner b{flex:none;color:#FFB49D;font-weight:600}
+.deck-brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand-mark{
+  width:35px;height:35px;border-radius:10px;flex:none;
+  display:grid;place-items:center;color:#1D0E09;
+  background:linear-gradient(145deg,#FFA47F,#FF7A59);
+  box-shadow:0 8px 22px rgba(255,122,89,.22),0 0 0 1px rgba(255,255,255,.08) inset;
+}
+.brand-mark .i{width:18px;height:18px}
+.brand-text h1{margin:0;font-size:16px;font-weight:600;letter-spacing:.1px;color:#F1F5FA}
+.brand-text h1 em{font-style:normal;color:#596679;font-weight:400;margin:0 5px}
+.brand-text p{margin:3px 0 0;font-size:12px;color:#78859A}
+.deck-controls{display:flex;align-items:center;gap:9px;flex:none}
+.seg{display:flex;align-items:center;gap:2px;padding:3px;border:1px solid #1B2430;background:#0A0E14;border-radius:9px}
+.seg button{height:28px;padding:0 13px;border-radius:6px;font-size:11.5px;color:#7F8C9F;transition:background .15s,color .15s}
+.seg button:hover{color:#DDE5F0}
+.seg button.on{background:#18212C;color:#EDF2F9;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+.pin-toggle{display:flex;align-items:center;gap:7px;height:36px;padding:0 12px;border:1px solid #1F2935;border-radius:8px;font-size:11.5px;color:#8C99AC;background:#0B0F15;transition:all .15s}
+.pin-toggle .i{width:14px;height:14px}
+.pin-toggle:hover{border-color:#2C3A4B;color:#DDE5F0}
+.pin-toggle.on{border-color:rgba(255,138,101,.4);color:#FFB49D;background:rgba(255,138,101,.07)}
+.stage{display:flex;justify-content:center;width:100%}
+.deck-meta{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px;font-size:10px;color:#5E6B7D;letter-spacing:.02em}
+.deck-meta i{width:2px;height:2px;border-radius:50%;background:#3A4555}
+
+/* ============================================================
+   App shell — 1280 × 800
+   ============================================================ */
+.app{
+  width:1280px;height:800px;flex:none;position:relative;
+  display:flex;flex-direction:column;
+  background:#0B0E13;border:1px solid #1D2632;border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 34px 90px rgba(0,0,0,.68),0 2px 0 rgba(255,255,255,.02) inset;
+}
+.app-body{display:flex;flex:1;min-height:0}
+
+/* ---------- title bar ---------- */
+.titlebar{
+  height:46px;flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:0 10px 0 14px;border-bottom:1px solid #18212B;background:#0A0D12;
+  position:relative;z-index:5;
+}
+.tb-brand{display:flex;align-items:center;gap:9px;min-width:0}
+.mark{
+  display:grid;place-items:center;color:#1D0E09;
+  background:linear-gradient(145deg,#FFA47F,#FF7A59);
+  box-shadow:0 4px 12px rgba(255,122,89,.22),0 0 0 1px rgba(255,255,255,.08) inset;
+}
+.mark-sm{width:24px;height:24px;border-radius:7px}
+.mark-sm .i{width:13px;height:13px}
+.wordmark{font-size:14px;font-weight:600;color:#F1F5FA;letter-spacing:.15px}
+.tb-div{width:1px;height:15px;background:#222B36;margin:0 2px;flex:none}
+.chip-btn{display:flex;align-items:center;gap:6px;height:26px;padding:0 7px;border-radius:6px;color:#A2AFC0;font-size:12px}
+.chip-btn:hover{background:#141B24;color:#E9EEF6}
+.chip-btn .i{width:12px;height:12px;color:#748196}
+.chip-btn .chev{width:9px;height:9px;color:#5F6C7E}
+.tb-right{display:flex;align-items:center;gap:5px}
+.model-pill{
+  display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;margin-right:2px;
+  border:1px solid #1F2935;border-radius:6px;background:#0E141B;
+  font-size:11px;color:#AEBACC;
+}
+.model-pill:hover{border-color:#2B3745;background:#121A23}
+.live-dot{width:5px;height:5px;border-radius:50%;background:#5AD1A0;box-shadow:0 0 0 3px rgba(90,209,160,.08);flex:none}
+.model-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-pill .chev{width:9px;height:9px;color:#5F6C7E}
+.win-btn{width:30px;height:27px;border-radius:5px;display:grid;place-items:center;color:#8B98AA;flex:none}
+.win-btn .i{width:13px;height:13px}
+.win-btn:hover{background:#161E28;color:#F1F5FA}
+.win-btn.close:hover{background:#E5484D;color:#fff}
+
+/* ---------- sidebar ---------- */
+.sidebar{
+  width:292px;flex:none;background:#0D1117;border-right:1px solid #18212B;
+  display:flex;flex-direction:column;padding:13px 12px 10px;min-height:0;
+}
+.sb-head{display:flex;align-items:center;gap:7px;height:26px;padding:0 2px;flex:none}
+.sb-title{font-size:12px;font-weight:600;color:#93A1B3;letter-spacing:.02em}
+.count{height:16px;min-width:18px;padding:0 5px;border-radius:5px;background:#161E28;border:1px solid #202A36;font-size:9.5px;color:#7C899C;display:grid;place-items:center}
+.new-session{
+  margin-left:auto;display:flex;align-items:center;gap:3px;height:25px;padding:0 7px;
+  border-radius:6px;color:#FFB49D;font-size:11px;
+  background:rgba(255,138,101,.09);border:1px solid rgba(255,138,101,.18);
+}
+.new-session .i{width:11px;height:11px}
+.new-session:hover{background:rgba(255,138,101,.15);border-color:rgba(255,138,101,.32)}
+.search{
+  display:flex;align-items:center;gap:7px;height:31px;margin-top:9px;padding:0 9px;
+  border:1px solid #1D2732;border-radius:7px;background:#0A0F15;color:#6F7D90;
+  font-size:11px;flex:none;
+}
+.search .i{width:12px;height:12px}
+.search:hover{border-color:#283747;background:#0C1219}
+.search kbd{
+  margin-left:auto;font-family:"Cascadia Code",Consolas,monospace;font-size:9px;
+  color:#556274;border:1px solid #1C2632;border-radius:3px;padding:0 4px;line-height:14px;
+}
+.sb-scroll{flex:1;min-height:0;overflow:hidden;margin:0 -4px;padding:0 4px}
+.group{height:25px;display:flex;align-items:center;padding:0 6px;font-size:10px;color:#667386;letter-spacing:.06em}
+.group:not(:first-child){margin-top:5px}
+.s-row{position:relative;padding:8px 9px 8px 10px;border-radius:8px;border:1px solid transparent;margin-bottom:1px;cursor:pointer}
+.s-row:hover{background:#121923}
+.s-row.active{background:linear-gradient(90deg,#17202B,#141B24);border-color:#25303D}
+.s-row.active:before{
+  content:"";position:absolute;left:0;top:11px;bottom:11px;width:2px;border-radius:2px;
+  background:linear-gradient(#FFA07D,#FF7A59);
+}
+.s-top{display:flex;align-items:center;gap:6px;min-width:0}
+.s-flag{width:6px;height:6px;border-radius:50%;flex:none;visibility:hidden}
+.s-row.running .s-flag{visibility:visible;background:#5AD1A0;box-shadow:0 0 0 3px rgba(90,209,160,.09);animation:pulse 2.4s infinite}
+.s-name{font-size:12.5px;font-weight:500;color:#D4DEEA;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;line-height:17px}
+.s-row.active .s-name{color:#F3F7FC}
+.s-time{font-size:9.5px;color:#6F7D90;flex:none;font-variant-numeric:tabular-nums;margin-left:2px;transition:opacity .12s}
+.s-preview{font-size:10.5px;line-height:15px;color:#7E8B9E;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:12px}
+.s-row.active .s-preview{color:#8E9BAE}
+.s-actions{
+  position:absolute;right:6px;top:6px;display:flex;gap:1px;opacity:0;pointer-events:none;
+  background:#121923;border-radius:5px;padding:1px;
+}
+.s-row.active .s-actions{background:#17202B}
+.s-row:hover .s-actions{opacity:1;pointer-events:auto}
+.s-row:hover .s-time{opacity:0}
+.mini{width:20px;height:20px;border-radius:4px;display:grid;place-items:center;color:#7C899C;flex:none}
+.mini .i{width:11px;height:11px}
+.mini:hover{background:#232D3A;color:#E9EEF6}
+.mini.danger:hover{color:#FF7B7B;background:rgba(229,72,77,.12)}
+
+/* ---------- workspaces ---------- */
+.workspace{flex:none;border-top:1px solid #18212B;padding-top:9px;margin-top:8px}
+.ws-head{display:flex;align-items:center;height:22px;padding:0 2px}
+.ws-head .mini{margin-left:auto}
+.w-list{margin-top:3px}
+.w-row{position:relative;display:flex;align-items:center;gap:8px;height:31px;padding:0 8px;border-radius:6px;color:#A2AFC0;font-size:11.5px}
+.w-row:hover{background:#121923;color:#E9EEF6}
+.w-row.current{color:#E9EEF6}
+.w-row .i.folder{width:13px;height:13px;color:#748196}
+.w-row.current .i.folder{color:#9FB0C4}
+.w-check{margin-left:auto;width:12px;height:12px;color:#FF9C7C;flex:none}
+.w-actions{position:absolute;right:5px;top:4px;display:flex;opacity:0;pointer-events:none;background:#121923;border-radius:4px}
+.w-row:hover .w-actions{opacity:1;pointer-events:auto}
+.w-row:hover .w-check{opacity:0}
+.ws-path{
+  display:flex;align-items:center;gap:6px;height:27px;margin-top:7px;padding:0 8px;
+  border:1px solid #18212B;border-radius:6px;background:#0A0F15;color:#6F7D90;
+  font-family:"Cascadia Code",Consolas,monospace;font-size:9.5px;white-space:nowrap;overflow:hidden;
+}
+.ws-path .i{width:11px;height:11px;color:#5F6C7E}
+.ws-path .path{overflow:hidden;text-overflow:ellipsis}
+.ws-path .ver{margin-left:auto;color:#556274;font-size:8.5px}
+
+/* ---------- tabs ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:#0B0F15;position:relative}
+.tabbar{
+  flex:none;height:44px;display:flex;align-items:center;gap:4px;padding:0 12px;
+  border-bottom:1px solid #17202A;background:#0B0F15;position:relative;z-index:2;
+}
+.tab{
+  display:flex;align-items:center;gap:7px;height:28px;padding:0 9px;
+  border:1px solid transparent;border-radius:7px;color:#8592A5;font-size:11.5px;
+  max-width:210px;min-width:0;cursor:pointer;
+}
+.tab:hover{background:#121A23;color:#C9D4E2}
+.tab.active{background:#161E29;border-color:#25313F;color:#EDF2F9}
+.tab-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab-live{width:5px;height:5px;border-radius:50%;background:#5AD1A0;flex:none;animation:pulse 2.4s infinite}
+.tab-close{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;color:#6C7A8D;opacity:0;flex:none}
+.tab-close .i{width:9px;height:9px}
+.tab.active .tab-close{opacity:.85}
+.tab:hover .tab-close{opacity:1}
+.tab-close:hover{background:#2A3543;color:#fff}
+.tab-add{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:#6C7A8D;margin-left:2px}
+.tab-add .i{width:12px;height:12px}
+.tab-add:hover{background:#141C26;color:#E9EEF6}
+
+/* ---------- chat ---------- */
+.chat-screen{display:none;flex:1;min-height:0;position:relative}
+.app[data-view="chat"] .chat-screen,
+.app[data-view="confirm"] .chat-screen{display:block}
+.chat-screen:before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(720px 260px at 50% -12%,rgba(255,138,101,.035),transparent 72%);
+}
+.chat-scroll{height:100%;overflow:hidden;position:relative}
+.chat-inner{width:740px;max-width:calc(100% - 48px);margin:0 auto;padding:20px 0 12px}
+.date-div{display:flex;align-items:center;gap:10px;margin:0 0 16px;color:#667386;font-size:10px;letter-spacing:.04em}
+.date-div:before,.date-div:after{content:"";height:1px;flex:1;background:linear-gradient(90deg,transparent,#1B2430)}
+.date-div:after{background:linear-gradient(90deg,#1B2430,transparent)}
+.msg-user{display:flex;justify-content:flex-end;margin-bottom:18px}
+.user-col{max-width:600px;min-width:0}
+.bubble{
+  background:#1A2431;border:1px solid #263241;border-radius:14px 14px 4px 14px;
+  padding:9px 13px;font-size:13.5px;line-height:1.66;color:#DCE6F2;
+}
+.user-meta{text-align:right;font-size:9.5px;color:#6F7D90;margin-top:4px;padding-right:4px}
+.msg-ai{display:flex;gap:10px}
+.avatar{
+  width:24px;height:24px;border-radius:7px;flex:none;display:grid;place-items:center;color:#1D0E09;
+  background:linear-gradient(145deg,#FFA47F,#FF7A59);
+  box-shadow:0 5px 12px rgba(255,122,89,.2),0 0 0 1px rgba(255,255,255,.07) inset;
+}
+.avatar .i{width:12px;height:12px}
+.ai-body{flex:1;min-width:0}
+.ai-meta{display:flex;align-items:center;gap:7px;height:24px;margin-bottom:3px}
+.ai-name{font-size:12px;font-weight:600;color:#C6D2E0}
+.ai-model{
+  font-family:"Cascadia Code",Consolas,monospace;font-size:9px;color:#657286;
+  border:1px solid #1F2935;border-radius:4px;padding:0 4px;line-height:14px;
+}
+.ai-time{font-size:10px;color:#6F7D90}
+.ai-text{font-size:14px;line-height:1.7;color:#C2CEDD}
+.ai-text p{margin:0 0 9px}
+.ai-text p:last-child{margin-bottom:0}
+.ai-text strong{color:#EEF3FA;font-weight:600}
+.issue-list{list-style:none;margin:1px 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
+.issue-list li{position:relative;padding-left:14px;line-height:1.62;color:#B9C6D6}
+.issue-list li:before{content:"";position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:#FF9C7C}
+.palette-note{margin-top:2px}
+.palette{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0 12px}
+.swatch{display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #1D2733;border-radius:7px;background:#0D131A}
+.sw-chip{width:20px;height:20px;border-radius:5px;flex:none;background:var(--c);border:1px solid rgba(255,255,255,.08)}
+.swatch b{display:block;font-family:"Cascadia Code",Consolas,monospace;font-size:9.5px;font-weight:400;color:#B7C4D4;letter-spacing:-.2px}
+.swatch small{display:block;font-size:8.5px;color:#5F6C7E;margin-top:1px}
+.think{
+  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;margin:1px 0 8px;
+  border:1px solid #1E2834;border-radius:7px;background:#0D131A;color:#8593A7;font-size:11px;
+}
+.think .i{width:12px;height:12px;color:#A8B6C9}
+.think .chev{width:10px;height:10px;margin-left:2px;color:#5F6C7E}
+.think:hover{border-color:#2C3A4B;color:#B7C4D4}
+.tool-card{
+  display:flex;align-items:center;gap:8px;height:40px;padding:0 10px;margin:0 0 9px;
+  border:1px solid #1F2A36;border-radius:8px;background:#0E151D;cursor:pointer;
+}
+.tool-card:hover{border-color:#2C3B4C;background:#101923}
+.tool-ico{width:22px;height:22px;border-radius:6px;background:#17222D;display:grid;place-items:center;color:#93A4B9;flex:none}
+.tool-ico .i{width:12px;height:12px}
+.tool-name{font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;color:#D5DFEB;font-weight:600}
+.tool-path{
+  font-family:"Cascadia Code",Consolas,monospace;font-size:10px;color:#7E8C9F;
+  background:#0A0F15;border:1px solid #1B2531;border-radius:4px;padding:1px 5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px;
+}
+.tool-meta{font-size:10px;color:#6F7D90;margin-left:auto}
+.tool-status{
+  display:flex;align-items:center;gap:4px;font-size:10px;color:#5AD1A0;
+  background:rgba(90,209,160,.08);border:1px solid rgba(90,209,160,.16);
+  height:20px;padding:0 6px;border-radius:5px;flex:none;
+}
+.tool-status .i{width:10px;height:10px}
+.tool-chev{width:11px;height:11px;color:#5F6C7E;flex:none}
+.turn-stats{
+  display:flex;align-items:center;gap:7px;margin:9px 0 0 34px;
+  font-size:10px;color:#6F7D90;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.turn-stats .i{width:10px;height:10px;color:#5F6C7E}
+.turn-stats i.sep{width:2px;height:2px;border-radius:50%;background:#3B4757;display:inline-block}
+
+/* ---------- composer ---------- */
+.composer-dock{flex:none;position:relative;padding:10px 0 0;background:#0B0F15;z-index:3}
+.composer-dock:before{
+  content:"";position:absolute;left:0;right:0;top:-26px;height:26px;
+  background:linear-gradient(180deg,rgba(11,15,21,0),#0B0F15);pointer-events:none;
+}
+.composer-wrap{width:740px;max-width:calc(100% - 48px);margin:0 auto;padding-bottom:8px}
+.composer{
+  position:relative;background:#10161E;border:1px solid #26313F;border-radius:13px;
+  box-shadow:0 14px 34px rgba(0,0,0,.32);
+}
+.composer.focused{border-color:rgba(255,138,101,.46);box-shadow:0 0 0 3px rgba(255,138,101,.06),0 14px 34px rgba(0,0,0,.32)}
+.composer-inner{padding:9px 11px 7px}
+.chip-row{display:flex;gap:6px;margin-bottom:5px}
+.chip{
+  display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 5px 0 6px;
+  border:1px solid #283443;border-radius:5px;background:#17212C;color:#B3C0D1;font-size:9.5px;
+}
+.chip .i{width:10px;height:10px;color:#8FA1B6}
+.chip-x{width:14px;height:14px;border-radius:3px;display:grid;place-items:center;color:#6C7A8D;margin-left:1px}
+.chip-x .i{width:8px;height:8px}
+.chip-x:hover{background:#2A3543;color:#fff}
+.draft{font-size:13.5px;line-height:22px;color:#E4EBF4;padding:0 2px;min-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caret{display:inline-block;width:1px;height:14px;background:#FF8A65;vertical-align:-2px;margin-left:2px;animation:blink 1.1s steps(1) infinite}
+.placeholder{display:none;font-size:13.5px;line-height:22px;color:#647286;padding:0 2px}
+.composer-bar{display:flex;align-items:center;gap:2px;margin-top:7px;padding-top:7px;border-top:1px solid #1B2530}
+.tool-btn{height:26px;min-width:26px;padding:0 5px;border-radius:5px;display:flex;align-items:center;gap:5px;color:#7C899C;font-size:9.5px}
+.tool-btn .i{width:13px;height:13px}
+.tool-btn:hover{background:#19222D;color:#E4EBF4}
+.bar-div{width:1px;height:13px;background:#222C39;margin:0 5px}
+.context{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:8.5px;color:#647286;font-variant-numeric:tabular-nums}
+.ring{width:18px;height:18px;border-radius:50%;background:conic-gradient(#FF8A65 0 4%,#27323F 4% 100%);position:relative;display:block}
+.ring:after{content:"";position:absolute;inset:3px;border-radius:50%;background:#10161E}
+.send{
+  width:32px;height:32px;margin-left:6px;border-radius:9px;
+  background:linear-gradient(180deg,#FF9A78,#FF7A59);display:grid;place-items:center;color:#23100A;
+  box-shadow:0 5px 12px rgba(255,122,89,.22);
+}
+.send .i{width:15px;height:15px;stroke-width:2.2}
+.send:hover{filter:brightness(1.06)}
+.composer-hint{display:flex;align-items:center;gap:7px;height:22px;padding:0 3px;font-size:9.5px;color:#6F7D90}
+.composer-hint kbd{
+  font-family:"Cascadia Code",Consolas,monospace;font-size:8.5px;color:#7C899C;
+  background:#0E141C;border:1px solid #1F2935;border-radius:3px;padding:0 3px;line-height:13px;margin-right:2px;
+}
+.composer-hint .dot{width:2px;height:2px;border-radius:50%;background:#3B4757}
+.composer-hint b{font-weight:500;color:#8B98AC}
+
+/* ---------- empty state ---------- */
+.empty-screen{display:none;flex:1;min-height:0;position:relative;align-items:center;justify-content:center;padding-bottom:26px}
+.app[data-view="empty"] .empty-screen{display:flex}
+.empty-screen:before{
+  content:"";position:absolute;width:760px;height:420px;left:50%;top:44%;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(255,138,101,.055),transparent);pointer-events:none;
+}
+.empty{position:relative;text-align:center;width:560px}
+.empty-mark{
+  width:46px;height:46px;border-radius:14px;margin:0 auto 16px;display:grid;place-items:center;color:#1D0E09;
+  background:linear-gradient(145deg,#FFA47F,#FF7A59);
+  box-shadow:0 12px 30px rgba(255,122,89,.22),0 0 0 1px rgba(255,255,255,.08) inset;
+}
+.empty-mark .i{width:22px;height:22px}
+.empty h2{font-size:21px;font-weight:600;color:#F1F5FA;letter-spacing:.2px;margin:0}
+.empty p{font-size:12px;color:#7D8A9C;margin:7px 0 0}
+.suggest{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:22px;text-align:left}
+.sug{
+  display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #1E2834;border-radius:9px;
+  background:#0E141C;text-align:left;transition:border-color .15s,background .15s,transform .15s;
+}
+.sug:hover{border-color:#334255;background:#111923;transform:translateY(-1px)}
+.sug:hover .sug-ico{color:#FFB49D;background:rgba(255,138,101,.1)}
+.sug-ico{width:28px;height:28px;border-radius:7px;background:#161F2A;display:grid;place-items:center;color:#9CABBE;flex:none;transition:color .15s,background .15s}
+.sug-ico .i{width:14px;height:14px}
+.sug b{display:block;font-size:12px;font-weight:600;color:#D8E2EE;line-height:16px}
+.sug small{display:block;font-size:10.5px;color:#748196;line-height:15px;margin-top:3px}
+
+/* empty overrides */
+.app[data-view="empty"] .tabbar{display:none}
+.app[data-view="empty"] .s-row.active{background:transparent;border-color:transparent}
+.app[data-view="empty"] .s-row.active:before{display:none}
+.app[data-view="empty"] .s-row.active .s-name{color:#D4DEEA}
+.app[data-view="empty"] .s-row.active .s-preview{color:#7E8B9E}
+.app[data-view="empty"] .draft,
+.app[data-view="empty"] .chip-row{display:none}
+.app[data-view="empty"] .placeholder{display:block}
+.app[data-view="empty"] .composer.focused{border-color:#26313F;box-shadow:0 14px 34px rgba(0,0,0,.32)}
+.app[data-view="empty"] .context{visibility:hidden}
+.app[data-view="empty"] .send{background:#19222E;color:#5F6C7E;box-shadow:none}
+.app[data-view="empty"] .send:hover{filter:none}
+
+/* ---------- confirm sheet ---------- */
+.confirm-overlay{
+  position:absolute;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;
+  padding:0 24px 22px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s;
+}
+.app[data-view="confirm"] .confirm-overlay{opacity:1;visibility:visible;pointer-events:auto}
+.app[data-view="confirm"]:after{
+  content:"";position:absolute;inset:0;background:rgba(4,7,11,.34);z-index:20;pointer-events:none;
+}
+.scrim{position:absolute;inset:0;background:rgba(4,7,11,.62)}
+.confirm-card{
+  position:relative;width:640px;max-width:calc(100% - 32px);background:#111821;border:1px solid #2A3543;border-top:2px solid #F2C46D;
+  border-radius:12px;box-shadow:0 28px 70px rgba(0,0,0,.6);padding:16px 18px 15px;
+}
+.cf-top{display:flex;align-items:center;gap:10px}
+.risk-ico{
+  width:28px;height:28px;border-radius:7px;background:rgba(242,196,109,.1);border:1px solid rgba(242,196,109,.22);
+  display:grid;place-items:center;color:#F2C46D;flex:none;
+}
+.risk-ico .i{width:15px;height:15px}
+.cf-titles b{display:block;font-size:13.5px;color:#F1F5FA;font-weight:600;line-height:18px}
+.cf-titles span{display:block;font-size:11px;color:#7D8A9C;margin-top:2px}
+.risk-pill{
+  margin-left:auto;font-size:9.5px;color:#F2C46D;background:rgba(242,196,109,.08);
+  border:1px solid rgba(242,196,109,.2);border-radius:4px;padding:1px 6px;align-self:flex-start;margin-top:2px;
+}
+.cf-cmd{
+  display:flex;gap:8px;margin-top:12px;padding:10px 12px;background:#0A0F15;border:1px solid #1E2935;
+  border-radius:7px;font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;line-height:17px;
+  color:#C7D2E1;white-space:nowrap;overflow:hidden;
+}
+.cf-cmd .prompt{color:#F2C46D}
+.cf-desc{font-size:12px;line-height:17px;color:#8B98AC;margin:10px 0 0}
+.cf-actions{display:flex;align-items:center;gap:4px;margin-top:13px;padding-top:12px;border-top:1px solid #1C2632}
+.cf-hint{font-size:9.5px;color:#667386;margin-right:auto;display:flex;align-items:center;gap:4px}
+.cf-hint kbd{font-family:"Cascadia Code",Consolas,monospace;font-size:8.5px;color:#7C899C;background:#0E141C;border:1px solid #1F2935;border-radius:3px;padding:0 3px;line-height:13px}
+.cf-btns{display:flex;align-items:center;gap:5px}
+.btn-text{height:29px;padding:0 9px;border-radius:5px;font-size:11.5px;color:#8B98AC}
+.btn-text:hover{background:#19222D;color:#E4EBF4}
+.btn-allow{
+  height:29px;padding:0 11px;border-radius:6px;border:1px solid rgba(255,138,101,.5);
+  color:#FFA184;font-size:11.5px;background:rgba(255,138,101,.05);
+}
+.btn-allow:hover{background:rgba(255,138,101,.11)}
+.btn-deny{
+  height:29px;padding:0 13px;border-radius:6px;background:#E9EEF6;color:#0B0E13;
+  font-size:11.5px;font-weight:600;box-shadow:0 0 0 3px rgba(233,238,246,.08);
+}
+.btn-deny:hover{background:#fff}
+
+/* ---------- annotation pins ---------- */
+.pins{position:absolute;inset:0;z-index:40;pointer-events:none}
+.pin{
+  position:absolute;width:17px;height:17px;border-radius:50%;background:#121A24;border:1px solid #FF9C7C;
+  color:#FFB49D;font-size:8px;font-weight:600;display:grid;place-items:center;
+  box-shadow:0 0 0 3px rgba(255,138,101,.08),0 4px 10px rgba(0,0,0,.4);
+  opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;transform:translate(-50%,-50%);
+}
+.app.show-pins .pin{opacity:1;pointer-events:auto}
+.pin:hover,.pin:focus{transform:translate(-50%,-50%) scale(1.12);outline:none}
+.pin .tip{
+  position:absolute;left:0;bottom:calc(100% + 7px);width:238px;padding:9px 10px;
+  border:1px solid #2A3644;border-radius:8px;background:#0E151E;box-shadow:0 12px 30px rgba(0,0,0,.5);
+  text-align:left;opacity:0;visibility:hidden;transform:translateY(3px);transition:all .15s;
+  pointer-events:none;z-index:5;
+}
+.pin:hover .tip,.pin:focus .tip{opacity:1;visibility:visible;transform:translateY(0)}
+.tip b{display:block;font-size:10px;color:#FFB49D;margin-bottom:3px;font-weight:600}
+.tip span{display:block;font-size:9.5px;line-height:1.6;color:#9AA7B9}
+.tip-right{left:auto;right:0}
+.tip-below{bottom:auto;top:calc(100% + 7px)}
+.app[data-view="empty"] .pins,.app[data-view="confirm"] .pins{display:none}
+
+/* ---------- motion ---------- */
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(90,209,160,.09)}50%{box-shadow:0 0 0 5px rgba(90,209,160,.02)}}
+@keyframes blink{0%,45%{opacity:1}46%,100%{opacity:0}}
+
+/* ============================================================
+   Notes under the mockup
+   ============================================================ */
+.notes{max-width:1180px;margin:52px auto 0;border-top:1px solid #151D27;padding-top:34px}
+.notes-head h2{font-size:18px;font-weight:600;letter-spacing:.2px;margin:0;color:#EEF3FA}
+.notes-head p{font-size:12.5px;color:#7D8A9C;margin:6px 0 0}
+.principles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:22px}
+.principle{padding:16px;border:1px solid #18212C;border-radius:10px;background:linear-gradient(180deg,#0C1118,#090D13)}
+.principle .num{font-family:"Cascadia Code",Consolas,monospace;font-size:9.5px;color:#FF9C7C;letter-spacing:.06em}
+.principle h3{font-size:13.5px;font-weight:600;margin:8px 0 5px;color:#E4EBF4}
+.principle p{font-size:11.5px;line-height:1.75;color:#8996A8;margin:0}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:38px;margin-top:34px}
+.split h3{font-size:12.5px;font-weight:600;color:#CFD9E5;margin:0 0 11px;letter-spacing:.02em}
+.split ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px}
+.split li{font-size:12px;color:#96A3B5;line-height:1.7;padding-left:13px;position:relative}
+.split li:before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:#3C4859}
+.split .new li:before{background:#FF8A65}
+.split code{
+  font-family:"Cascadia Code",Consolas,monospace;font-size:10px;color:#C7D2E1;
+  background:#0C1219;border:1px solid #1C2632;border-radius:3px;padding:0 3px;
+}
+.roadmap{margin-top:34px}
+.roadmap h3{font-size:12.5px;font-weight:600;color:#CFD9E5;margin:0 0 10px}
+.roadmap ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.roadmap li{padding:14px;border:1px solid #18212C;border-radius:9px;background:#0A0F15}
+.roadmap li b{display:block;font-size:11px;color:#E4EBF4;font-weight:600;margin-bottom:5px}
+.roadmap li b em{font-style:normal;color:#FF9C7C;font-family:"Cascadia Code",Consolas,monospace;margin-right:5px;font-size:9.5px}
+.roadmap li span{display:block;font-size:10.5px;line-height:1.7;color:#7E8B9E}
+.footnote{font-size:10px;line-height:1.7;color:#556274;margin:26px 0 0;border-top:1px solid #131B24;padding-top:14px}
+
+/* 截图/嵌入模式：只留应用本体（#bare） */
+body.bare{background:#0B0E13}
+body.bare .deck{padding:0;max-width:none}
+body.bare .deck-head,body.bare .deck-meta,body.bare .notes{display:none}
+body.bare .stage{display:block}
+body.bare .app{border-radius:0;border:0;box-shadow:none}
+
+@media (max-width:900px){
+  .deck{padding:20px 18px 50px}
+  .deck-head{align-items:flex-start;flex-direction:column;gap:14px}
+  .deck-controls{flex-wrap:wrap}
+  .notes{max-width:none}
+  .principles,.roadmap ol{grid-template-columns:1fr}
+  .split{grid-template-columns:1fr;gap:24px}
+}
+</style>
+</head>
+<body>
+
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.6l2.15 6.55L20.7 11.3l-6.55 2.15L12 20l-2.15-6.55L3.3 11.3l6.55-2.15z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.6A2.6 2.6 0 0 1 5.6 5h3.1c.6 0 1.2.24 1.65.68L11.7 7H18.4A2.6 2.6 0 0 1 21 9.6v7.8a2.6 2.6 0 0 1-2.6 2.6H5.6A2.6 2.6 0 0 1 3 17.4z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.5 9.5L12 15l5.5-5.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="M15.4 15.4L20.5 20.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l4.3-1 9.4-9.4a2.1 2.1 0 0 0-3-3L5.3 16z"/><path d="M13.2 6.4l3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V5h5v2M6.2 7l.9 12.2c.04.55.5.8 1 .8h7.8c.5 0 .96-.25 1-.8L17.8 7"/><path d="M10 11v5.5M14 11v5.5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h6M14 7h6M4 12h11M19 12h1M4 17h2M10 17h10"/><circle cx="12" cy="7" r="2"/><circle cx="17" cy="12" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M8.4 12.6l6.1-6.1a3.1 3.1 0 0 1 4.4 4.4l-8 8a5.2 5.2 0 0 1-7.4-7.4l7.5-7.5"/></symbol>
+    <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+    <symbol id="i-slash" viewBox="0 0 24 24"><path d="M16 4L8 20"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.4 4.4L19 7.2"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.2"/><path d="M7.5 9.5l3 2.7-3 2.7M13 15h3.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h7.6L19 8.9v11.6H6z"/><path d="M13.5 3.7V9H19"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3 1.8"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4H6.5A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3.5l1.5 4.6 4.6 1.5-4.6 1.5L12 15.7l-1.5-4.6L5.9 9.6l4.6-1.5z"/><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M15.2 8.8l-1.9 4.5-4.5 1.9 1.9-4.5z"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 6.2a4.3 4.3 0 0 0-5.6 5.4L4 16.5V20h3.5l4.9-4.9a4.3 4.3 0 0 0 5.4-5.6l-2.7 2.7-2.2-2.2z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 8L4 12l4.5 4M15.5 8L20 12l-4.5 4M13.5 5.5l-3 13"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.6L2.8 20.2h18.4z"/><path d="M12 9.2v4.9"/><circle cx="12" cy="17.2" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z"/><circle cx="12" cy="11" r="2.2"/></symbol>
+  </defs>
+</svg>
+
+<div class="deck">
+  <div class="impl-banner">
+    <b>实施版说明</b>
+    <span>已按确认范围收敛：不添加会话搜索、日期分组、工作空间路径/版本/计数、新会话引导；确认卡片保留默认「同意」，标题栏与输入区不新增入口。本页保留为视觉方向稿，实际界面以应用为准。</span>
+  </div>
+  <header class="deck-head">
+    <div class="deck-brand">
+      <span class="brand-mark"><svg class="i i-fill"><use href="#i-spark"/></svg></span>
+      <div class="brand-text">
+        <h1>minion <em>/</em> 界面优化方案</h1>
+        <p>降低视觉噪音，建立清晰层级 · 深色工作台 v1</p>
+      </div>
+    </div>
+    <div class="deck-controls">
+      <div class="seg" role="tablist" aria-label="界面状态">
+        <button class="on" data-view="chat" role="tab" aria-selected="true">会话</button>
+        <button data-view="empty" role="tab" aria-selected="false">新会话</button>
+        <button data-view="confirm" role="tab" aria-selected="false">确认卡片</button>
+      </div>
+      <button class="pin-toggle" id="pinToggle" aria-pressed="false">
+        <svg class="i"><use href="#i-pin"/></svg><span>优化标注</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="app" id="app" data-view="chat">
+
+      <!-- ================= title bar ================= -->
+      <header class="titlebar">
+        <div class="tb-brand">
+          <span class="mark mark-sm"><svg class="i i-fill"><use href="#i-spark"/></svg></span>
+          <span class="wordmark">minion</span>
+          <span class="tb-div"></span>
+          <button class="chip-btn" title="切换工作空间">
+            <svg class="i"><use href="#i-folder"/></svg><span>minion</span>
+            <svg class="i chev"><use href="#i-chevron"/></svg>
+          </button>
+        </div>
+        <div class="tb-right">
+          <button class="model-pill" title="当前模型">
+            <span class="live-dot"></span>
+            <span class="model-name">deepseek-flash</span>
+            <svg class="i chev"><use href="#i-chevron"/></svg>
+          </button>
+          <button class="win-btn" title="设置"><svg class="i"><use href="#i-sliders"/></svg></button>
+          <span class="tb-div"></span>
+          <button class="win-btn" title="最小化"><svg class="i"><use href="#i-min"/></svg></button>
+          <button class="win-btn" title="最大化"><svg class="i"><use href="#i-max"/></svg></button>
+          <button class="win-btn close" title="关闭"><svg class="i"><use href="#i-x"/></svg></button>
+        </div>
+      </header>
+
+      <div class="app-body">
+
+        <!-- ================= sidebar ================= -->
+        <aside class="sidebar">
+          <div class="sb-head">
+            <span class="sb-title">会话</span>
+            <span class="count">7</span>
+            <button class="new-session" title="新建会话">
+              <svg class="i"><use href="#i-plus"/></svg><span>新建</span>
+            </button>
+          </div>
+
+          <button class="search" title="搜索会话（可选）">
+            <svg class="i"><use href="#i-search"/></svg>
+            <span>搜索会话</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+
+          <div class="sb-scroll">
+            <div class="group">今天</div>
+
+            <div class="s-row active">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">界面视觉优化</span>
+                <span class="s-time">刚刚</span>
+              </div>
+              <div class="s-preview">新方案已整理：配色、层级与输入区</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="s-row running">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">SSE 断线重连排查</span>
+                <span class="s-time">8 分钟</span>
+              </div>
+              <div class="s-preview">定位到首包读取超时未计入重试</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="s-row">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">MCP 工具列表为空</span>
+                <span class="s-time">1 小时</span>
+              </div>
+              <div class="s-preview">stdio 已握手，tools/list 返回空</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="group">昨天</div>
+
+            <div class="s-row">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">确认卡片的键盘焦点</span>
+                <span class="s-time">昨天</span>
+              </div>
+              <div class="s-preview">Esc 拒绝，Enter 同意已补齐</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="s-row">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">会话列表滚动性能</span>
+                <span class="s-time">昨天</span>
+              </div>
+              <div class="s-preview">200 条会话滚动稳定在 60fps</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="group">更早</div>
+
+            <div class="s-row">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">工作空间切换残留</span>
+                <span class="s-time">10月28日</span>
+              </div>
+              <div class="s-preview">切空间清空视图缓存，已修复</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+
+            <div class="s-row">
+              <div class="s-top">
+                <span class="s-flag"></span>
+                <span class="s-name">系统提示词瘦身</span>
+                <span class="s-time">10月27日</span>
+              </div>
+              <div class="s-preview">合并重复约束，减少 18% token</div>
+              <div class="s-actions">
+                <button class="mini" title="重命名"><svg class="i"><use href="#i-pencil"/></svg></button>
+                <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <div class="ws-head">
+              <span class="sb-title">工作空间</span>
+              <button class="mini" title="新建工作空间"><svg class="i"><use href="#i-plus"/></svg></button>
+            </div>
+            <div class="w-list">
+              <div class="w-row current">
+                <svg class="i folder"><use href="#i-folder"/></svg>
+                <span>minion</span>
+                <svg class="i w-check"><use href="#i-check"/></svg>
+                <div class="w-actions">
+                  <button class="mini" title="修改"><svg class="i"><use href="#i-sliders"/></svg></button>
+                  <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+              <div class="w-row">
+                <svg class="i folder"><use href="#i-folder"/></svg>
+                <span>playground</span>
+                <div class="w-actions">
+                  <button class="mini" title="修改"><svg class="i"><use href="#i-sliders"/></svg></button>
+                  <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+              <div class="w-row">
+                <svg class="i folder"><use href="#i-folder"/></svg>
+                <span>docs-site</span>
+                <div class="w-actions">
+                  <button class="mini" title="修改"><svg class="i"><use href="#i-sliders"/></svg></button>
+                  <button class="mini danger" title="删除"><svg class="i"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="ws-path" title="D:\javame\code2\minion">
+              <svg class="i"><use href="#i-folder"/></svg>
+              <span class="path">D:\javame\code2\minion</span>
+              <span class="ver">v0.1.0</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- ================= main ================= -->
+        <main class="main">
+
+          <div class="tabbar">
+            <div class="tab active">
+              <span class="tab-title">界面视觉优化</span>
+              <button class="tab-close" title="关闭"><svg class="i"><use href="#i-x"/></svg></button>
+            </div>
+            <div class="tab">
+              <span class="tab-live"></span>
+              <span class="tab-title">SSE 断线重连</span>
+              <button class="tab-close" title="关闭"><svg class="i"><use href="#i-x"/></svg></button>
+            </div>
+            <button class="tab-add" title="新建会话"><svg class="i"><use href="#i-plus"/></svg></button>
+          </div>
+
+          <!-- -------- chat -------- -->
+          <section class="chat-screen">
+            <div class="chat-scroll">
+              <div class="chat-inner">
+                <div class="date-div"><span>今天 09:24</span></div>
+
+                <div class="msg-user">
+                  <div class="user-col">
+                    <div class="bubble">看下 minion 的界面有哪些可优化的地方，让它更美观清晰。先给一版效果图，我看看方向。</div>
+                    <div class="user-meta">09:24</div>
+                  </div>
+                </div>
+
+                <div class="msg-ai">
+                  <div class="avatar"><svg class="i i-fill"><use href="#i-spark"/></svg></div>
+                  <div class="ai-body">
+                    <div class="ai-meta">
+                      <span class="ai-name">minion</span>
+                      <span class="ai-model">deepseek-flash</span>
+                      <span class="ai-time">09:24</span>
+                    </div>
+
+                    <div class="ai-text">
+                      <p>先把现状里最影响观感的三件事收拢一下：</p>
+                      <ul class="issue-list">
+                        <li><strong>层级偏平</strong>：输入、思考、工具、回复共用 16px 字号，只能靠彩色标签区分。</li>
+                        <li><strong>颜色过载</strong>：蓝、紫、青、绿、橙同时抢注意力，没有一个真正的强调色。</li>
+                        <li><strong>行宽失控</strong>：正文铺到 900px 以上，输入框却只有 61.8% 宽，与正文不对齐。</li>
+                      </ul>
+                      <p>先把三类内容分开，再统一色板。读一下当前主题：</p>
+                    </div>
+
+                    <div class="think">
+                      <svg class="i"><use href="#i-sparkles"/></svg>
+                      <span>思考过程</span>
+                      <svg class="i chev"><use href="#i-chevron"/></svg>
+                    </div>
+
+                    <div class="tool-card">
+                      <span class="tool-ico"><svg class="i"><use href="#i-terminal"/></svg></span>
+                      <span class="tool-name">Read</span>
+                      <span class="tool-path">src/resource/theme/theme.css</span>
+                      <span class="tool-meta">430 行</span>
+                      <span class="tool-status"><svg class="i"><use href="#i-check"/></svg>成功</span>
+                      <svg class="i tool-chev"><use href="#i-chevron"/></svg>
+                    </div>
+
+                    <div class="ai-text">
+                      <p class="palette-note">主题里有 60 多个散落色值；收敛成 5 个基础 token，外加 4 个语义色。</p>
+                      <div class="palette">
+                        <div class="swatch"><span class="sw-chip" style="--c:#0B0E13"></span><div><b>#0B0E13</b><small>bg</small></div></div>
+                        <div class="swatch"><span class="sw-chip" style="--c:#151A22"></span><div><b>#151A22</b><small>surface</small></div></div>
+                        <div class="swatch"><span class="sw-chip" style="--c:#202A36"></span><div><b>#202A36</b><small>border</small></div></div>
+                        <div class="swatch"><span class="sw-chip" style="--c:#E8EDF5"></span><div><b>#E8EDF5</b><small>text</small></div></div>
+                        <div class="swatch"><span class="sw-chip" style="--c:#FF8A65"></span><div><b>#FF8A65</b><small>accent</small></div></div>
+                      </div>
+                      <p>下一步先改外壳（标题栏、侧栏、输入区），消息流单独一轮重做。你想先看哪一块？</p>
+                    </div>
+
+                    <div class="turn-stats">
+                      <svg class="i"><use href="#i-clock"/></svg>
+                      <span>12.4s</span><i class="sep"></i>
+                      <span>in 8.2k</span><i class="sep"></i>
+                      <span>out 1.1k</span><i class="sep"></i>
+                      <span>thinking 3.4k</span><i class="sep"></i>
+                      <span>ctx 15.2k / 400k (4%)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- -------- empty -------- -->
+          <section class="empty-screen">
+            <div class="empty">
+              <div class="empty-mark"><svg class="i i-fill"><use href="#i-spark"/></svg></div>
+              <h2>今天，想让 minion 做点什么？</h2>
+              <p>描述一个任务，或者从下面挑一个开始。</p>
+              <div class="suggest">
+                <button class="sug">
+                  <span class="sug-ico"><svg class="i"><use href="#i-compass"/></svg></span>
+                  <span><b>理清这个项目</b><small>阅读代码与文档，画出结构图</small></span>
+                </button>
+                <button class="sug">
+                  <span class="sug-ico"><svg class="i"><use href="#i-wrench"/></svg></span>
+                  <span><b>修好失败的测试</b><small>定位失败用例，给出最小修复</small></span>
+                </button>
+                <button class="sug">
+                  <span class="sug-ico"><svg class="i"><use href="#i-code"/></svg></span>
+                  <span><b>重构一段代码</b><small>保持行为不变，整理边界与命名</small></span>
+                </button>
+                <button class="sug">
+                  <span class="sug-ico"><svg class="i"><use href="#i-file"/></svg></span>
+                  <span><b>写一份设计文档</b><small>先写 spec，再拆成可执行步骤</small></span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- -------- composer -------- -->
+          <div class="composer-dock">
+            <div class="composer-wrap">
+              <div class="composer focused">
+                <div class="composer-inner">
+                  <div class="chip-row">
+                    <span class="chip">
+                      <svg class="i"><use href="#i-file"/></svg>
+                      theme.css
+                      <button class="chip-x" title="移除"><svg class="i"><use href="#i-x"/></svg></button>
+                    </span>
+                  </div>
+                  <div class="draft">帮我把这套 token 落进 theme.css，先改侧栏和输入区。<span class="caret"></span></div>
+                  <div class="placeholder">描述一个任务，或输入 @ 引用文件…</div>
+                  <div class="composer-bar">
+                    <button class="tool-btn" title="上传图片"><svg class="i"><use href="#i-paperclip"/></svg></button>
+                    <button class="tool-btn" title="引用文件"><svg class="i"><use href="#i-at"/></svg></button>
+                    <button class="tool-btn" title="调用技能"><svg class="i"><use href="#i-slash"/></svg></button>
+                    <span class="bar-div"></span>
+                    <span class="context"><span class="ring"></span><span>4%</span></span>
+                    <button class="send" title="发送">
+                      <svg class="i"><use href="#i-arrow-up"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-hint">
+                <span><kbd>Enter</kbd>发送</span><span class="dot"></span>
+                <span><kbd>Shift</kbd>+<kbd>Enter</kbd>换行</span><span class="dot"></span>
+                <span><b>@</b> 引用文件</span><span class="dot"></span>
+                <span><b>/</b> 调用技能</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- -------- confirm -------- -->
+          <div class="confirm-overlay">
+            <div class="scrim"></div>
+            <div class="confirm-card">
+              <div class="cf-top">
+                <span class="risk-ico"><svg class="i"><use href="#i-alert"/></svg></span>
+                <div class="cf-titles">
+                  <b>需要确认</b>
+                  <span>Bash 请求执行高危命令</span>
+                </div>
+                <span class="risk-pill">高危</span>
+              </div>
+              <div class="cf-cmd"><span class="prompt">$</span><code>mvn -q clean package &amp;&amp; rm -rf target/cache</code></div>
+              <p class="cf-desc">该命令会删除工作区内的文件，且不可撤销。确认前请检查路径与参数。</p>
+              <div class="cf-actions">
+                <span class="cf-hint"><kbd>Esc</kbd> 拒绝 · 默认焦点在「拒绝」</span>
+                <div class="cf-btns">
+                  <button class="btn-text">总是允许</button>
+                  <button class="btn-text">本会话允许</button>
+                  <button class="btn-allow">允许一次</button>
+                  <button class="btn-deny">拒绝</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </main>
+      </div>
+
+      <!-- -------- annotation pins -------- -->
+      <div class="pins" aria-hidden="true">
+        <button class="pin" style="left:880px;top:23px"><span>1</span>
+          <span class="tip tip-right tip-below"><b>标题栏只保留必要信息</b><span>品牌 / 当前工作空间 / 模型 / 窗口按钮。模型与工作空间变成可点的 chip，设置与窗口控制去掉常驻描边。</span></span>
+        </button>
+        <button class="pin" style="left:190px;top:72px"><span>2</span>
+          <span class="tip tip-below"><b>新建会话不再贯穿整栏</b><span>收进「会话」标题行，用低饱和强调色；下方留出搜索位置，长列表有落点。</span></span>
+        </button>
+        <button class="pin" style="left:10px;top:174px"><span>3</span>
+          <span class="tip"><b>会话行分三层</b><span>标题 12.5px / 摘要 10.5px / 时间 9.5px；选中只留 2px 珊瑚色竖条，运行态用呼吸绿点，悬停操作浮层不挤走时间。</span></span>
+        </button>
+        <button class="pin" style="left:200px;top:630px"><span>4</span>
+          <span class="tip tip-below"><b>工作空间按内容收口</b><span>不再固定吃 38.2% 高度；当前项用勾选标记，底部常驻当前目录与版本信息。</span></span>
+        </button>
+        <button class="pin" style="left:400px;top:90px"><span>5</span>
+          <span class="tip tip-below"><b>页签降为 28px</b><span>未选中透明，活动页签只留一层表面色；运行中的会话在标题前加绿点，关闭按钮只在需要时显形。</span></span>
+        </button>
+        <button class="pin" style="left:1158px;top:330px"><span>6</span>
+          <span class="tip tip-right"><b>统一 740px 内容列</b><span>正文与输入框同宽居中，行长从 58 个汉字降到 50 个左右；两侧留白由空洞变成呼吸。</span></span>
+        </button>
+        <button class="pin" style="left:355px;top:330px"><span>7</span>
+          <span class="tip tip-below"><b>消息分型，不再只有颜色</b><span>用户消息右对齐；AI 回复带头像；工具与思考变成 40px 紧凑卡片，统计行退到脚注层级。</span></span>
+        </button>
+        <button class="pin" style="left:1154px;top:714px"><span>8</span>
+          <span class="tip tip-right"><b>输入区是一块完整面板</b><span>聚焦只用 1px 珊瑚色描边加微弱外发光；工具栏收进底部一行，发送键为 32px 圆角主按钮。</span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="deck-meta">
+    <span>1280 × 800</span><i></i><span>正文 740px · 基准字号 14px</span><i></i><span>JavaFX 8 可落地</span>
+  </div>
+
+  <!-- ================= notes ================= -->
+  <section class="notes">
+    <div class="notes-head">
+      <h2>设计说明</h2>
+      <p>不是换一套皮肤，而是把「层级、节奏、状态」三件事重新排一遍。</p>
+    </div>
+
+    <div class="principles">
+      <article class="principle">
+        <span class="num">01 / ONE ACCENT</span>
+        <h3>一个强调色</h3>
+        <p>珊瑚橙只出现在主操作、当前项和焦点上；其余交给中性色阶。语义色只负责成功 / 警告 / 错误，不参与装饰。</p>
+      </article>
+      <article class="principle">
+        <span class="num">02 / THREE LEVELS</span>
+        <h3>三档信息层级</h3>
+        <p>14px 正文、11px 辅助、9.5px 元信息。消息类型靠结构与留白区分，而不是靠五种高饱和颜色。</p>
+      </article>
+      <article class="principle">
+        <span class="num">03 / ONE COLUMN</span>
+        <h3>一个阅读宽度</h3>
+        <p>对话正文、工具卡、输入框统一 740px；行长控制在 50 个汉字左右，扫读成本和输入落点都更稳定。</p>
+      </article>
+    </div>
+
+    <div class="split">
+      <div>
+        <h3>现状里最值得改的</h3>
+        <ul>
+          <li><code>theme.css</code> 里 60 多个色值散落各处，强调色与语义色混用，没有 token 层。</li>
+          <li><code>.root</code> 固定 16px，输入 / 思考 / 工具 / 回复同一字号，类型只靠彩色标签。</li>
+          <li>侧栏固定 25%，会话区 0.618 / 工作空间 0.382；只有一两个会话时出现大块空洞，新建按钮贯穿整栏。</li>
+          <li>输入区 61.8% 宽居中，与 100% 宽的正文左边缘错位；聚焦边框与发送键同色，语义不清。</li>
+          <li>标题栏「模型: xxx」只是一行文本；页签是第二层 chrome，活动页签像悬浮卡片，关闭键是灰圆点。</li>
+          <li>工具调用、思考、统计行全是同一套彩色控制台行；运行指示器浮在左下角，靠 40px 底部内边距避让。</li>
+        </ul>
+      </div>
+      <div class="new">
+        <h3>这版做了什么</h3>
+        <ul>
+          <li>收成 5 个基础 token + 4 个语义色；珊瑚橙只做一件事：标记「当前」和「主要动作」。</li>
+          <li>14px / 11px / 9.5px 三档；正文行高 1.7，辅助信息降到弱对比但不低于可读阈值。</li>
+          <li>292px 固定侧栏：会话列表弹性，工作空间按内容收口，当前目录与版本常驻底部。</li>
+          <li>740px 统一内容列；输入框与正文对齐，工具栏收进底部，发送键改为 32px 圆角主按钮。</li>
+          <li>页签压到 28px；工作空间与模型变成可点 chip；窗口控制去掉常驻边框，只在 hover 时出现。</li>
+          <li>用户气泡 / AI 头像 / 工具卡 / 思考卡 / 统计脚注五种稳定形态；运行态用页签绿点和行内呼吸点表达。</li>
+          <li>运行状态从正文左下角浮层移到输入框上沿的状态行，页签与会话行只留呼吸点，不再为浮层预留 40px 底部内边距。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="roadmap">
+      <h3>落地顺序</h3>
+      <ol>
+        <li><b><em>01</em>Token 与外壳</b><span>theme.css 色板、字号、圆角；标题栏、侧栏、页签、输入区的结构与间距。纯样式 + 局部布局，风险最低。</span></li>
+        <li><b><em>02</em>消息流</b><span>ChatView 按类型拆节点：用户气泡、AI 头像、工具卡、思考卡、统计行；保留现有事件流、折叠与流式合并逻辑。</span></li>
+        <li><b><em>03</em>状态与细节</b><span>空会话引导、运行态、确认卡片、滚动条与悬停反馈；补上「默认拒绝」的安全焦点。</span></li>
+        <li><b><em>04</em>可选项</b><span>会话搜索、按日期分组、工具耗时（需给事件加时间戳）。不影响主视觉，可后置。</span></li>
+      </ol>
+    </div>
+
+    <p class="footnote">静态效果图，未改动应用代码。按 1280 × 800、100% 缩放绘制；实际实现以 JavaFX 8 能力为准（无 backdrop-filter / CSS grid，使用 VBox / HBox + padding 等价实现；页签关闭按钮、工具卡等需要少量结构改造）。</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  var app = document.getElementById('app');
+  var deck = document.querySelector('.deck');
+  var stage = document.getElementById('stage');
+  var pinToggle = document.getElementById('pinToggle');
+  var segButtons = document.querySelectorAll('.seg button');
+
+  function fit() {
+    var available = deck.clientWidth;
+    var scale = Math.min(1, available / 1280);
+    app.style.zoom = scale;
+    stage.style.height = '';
+  }
+
+  segButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      segButtons.forEach(function (b) {
+        var on = b === btn;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      app.setAttribute('data-view', btn.getAttribute('data-view'));
+      if (btn.getAttribute('data-view') !== 'chat') app.classList.remove('show-pins');
+      pinToggle.classList.toggle('on', app.classList.contains('show-pins'));
+      pinToggle.setAttribute('aria-pressed', app.classList.contains('show-pins') ? 'true' : 'false');
+    });
+  });
+
+  pinToggle.addEventListener('click', function () {
+    if (app.getAttribute('data-view') !== 'chat') {
+      segButtons.forEach(function (b) {
+        var on = b.getAttribute('data-view') === 'chat';
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      app.setAttribute('data-view', 'chat');
+    }
+    app.classList.toggle('show-pins');
+    var on = app.classList.contains('show-pins');
+    pinToggle.classList.toggle('on', on);
+    pinToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+
+  // 允许通过 ?view=empty / #empty 直接打开某个状态（方便截图与评审）
+  var params = new URLSearchParams(window.location.search);
+  var initialView = params.get('view') || window.location.hash.replace('#', '');
+  if (params.get('bare') === '1' || initialView === 'bare') {
+    document.body.classList.add('bare');
+    initialView = 'chat';
+  }
+  if (initialView === 'empty' || initialView === 'confirm') {
+    var target = document.querySelector('.seg button[data-view="' + initialView + '"]');
+    if (target) target.click();
+  }
+  if ((params.get('pins') === '1' || initialView === 'pins') && app.getAttribute('data-view') === 'chat') {
+    pinToggle.click();
+  }
+
+  window.addEventListener('resize', fit);
+  fit();
+})();
+</script>
+</body>
+</html>

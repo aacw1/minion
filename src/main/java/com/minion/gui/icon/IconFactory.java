@@ -65,6 +65,12 @@ public final class IconFactory {
     public static final String SEND_PATH = "M12 4 L20 13 L15 13 L15 21 L9 21 L9 13 L4 13 Z";
     /** 停止方块（自绘 path，InputView 迁移） */
     public static final String STOP_PATH = "M7 7 L17 7 L17 17 L7 17 Z";
+    /** auto_awesome（品牌标 / 助手头像 / 思考；四角凹边星形） */
+    public static final String SPARK_PATH = "M12 2C12.8 7.7 16.3 11.2 22 12C16.3 12.8 12.8 16.3 12 22C11.2 16.3 7.7 12.8 2 12C7.7 11.2 11.2 7.7 12 2Z";
+    /** add（新建会话 / 新建工作空间） */
+    public static final String PLUS_PATH = "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z";
+    /** warning（三角叹号：确认卡片 / 警告横幅） */
+    public static final String ALERT_PATH = "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z";
 
     // ---- 工厂方法（样式类在 theme.css 定义颜色） ----
 
@@ -96,6 +102,9 @@ public final class IconFactory {
     public static SVGPath send() { return create(SEND_PATH, "icon-send"); }
     public static SVGPath stop() { return create(STOP_PATH, "icon-stop"); }
     public static SVGPath attachFile() { return create(ATTACH_FILE_PATH, "icon-upload"); }
+    public static SVGPath spark() { return create(SPARK_PATH, "icon-spark"); }
+    public static SVGPath plus() { return create(PLUS_PATH, "icon-plus"); }
+    public static SVGPath alert() { return create(ALERT_PATH, "icon-alert"); }
 
     /** 按 24×24 viewport 缩放到目标像素（scale = px/24） */
     public static void size(SVGPath icon, double px) {

@@ -7,6 +7,7 @@ import com.minion.gui.chat.ChatView;
 import com.minion.gui.dialog.ConfirmSheet;
 import com.minion.gui.dialog.SettingsDialog;
 import com.minion.gui.dialog.WorkspaceFormDialog;
+import com.minion.gui.icon.IconFactory;
 import com.minion.gui.input.InputView;
 import com.minion.gui.session.AutoScrollPolicy;
 import com.minion.gui.session.SessionHandle;
@@ -41,6 +42,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -106,9 +108,8 @@ public class MainWindow {
         AnchorPane.setRightAnchor(root, 0.0);
         frame.getChildren().add(root);
 
-        // 自绘标题栏：应用名 | 模型标签 | 留白 | ⚙ | 窗口按钮
+        // 自绘标题栏：品牌 / 模型 pill / 留白 / ⚙ / 窗口按钮（模型 pill 静态展示，切换仍走设置）
         Label modelLabel = new Label(modelLabelText());
-        modelLabel.getStyleClass().add("topbar-model");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
         // 需求：标题栏页签点击激活对应会话（userData 存会话 id）；跨工作空间的页签点击先自动切回该空间
         tabs.getSelectionModel().selectedItemProperty().addListener((obs, ov, nv) -> {
@@ -129,10 +130,12 @@ public class MainWindow {
         titleBar = new TitleBar(stage, modelLabel, this::openSettings, this::confirmClose);
         root.setTop(titleBar);
 
-        // 左侧 1/4 侧栏（会话/工作空间）+ 右侧 3/4（消息区 + 输入区）→ GridPane，百分比列固定 25%/75%
+        // 左侧固定宽度侧栏（292px）：会话列表占满剩余高度，工作空间按内容高度收口
         VBox sidebar = new VBox(8);
         sidebar.getStyleClass().add("panel");
-        sidebar.setMinWidth(200);
+        sidebar.setMinWidth(292);
+        sidebar.setPrefWidth(292);
+        sidebar.setMaxWidth(292);
         sessionList = new SessionListView(manager,
                 h -> {
                     removeTabById(h.id);
@@ -142,36 +145,45 @@ public class MainWindow {
                     sessionList.refresh();
                 });
         VBox.setVgrow(sessionList, Priority.ALWAYS);
-        Button newSession = new Button("＋ 新建会话");
-        newSession.getStyleClass().add("btn-ghost");
-        newSession.setMaxWidth(Double.MAX_VALUE);
+        Label sessionTitle = new Label("会话");
+        sessionTitle.getStyleClass().add("section-title");
+        Region sessionSpacer = new Region();
+        HBox.setHgrow(sessionSpacer, Priority.ALWAYS);
+        SVGPath newSessionIcon = IconFactory.plus();
+        IconFactory.size(newSessionIcon, 12);
+        Button newSession = new Button("新建");
+        newSession.setGraphic(newSessionIcon);
+        newSession.getStyleClass().add("btn-new");
+        newSession.setTooltip(new Tooltip("新建会话"));
         newSession.setOnAction(e -> onNewSession());
-        VBox sessionBox = new VBox(6);
-        sessionBox.getChildren().addAll(newSession, sessionList);
+        HBox sessionHeader = new HBox(7, sessionTitle, sessionSpacer, newSession);
+        sessionHeader.setAlignment(Pos.CENTER_LEFT);
+        sessionHeader.getStyleClass().add("sb-header");
+        VBox sessionBox = new VBox(6, sessionHeader, sessionList);
         VBox.setVgrow(sessionBox, Priority.ALWAYS);
         final WorkspaceListView wsList = new WorkspaceListView(manager);
-        VBox.setVgrow(wsList, Priority.ALWAYS);
-        Button newWs = new Button("＋ 新建工作空间");
-        newWs.getStyleClass().add("btn-ghost");
-        newWs.setMaxWidth(Double.MAX_VALUE);
+        Label wsTitle = new Label("工作空间");
+        wsTitle.getStyleClass().add("section-title");
+        Region wsSpacer = new Region();
+        HBox.setHgrow(wsSpacer, Priority.ALWAYS);
+        SVGPath newWsIcon = IconFactory.plus();
+        IconFactory.size(newWsIcon, 12);
+        Button newWs = new Button();
+        newWs.setGraphic(newWsIcon);
+        newWs.getStyleClass().add("btn-icon-mini");
+        newWs.setTooltip(new Tooltip("新建工作空间"));
         newWs.setOnAction(e -> onNewWorkspace(wsList));
-        VBox wsBox = new VBox(6);
-        wsBox.getChildren().addAll(newWs, wsList);
-        VBox.setVgrow(wsBox, Priority.ALWAYS);
-        // VBox(8) 间距自然分隔上下两区，不加分隔线
+        HBox wsHeader = new HBox(7, wsTitle, wsSpacer, newWs);
+        wsHeader.setAlignment(Pos.CENTER_LEFT);
+        wsHeader.getStyleClass().add("sb-header");
+        VBox wsBox = new VBox(6, wsHeader, wsList);
         sidebar.getChildren().setAll(sessionBox, wsBox);
-        // 需求：会话/工作空间高度固定黄金比例 0.618:0.382（VBox 无权重 API，监听高度动态设 prefHeight 实现）
-        sidebar.heightProperty().addListener((obs, ov, nv) -> {
-            double h = Math.max(0, nv.doubleValue() - sidebar.getSpacing()); // 扣除两区间距
-            double sessionH = h * 0.618;
-            sessionBox.setPrefHeight(sessionH);
-            wsBox.setPrefHeight(h - sessionH);
-        });
 
-        // 右侧：页签栏（会话 Tab）+ 消息区（ChatView）+ 输入区
-        VBox right = new VBox(8);
+        // 右侧：页签栏（会话 Tab）+ 消息区（ChatView）+ 输入区；间距 0，由各自内边距分隔
+        VBox right = new VBox(0);
         right.getStyleClass().add("panel-dark");
         chatScroll = new ScrollPane();
+        chatScroll.getStyleClass().add("chat-content");
         chatScroll.setFitToWidth(true);
         chatScroll.setFitToHeight(true); // 消息区铺满正文窗口：内容少时 ChatView 拉伸到视口高（背景 #121314 铺满）
         chatScroll.setPrefHeight(200); // 固定 pref：否则 prefHeight 随消息内容增长，挤压右侧 VBox 把页签行压扁（探针验证）
@@ -210,12 +222,15 @@ public class MainWindow {
             if (chatView != null) syncIndicator(chatView.handle());
         }));
 
-        // 需求：左右无分隔线、不可拖拽，侧栏严格占整体 1/4（GridPane 百分比列随窗口缩放）
+        // 需求：侧栏固定 292px（不随窗口百分比拉伸），右侧占满剩余宽度
         GridPane center = new GridPane();
-        ColumnConstraints leftCol = new ColumnConstraints();
-        leftCol.setPercentWidth(25);
+        ColumnConstraints leftCol = new ColumnConstraints(292);
+        leftCol.setMinWidth(292);
+        leftCol.setPrefWidth(292);
+        leftCol.setMaxWidth(292);
         ColumnConstraints rightCol = new ColumnConstraints();
-        rightCol.setPercentWidth(75);
+        rightCol.setHgrow(Priority.ALWAYS);
+        rightCol.setFillWidth(true);
         center.getColumnConstraints().addAll(leftCol, rightCol);
         RowConstraints row = new RowConstraints();
         row.setVgrow(Priority.ALWAYS); // 行撑满可用空间：chatScroll pref 固定后防底部留白
@@ -321,6 +336,15 @@ public class MainWindow {
                     })));
                     chatView.bind(true);
                     chatScroll.setContent(chatView);
+                    // 首次打开会话：等页签栏/输入区布局稳定后再贴底（历史长会话从最新消息看起）
+                    final SessionHandle opened = h;
+                    PauseTransition settle = new PauseTransition(Duration.millis(180));
+                    settle.setOnFinished(ev -> {
+                        if (chatView == null || chatView.handle() != opened) return;
+                        if (chatScroll.getVvalue() >= 1.0) chatScroll.setVvalue(0.999999);
+                        chatScroll.setVvalue(1.0);
+                    });
+                    settle.play();
                     if (inputView != null) inputView.bindSession(h);
                     sessionList.refresh(); // 激活即刷新该会话相对时间（不停留切换前旧值）
                     // 切会话：按新会话运行态刷新指示器（必须在 chatView 赋值之后，否则 handle 过滤直接 return）
@@ -373,7 +397,7 @@ public class MainWindow {
         ModelConfig c = manager.models().current();
         String name = (c != null && c.modelName != null && !c.modelName.trim().isEmpty())
                 ? c.modelName.trim() : manager.models().currentName();
-        return "模型: " + name;
+        return name;
     }
 
     /** 右上角 ⚙：打开设置窗，关闭后刷新顶部模型名（TitleBar.modelLabel() 持有引用） */

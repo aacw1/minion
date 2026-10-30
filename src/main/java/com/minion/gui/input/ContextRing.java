@@ -25,9 +25,9 @@ public class ContextRing extends Canvas {
     private static final double HEIGHT = 38;    // 画布高（保证圆完整不裁剪：CY_RATIO*H + 半径8 + 线宽1.5 ≤ H；改 CY_RATIO 时按此公式核对）
     private static final double CY_RATIO = 0.41; // 圆心垂直位置（相对画布高；改小=上移，改大=下移。0.36 ≈ 上移一行后再下移 3px）
     private static final double STROKE = 3;     // 环线宽
-    private static final Color RING_BG = Color.web("#232733");      // 背景环
-    private static final Color RING_NORMAL = Color.web("#3a4150");  // ≤30% 中性灰蓝
-    private static final Color RING_HOT = Color.web("#f48771");     // >30% 主题橙（与发送按钮同系）
+    private static final Color RING_BG = Color.web("#27323F");      // 背景环
+    private static final Color RING_NORMAL = Color.web("#5A6779");  // ≤30% 中性灰蓝
+    private static final Color RING_HOT = Color.web("#FF8A65");     // >30% 主题珊瑚橙
 
     private int used;
     private int max;
@@ -49,7 +49,7 @@ public class ContextRing extends Canvas {
     public ContextRing() {
         super(SIZE, HEIGHT);
         VBox box = new VBox(3);
-        hintLine.setStyle("-fx-text-fill: rgba(240,242,246,0.55);"); // 提示行浅色（需求）
+        hintLine.setStyle("-fx-text-fill: #8B98AC;"); // 提示行浅色（需求）
         box.getChildren().addAll(infoLine, hintLine);
         Tooltip tip = new Tooltip();
         tip.setGraphic(box);

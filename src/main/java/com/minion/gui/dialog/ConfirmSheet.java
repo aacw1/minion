@@ -1,6 +1,7 @@
 package com.minion.gui.dialog;
 
 import com.minion.core.tools.confirm.ConfirmUi;
+import com.minion.gui.icon.IconFactory;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
 import javafx.animation.ParallelTransition;
@@ -18,9 +19,11 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.util.Duration;
 
 import java.util.ArrayDeque;
@@ -157,21 +160,39 @@ public class ConfirmSheet {
         });
     }
 
-    /** 卡片：顶部琥珀危险饰条 | 消息 | 按钮行（压缩为两行，去掉标题行与快捷键提示行） */
+    /** 卡片：顶部琥珀危险饰条 | 标题/风险 pill | 消息 | 底部提示 + 按钮行（按钮顺序与默认「同意」不变） */
     private static VBox buildCard(String message) {
         VBox card = new VBox();
         card.getStyleClass().add("sheet-card");
-        card.setPrefWidth(560);
+        card.setPrefWidth(600);
         // 宿主 StackPane 默认把可缩放子节点拉伸铺满自身（maxHeight 无界 → 卡片铺满整页），
-        // 置 USE_PREF_SIZE 使卡片紧贴内容高度，仅占两行（消息行 + 按钮行）
+        // 置 USE_PREF_SIZE 使卡片紧贴内容高度，仅占内容高度
         card.setMaxHeight(Region.USE_PREF_SIZE);
 
         Region accent = new Region();
         accent.getStyleClass().add("sheet-accent");
 
+        SVGPath alertIcon = IconFactory.alert();
+        IconFactory.size(alertIcon, 15);
+        StackPane iconBox = new StackPane(alertIcon);
+        iconBox.getStyleClass().add("sheet-icon");
+
+        Label title = new Label("需要确认");
+        title.getStyleClass().add("sheet-title");
+        Label risk = new Label("高危操作");
+        risk.getStyleClass().add("sheet-risk");
+        Region headSpacer = new Region();
+        HBox.setHgrow(headSpacer, Priority.ALWAYS);
+        HBox header = new HBox(9, iconBox, title, headSpacer, risk);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.getStyleClass().add("sheet-header");
+
         Label body = new Label(message);
         body.setWrapText(true);
         body.getStyleClass().add("sheet-message");
+
+        Label hint = new Label("Esc 拒绝 · Enter 同意");
+        hint.getStyleClass().add("sheet-hint");
 
         Button reject = new Button("拒绝");
         reject.getStyleClass().add("btn-ghost");
@@ -184,15 +205,17 @@ public class ConfirmSheet {
         whitelist.setOnAction(e -> finish(ConfirmUi.Decision.APPROVE_WHITELIST));
         Button approve = new Button("同意");
         approve.getStyleClass().add("btn-approve");
-        approve.setDefaultButton(true); // Enter 即同意（默认焦点落同意）
+        approve.setDefaultButton(true); // Enter 即同意（默认焦点落同意；行为不变）
         approve.setOnAction(e -> finish(ConfirmUi.Decision.APPROVE));
-        HBox buttons = new HBox(8);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-        buttons.getChildren().addAll(reject, session, whitelist, approve);
 
-        VBox content = new VBox(6);
-        content.setPadding(new Insets(8, 14, 8, 14));
-        content.getChildren().addAll(body, buttons);
+        Region btnSpacer = new Region();
+        HBox.setHgrow(btnSpacer, Priority.ALWAYS);
+        HBox buttons = new HBox(8, hint, btnSpacer, reject, session, whitelist, approve);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        buttons.getStyleClass().add("sheet-actions");
+
+        VBox content = new VBox(11, header, body, buttons);
+        content.setPadding(new Insets(12, 16, 12, 16));
         card.getChildren().addAll(accent, content);
         return card;
     }

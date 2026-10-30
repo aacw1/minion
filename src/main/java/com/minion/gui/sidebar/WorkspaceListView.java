@@ -34,6 +34,8 @@ public class WorkspaceListView extends ListView<String> {
         this.manager = manager;
         this.workspaces = manager.workspaces();
         setCellFactory(v -> new WsCell());
+        setFixedCellSize(38); // 工作空间区按内容高度收口：固定行高便于算 prefHeight
+        setMinHeight(0);
         setOnMouseClicked(e -> {
             // 悬停按钮（⚙/✕）的点击会冒泡到此 handler：跳过切换，避免误清空聊天区（按钮事件已由按钮自身处理）
             if (isHoverButton(e.getTarget())) return;
@@ -58,7 +60,17 @@ public class WorkspaceListView extends ListView<String> {
             getItems().clear();
             for (WorkspaceConfig w : workspaces.list()) getItems().add(w.workSpaceName);
             getSelectionModel().select(workspaces.currentName());
+            updateListHeight();
         });
+    }
+
+    /** 工作空间区按内容高度收口：最多显示 4 行，超出后列表内部滚动；不改变任何数据操作 */
+    private void updateListHeight() {
+        int rows = Math.max(1, Math.min(4, getItems().size()));
+        double h = rows * 38 + 4;
+        setPrefHeight(h);
+        setMinHeight(h); // 不允许侧栏把工作空间列表压扁（行内悬停按钮会被裁切）
+        setMaxHeight(Region.USE_PREF_SIZE);
     }
 
     private class WsCell extends ListCell<String> {

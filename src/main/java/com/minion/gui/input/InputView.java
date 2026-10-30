@@ -18,9 +18,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.FlowPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -41,11 +39,11 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** 底部输入区：4/9 宽居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
+/** 底部输入区：740px 上限居中大框（上=块行+输入框，下=底部操作行：上传按钮左 + 发送按钮右）+ /命令与 @文件补全弹层。
  *  @文件确认后内联进输入框（@路径 文本，所见即所得；扫描异步后台线程，不卡输入）；/命令、/技能、粘贴、图片为块。
- *  按钮语义：上箭头=发送/补充/回答、变淡箭头=空输入或等待回答、方块=终止（**终止仅鼠标点击方块按钮**，
+ *  按钮语义：上箭头=发送/补充/回答、深色弱箭头=空输入或等待回答、方块=终止（**终止仅鼠标点击方块按钮**，
  *  任何键盘键位都不终止——键盘在空输入时改为 3 秒提示「输入内容为空」）；
- *  背景按状态取色（btn-send-empty #f48771 / btn-send-full #ff947c）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
+ *  背景按状态取色（btn-send-dim 空输入 / btn-send-full 有内容 / btn-stop 运行中终止）。上传按钮（回形针）→ FileChooser 选图建 IMAGE 块。
  *  运行中 + 有内容 → 补充；等待回答 + 有内容 → 回答；运行中 + 空 → 终止（仅鼠标）。 */
 public class InputView extends VBox {
 
@@ -68,6 +66,8 @@ public class InputView extends VBox {
     private final Button uploadButton = new Button();
     /** 键盘空输入提示浮层：悬浮输入框上方居中，3 秒自动淡出（不占布局、鼠标穿透） */
     private final Label inputToast = new Label();
+    /** 输入框下方快捷键提示（纯展示，不参与交互） */
+    private final Label composerHint = new Label();
     private final FadeTransition toastIn = new FadeTransition(Duration.millis(150), inputToast);
     private final PauseTransition toastHold = new PauseTransition(Duration.millis(3000));
     private final FadeTransition toastOut = new FadeTransition(Duration.millis(250), inputToast);
@@ -111,8 +111,8 @@ public class InputView extends VBox {
     public InputView(final SessionManager manager, final Config config) {
         this.manager = manager;
         this.config = config;
-        getStyleClass().add("panel-dark");
-        setPadding(new Insets(0, 16, 24, 16)); // 顶部 0：输入框顶部贴消息区（上移半行，总高减半行 96→84）；底部 24：距正文部分底部1行
+        getStyleClass().addAll("panel-dark", "input-dock");
+        setPadding(new Insets(10, 0, 8, 0)); // 顶部 10px 与消息区留白；底部 8px 与窗口留白
 
         input.getStyleClass().add("input-textarea");
         input.setWrapText(true);
@@ -256,16 +256,19 @@ public class InputView extends VBox {
         StackPane.setAlignment(inputToast, Pos.TOP_CENTER);
         inputToast.translateYProperty().bind(inputToast.heightProperty().negate().subtract(8));
 
-        // 黄金比例 0.618 宽居中（占正文部分总宽度）：3 列百分比（19.1% / 61.8% / 19.1%）
-        GridPane root = new GridPane();
-        ColumnConstraints left = new ColumnConstraints();
-        left.setPercentWidth(19.1);
-        ColumnConstraints center = new ColumnConstraints();
-        center.setPercentWidth(61.8);
-        ColumnConstraints right = new ColumnConstraints();
-        right.setPercentWidth(19.1);
-        root.getColumnConstraints().addAll(left, center, right);
-        root.add(frameHost, 1, 0);
+        // 内容列：与聊天正文同宽（740px 上限），窄窗口随可用宽度收缩；提示行在输入框下方
+        composerHint.getStyleClass().add("composer-hint");
+        composerHint.setMaxWidth(Double.MAX_VALUE);
+        composerHint.setAlignment(Pos.CENTER_LEFT);
+        frameHost.setMaxWidth(Double.MAX_VALUE);
+        VBox composerBox = new VBox(6, frameHost, composerHint);
+        composerBox.setMinWidth(0);
+        composerBox.setPrefWidth(740);
+        composerBox.setMaxWidth(740);
+        HBox root = new HBox(composerBox);
+        root.setAlignment(Pos.CENTER);
+        root.setPadding(new Insets(0, 24, 0, 24));
+        HBox.setHgrow(composerBox, Priority.ALWAYS);
         getChildren().add(root);
         updatePrompt(); // askPending 默认 false，显示正常发送键提示
     }
@@ -666,18 +669,25 @@ public class InputView extends VBox {
             String q = askQuestion == null ? "" : askQuestion;
             input.setPromptText("回答: " + (q.length() > 40 ? q.substring(0, 40) + "…" : q));
         } else {
-            input.setPromptText("输入消息…  (@ 引用文件  / 命令  " + sendKeyLabel(config.enterSends()) + " 发送)");
+            input.setPromptText("输入消息…");
         }
+        String sendKey = sendKeyLabel(config.enterSends());
+        composerHint.setText(sendKey + " 发送  ·  "
+                + (config.enterSends() ? "Shift+Enter 换行" : "Enter 换行")
+                + "  ·  @ 引用文件  ·  / 命令");
     }
 
-    /** 按钮模式 → 背景样式类：内容空与运行中 #f48771（btn-send-empty），有内容非运行 #ff947c（btn-send-full）；纯静态可单测 */
+    /** 按钮模式 → 背景样式类：发送/补充/回答=珊瑚主按钮；空输入=深色弱按钮；运行中=珊瑚终止按钮 */
     static String buttonStyleClass(BtnMode mode) {
         switch (mode) {
             case SEND:
+            case SUPPLEMENT:
             case ANSWER:
                 return "btn-send-full";
+            case STOP:
+                return "btn-stop";
             default:
-                return "btn-send-empty";
+                return "btn-send-dim";
         }
     }
 
@@ -699,17 +709,18 @@ public class InputView extends VBox {
         String sendKey = sendKeyLabel(config.enterSends());
         switch (mode) {
             case SEND:       applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "发送 (" + sendKey + ")"); break;
-            case SEND_DIM:   applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入消息后发送 (" + sendKey + ")"); break;
+            case SEND_DIM:   applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "输入消息后发送 (" + sendKey + ")"); break;
             case SUPPLEMENT: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "补充信息给正在运行的模型 (" + sendKey + ")"); break;
             case ANSWER:     applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "回答模型的提问 (" + sendKey + ")"); break;
-            case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 0.35, "输入回答后发送 (" + sendKey + ")"); break;
+            case ANSWER_DIM: applyStyle(arrowIcon, buttonStyleClass(mode), 1.0, "输入回答后发送 (" + sendKey + ")"); break;
             case STOP:       applyStyle(stopIcon, buttonStyleClass(mode), 1.0, "终止当前运行（点击方块按钮）"); break;
         }
     }
 
     private void applyStyle(SVGPath graphic, String styleClass, double opacity, String tip) {
         sendButton.setGraphic(graphic);
-        sendButton.getStyleClass().removeAll("btn-primary", "btn-danger", "btn-send-full", "btn-send-empty");
+        sendButton.getStyleClass().removeAll("btn-primary", "btn-danger", "btn-send-full", "btn-send-empty",
+                "btn-send-dim", "btn-stop");
         sendButton.getStyleClass().add(styleClass);
         sendButton.setOpacity(opacity);
         sendButton.setTooltip(new Tooltip(tip));

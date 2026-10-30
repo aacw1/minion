@@ -1,20 +1,25 @@
 package com.minion.gui;
 
 import com.minion.gui.icon.IconFactory;
+import javafx.beans.binding.Bindings;
+import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 /**
- * 自绘标题栏（无边框窗口）：应用名 | 模型标签 | 留白（弹性）| 设置 | 最小化 | 最大化 | 关闭（图标为 SVG，IconFactory 集中管理）。
+ * 自绘标题栏（无边框窗口）：品牌标 + 应用名 | 留白 | 模型 pill | 设置 | 最小化 | 最大化 | 关闭。
  * 拖动标题栏移动窗口；双击空白区切换最大化。关闭走 confirmClose（与系统关闭共用退出确认）。
+ * 模型 pill 只做静态展示（绿点 + 模型名），不新增下拉/点击入口；模型切换仍走设置窗。
  * 最大化不用 stage.setMaximized（无边框窗口在 Windows 上会覆盖任务栏），改手动定位到
  * Screen.getPrimary().getVisualBounds()（系统已排除任务栏区域），还原时恢复记录的原 bounds。
  */
@@ -32,35 +37,59 @@ public class TitleBar extends HBox {
         this.stage = stage;
         this.modelLabel = modelLabel; // 设置窗关闭后 MainWindow 刷新顶部模型名用
         getStyleClass().add("topbar");
-        setSpacing(10);
+        setSpacing(8);
+
+        StackPane logo = new StackPane();
+        logo.getStyleClass().add("brand-mark");
+        SVGPath spark = IconFactory.spark();
+        IconFactory.size(spark, 15);
+        logo.getChildren().add(spark);
 
         Label app = new Label("minion");
-        app.getStyleClass().add("topbar-title");
+        app.getStyleClass().add("brand-name");
+
+        HBox brand = new HBox(8, logo, app);
+        brand.setAlignment(Pos.CENTER_LEFT);
+        brand.getStyleClass().add("tb-brand");
 
         Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS); // 原页签区弹性占位：模型名与右侧按钮之间留白
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        modelLabel.getStyleClass().add("model-name");
+        Region modelDot = new Region();
+        modelDot.getStyleClass().add("model-dot");
+        HBox modelPill = new HBox(6, modelDot, modelLabel);
+        modelPill.setAlignment(Pos.CENTER_LEFT);
+        modelPill.getStyleClass().add("model-pill");
+        Tooltip modelTip = new Tooltip();
+        modelTip.textProperty().bind(Bindings.concat("当前模型：", modelLabel.textProperty()));
+        Tooltip.install(modelPill, modelTip);
 
         Button gear = new Button();
         gear.setGraphic(sized(IconFactory.settings()));
-        gear.getStyleClass().add("btn-ghost");
+        gear.getStyleClass().add("icon-btn");
+        gear.setTooltip(new Tooltip("设置"));
         gear.setOnAction(e -> openSettings.run());
 
         Button min = new Button();
         min.setGraphic(sized(IconFactory.remove()));
-        min.getStyleClass().add("btn-ghost");
+        min.getStyleClass().add("icon-btn");
+        min.setTooltip(new Tooltip("最小化"));
         min.setOnAction(e -> stage.setIconified(true));
 
         max = new Button();
         max.setGraphic(maximizeIcon(maxed));
-        max.getStyleClass().add("btn-ghost");
+        max.getStyleClass().add("icon-btn");
+        max.setTooltip(new Tooltip("最大化"));
         max.setOnAction(e -> toggleMaximize()); // 手动最大化（不挡任务栏）
 
         Button close = new Button();
         close.setGraphic(sized(IconFactory.close()));
-        close.getStyleClass().add("btn-close");
+        close.getStyleClass().addAll("icon-btn", "close");
+        close.setTooltip(new Tooltip("关闭"));
         close.setOnAction(e -> confirmClose.run());
 
-        getChildren().addAll(app, modelLabel, spacer, gear, min, max, close);
+        getChildren().addAll(brand, spacer, modelPill, gear, min, max, close);
 
         // 拖动移动窗口（记录按下偏移，拖拽按屏幕坐标差值移动）
         setOnMousePressed(e -> {
@@ -71,7 +100,7 @@ public class TitleBar extends HBox {
             stage.setX(e.getScreenX() - dragX);
             stage.setY(e.getScreenY() - dragY);
         });
-        // 双击标题栏空白处切换最大化：只认标题栏自身与其两个 Label（应用名/模型名）
+        // 双击标题栏空白处切换最大化：只认标题栏自身与其两个文本节点（品牌名/模型名）
         setOnMouseClicked(e -> {
             if (e.getClickCount() == 2
                     && (e.getTarget() == this || e.getTarget() == app || e.getTarget() == modelLabel)) {
@@ -113,6 +142,7 @@ public class TitleBar extends HBox {
         }
         maxed = !maxed;
         max.setGraphic(maximizeIcon(maxed));
+        max.setTooltip(new Tooltip(maxed ? "还原" : "最大化"));
     }
 
     /** 模型标签（MainWindow 设置窗关闭后刷新顶部模型名用） */

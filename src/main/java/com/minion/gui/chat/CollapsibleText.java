@@ -1,9 +1,12 @@
 package com.minion.gui.chat;
 
 import com.minion.gui.icon.IconFactory;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 
@@ -40,9 +43,13 @@ public class CollapsibleText extends VBox {
         IconFactory.size(chevron, 12);
         state = new Label();
         state.getStyleClass().add("log-collapse-toggle");
-        toggle = new HBox(4);
-        toggle.getStyleClass().add("log-collapse-toggle");
-        toggle.getChildren().addAll(chevron, summaryNode, state);
+        toggle = new HBox(6);
+        toggle.getStyleClass().addAll("log-collapse-toggle", "collapse-header");
+        toggle.setAlignment(Pos.CENTER_LEFT);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        // 头部：摘要左，状态与箭头右（箭头在右更符合「可展开卡片」的阅读习惯）
+        toggle.getChildren().addAll(summaryNode, spacer, state, chevron);
         toggle.setOnMouseClicked(e -> {
             if (text != null && !text.trim().isEmpty()) setExpanded(!expanded);
         });

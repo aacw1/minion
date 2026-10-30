@@ -55,15 +55,15 @@ public class InputViewButtonTest {
         assertEquals("/help", InputView.insertionText(CompletionParser.Mode.SLASH, "/help"));
     }
 
-    /** 按钮三态色：空内容/运行中 #f48771（btn-send-empty），有内容非运行 #ff947c（btn-send-full） */
+    /** 按钮色：有内容发送/补充/回答=珊瑚主按钮（btn-send-full），空输入=深色弱按钮（btn-send-dim），运行中=终止按钮（btn-stop） */
     @Test
     public void buttonStyleClass_threeStateColors() {
         assertEquals("btn-send-full", InputView.buttonStyleClass(InputView.BtnMode.SEND));
-        assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.SEND_DIM));
-        assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.SUPPLEMENT));
+        assertEquals("btn-send-dim", InputView.buttonStyleClass(InputView.BtnMode.SEND_DIM));
+        assertEquals("btn-send-full", InputView.buttonStyleClass(InputView.BtnMode.SUPPLEMENT));
         assertEquals("btn-send-full", InputView.buttonStyleClass(InputView.BtnMode.ANSWER));
-        assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.ANSWER_DIM));
-        assertEquals("btn-send-empty", InputView.buttonStyleClass(InputView.BtnMode.STOP));
+        assertEquals("btn-send-dim", InputView.buttonStyleClass(InputView.BtnMode.ANSWER_DIM));
+        assertEquals("btn-stop", InputView.buttonStyleClass(InputView.BtnMode.STOP));
     }
 
     // ===== 防连按误终止（线上实证：回答/发送后输入框已清空，第二次 Enter 命中 STOP 把流程掐掉） =====

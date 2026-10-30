@@ -23,8 +23,9 @@ import javafx.scene.text.Text;
  */
 public class MessageTextArea extends TextArea {
 
-    /** 高度余量：补偿 TextArea skin 内部偏差（目验校准点：低估→内部滚动条回归，高估→文本下方小空隙） */
-    private static final double HEIGHT_FUDGE = 4;
+    /** 高度余量：补偿 TextArea skin 内部偏差（目验校准点：低估→内部滚动条回归，高估→文本下方小空隙）。
+     *  字号上调后留 16px，给长路径/长英文单词的换行测量差留余量。 */
+    private static final double HEIGHT_FUDGE = 16;
 
     /** 宽度未定（构造/首次布局前）时的测量兜底；布局后宽度监听会用真实宽度更新，此值只影响早期临时高度 */
     private static final double FALLBACK_WIDTH = 600;
