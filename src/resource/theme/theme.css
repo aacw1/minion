@@ -609,7 +609,16 @@
 .scroll-bar:vertical .thumb:hover { -fx-background-color: #3A4757; }
 .scroll-bar:horizontal { -fx-background-color: transparent; -fx-pref-height: 9px; }
 .scroll-bar:horizontal .thumb { -fx-background-color: #2A3644; -fx-background-radius: 4; }
-.scroll-bar .increment-button, .scroll-bar .decrement-button { -fx-padding: 0; }
+/* 滑块最小长度（2026-10-31 修复「长正文右侧滚动条只剩一个点」）：
+   JavaFX 8 ScrollBarSkin 的滑块长度 = max(1.5×breadth, 轨道长×可见比例)，
+   breadth = 两端箭头按钮的 prefWidth（纵向条）/ prefHeight（横向条）。
+   主题把箭头按钮与箭头尺寸都归零后 breadth=0，最小长度保护失效——内容极高（长会话/长工具输出）时
+   滑块被压成 1~2px 的点，鼠标抓不住。这里给不可见的按钮留“垂直于轨道”的内边距，把 breadth 撑到
+   20px → 滑块最小 30px；按钮沿轨道方向的尺寸仍为 0、箭头 shape 为空，既不绘制也不占用轨道长度
+   （9px 条宽由上面的 -fx-pref-width / -fx-pref-height 固定，与 breadth 无关）。
+   注意：删掉这两条内边距或把箭头按钮恢复 0 内边距，点状滑块会复现。 */
+.scroll-bar:vertical > .increment-button, .scroll-bar:vertical > .decrement-button { -fx-padding: 0 10 0 10; }
+.scroll-bar:horizontal > .increment-button, .scroll-bar:horizontal > .decrement-button { -fx-padding: 10 0 10 0; }
 .scroll-bar .increment-arrow, .scroll-bar .decrement-arrow { -fx-shape: " "; -fx-padding: 0; }
 
 .tooltip {
